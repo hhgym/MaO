@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mao-cli"
+version = "0.5.0.dev0"
+description = "CLI zur Organisation der Mathematik-Olympiade (SQL, CSV, LaTeX)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pandas>=2.0",
+  "PyYAML>=6.0",
+  "packaging>=23",
+  "tomli>=2;python_version < '3.11'",
+  "python-dateutil>=2.8",
+  "mysql-connector-python>=8.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+mao = "mao_cli.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["mao_cli*"]
+
+[tool.setuptools.package-data]
+mao_cli = ["defaults/*.yaml", "defaults/*.ini"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

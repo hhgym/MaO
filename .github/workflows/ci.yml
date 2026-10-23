@@ -1,0 +1,47 @@
+name: CI
+on:
+  push:
+    branches: [main, develop, 'feature/**', 'release/**', 'hotfix/**']
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Regression tests
+        run: python -m pytest -q
+      - name: Validate packaged configuration
+        run: python -m mao_cli validate
+  develop-build:
+    needs: tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install build
+      - run: python -m build --wheel
+      - name: Checksum
+        run: for f in dist/*.whl; do sha256sum "$f" > "$f.sha256"; done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mao-develop-${{ github.sha }}
+          path: dist/
+          retention-days: 30

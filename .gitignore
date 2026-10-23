@@ -1,0 +1,22 @@
+# Zugangsdaten und lokale Einstellungen
+**/db.config
+# Workspace overrides contain real SQL object names
+**/config/tables.ini
+**/config/pipeline.yaml
+**/config/profiles.ini
+.env
+*.pem
+# Lokale Arbeitsdaten und Ergebnisse
+workspace/
+.mao-cli/
+Listen/
+export_plan.md
+*.log
+# Python-Artefakte
+__pycache__/
+.pytest_cache/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.coverage*
