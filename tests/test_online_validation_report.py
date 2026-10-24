@@ -40,7 +40,7 @@ class Cursor:
             column_names = tuple(self.source[key][0].keys()) if key and self.source[key] else {
                 'STUDENT_SQL': ('matrikelnummer', 'vorname', 'nachname', 'geschlecht', 'klasse'),
                 'TEACHER_SQL': ('id',),
-                'COURSE_SQL': ('lerngruppe_schuljahr_id', 'lehrkraft_id', 'lerngruppen_einsatz_id'),
+                'COURSE_SQL': ('lerngruppe_schuljahr_id', 'lehrkraft_id'),
                 'MANDATORY_SQL': ('klasse', 'lehrkraft_id', 'lerngruppe_schuljahr_id'),
                 'PIPELINE_SQL': ('x',),
             }.get(key, ())
@@ -84,7 +84,7 @@ def sources():
         'STUDENT_SQL': [{'matrikelnummer': 1, 'vorname': 'Ada', 'nachname': 'B', 'geschlecht': 'w', 'klasse': '5-1'},
                         {'matrikelnummer': 2, 'vorname': 'Ben', 'nachname': 'C', 'geschlecht': 'm', 'klasse': '5-1'}],
         'TEACHER_SQL': [{'id': 7}],
-        'COURSE_SQL': [{'lerngruppe_schuljahr_id': 10, 'lehrkraft_id': 7, 'lerngruppen_einsatz_id': 100}],
+        'COURSE_SQL': [{'lerngruppe_schuljahr_id': 10, 'lehrkraft_id': 7}],
         'MANDATORY_SQL': [{'klasse': '5-1', 'lehrkraft_id': 7, 'lerngruppe_schuljahr_id': 10}],
         'PIPELINE_SQL': [{'x': 1}],
     }
@@ -145,13 +145,13 @@ def test_cli_validate_online_optional(monkeypatch, tmp_path):
 
 def test_import_report_tracks_class_source_and_no_personal_details(tmp_path):
     mapped = [
-        {'klasse': '5-1', '_source': 'gf', 'lehrkraft_id': 7, 'kurs_id': 100},
-        {'klasse': '5-1', '_source': 'mandatory', 'lehrkraft_id': 7, 'kurs_id': 100},
-        {'klasse': '11', '_source': 'gf', 'lehrkraft_id': None, 'kurs_id': None},
+        {'klasse': '5-1', 'stufe': 5, '_source': 'gf', 'lehrkraft_id': 7, 'kurs_id': None},
+        {'klasse': '5-1', 'stufe': 5, '_source': 'mandatory', 'lehrkraft_id': 7, 'kurs_id': None},
+        {'klasse': '11', 'stufe': 11, '_source': 'gf', 'lehrkraft_id': None, 'kurs_id': None},
     ]
     summary = gf._class_summary(mapped)
-    assert summary[0]['klasse'] == '5-1' and summary[0]['mandatory'] == 1
-    assert summary[1]['klasse'] == '11' and summary[1]['missing_teacher'] == 1
+    assert summary[0]['klasse'] == '5-1' and summary[0]['mandatory'] == 1 and summary[0]['missing_course'] == 0
+    assert summary[1]['klasse'] == '11' and summary[1]['missing_teacher'] == 1 and summary[1]['missing_course'] == 1
     report = {'schema_version': 1, 'status': 'ready', 'mode': 'dry-run', 'issues': [],
               'classes': summary, 'summary': {'participants': 3, 'gf_entries': 2,
                                               'mandatory_added': 1, 'missing_teacher': 1, 'missing_course_total': 1}}
