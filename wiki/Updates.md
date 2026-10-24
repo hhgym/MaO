@@ -8,7 +8,7 @@ MaO verwendet die GitHub-Releases von [`hhgym/MaO`](https://github.com/hhgym/MaO
 | `rc` | Release Candidates und finale Releases | Wie Stable, ausdrücklich zum Erproben |
 | `develop` | Letzter getesteter Commit aus GitHub Actions | GitHub-Zugriff mit `Contents: read` und `Actions: read`, **kein Git-Checkout** |
 
-Für das **private** Repository benötigt die *lokale* Anwendung ein GitHub-Token mit `Contents: read` (Releases) sowie zusätzlich `Actions: read` für Develop-Artefakte. Die GitHub-Verbindung innerhalb von ChatGPT ist **nicht automatisch** eine Anmeldung der lokalen CLI. Bevorzugt kannst du [GitHub CLI](https://cli.github.com/) installieren und `gh auth login` ausführen. Alternativ wird `MAO_GITHUB_TOKEN` unterstützt (danach `GH_TOKEN` und `GITHUB_TOKEN`). Tokens niemals in `db.config`, Git-Dateien, Befehlsargumente oder Screenshots schreiben. Fehlermeldungen enthalten keine Tokenwerte.
+Das Repository ist **öffentlich**; für die Prüfung von Branch und Releases ist in der Regel kein GitHub-Token nötig. Der Abruf von Develop-Artefakten über die GitHub-Actions-API kann eine Authentifizierung erfordern. Dafür kannst du [GitHub CLI](https://cli.github.com/) installieren und `gh auth login` verwenden oder `MAO_GITHUB_TOKEN` (ersatzweise `GH_TOKEN` oder `GITHUB_TOKEN`) setzen. Die GitHub-Verbindung in ChatGPT ist keine Anmeldung der lokalen CLI. Tokens gehören nie in `db.config`, Git-Dateien oder Screenshots.
 
 ## Befehle
 
@@ -59,7 +59,7 @@ mao update rollback --yes
 
 Jedes Develop-Wheel erhält während des CI-Builds eine einmalige Version wie `0.6.0.dev0+gabcdef123456`. Die Zeichen nach `+g` entsprechen den ersten zwölf Stellen der GitHub-Commit-ID. Die offizielle Releaseversion in den Git-Quellen bleibt unverändert.
 
-**Wichtig:** GitHub-Actions-Artefakte sind aktuell **30 Tage** verfügbar. Ein noch nicht fertig gebauter Develop-Commit ist nicht installierbar. Bei einem privaten Repository benötigt das lokale GitHub-Token das Recht `Actions: read`.
+**Wichtig:** GitHub-Actions-Artefakte sind aktuell **30 Tage** verfügbar. Ein noch nicht fertig gebauter Develop-Commit ist nicht installierbar. Für einen authentifizierten Abruf benötigt das lokale GitHub-Token `Actions: read`.
 
 **Einmalige Umstellung älterer Installationen:** Versionen vor diesem Updater unterstützen nur Git-Checkouts im Kanal `develop`. Um den neuen Updater erstmalig zu installieren, kannst du das getestete Develop-Artefakt einmalig über `gh run download` auf der GitHub-CLI beziehen und das darin enthaltene Wheel mit `python -m pip install <wheel>` installieren. Danach übernimmt `mao update` den gesamten Ablauf.
 

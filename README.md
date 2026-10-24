@@ -92,7 +92,7 @@ mao update rollback --yes
 
 **`mao init-jahrgang` ist in v0.6 nur eine schreibgeschützte Vorprüfung.** Ohne `--offline` verbindet sich der Befehl zur Datenbank und prüft Tabellen/Spalten/Fremdschlüssel sowie die aktuelle Datensatzanzahl, führt aber **keine** Archivierung, Migration, Löschung oder Neuanlage durch. Die SQL-Datei enthielt keine Datensätze und nicht alle referenzierten Tabellen, deshalb wäre ein Reset zum jetzigen Zeitpunkt unsicher.
 
-Weitere Informationen: [Befehlsreferenz](wiki/Befehle.md), [Konfiguration](wiki/Konfiguration.md), [Arbeitsverzeichnisse](wiki/Arbeitsverzeichnisse.md), [Jahrgangswechsel](wiki/Jahrgangswechsel.md) und [Updateverfahren](wiki/Updates.md).
+Weitere Informationen im [öffentlichen GitHub-Wiki](https://github.com/hhgym/MaO/wiki): [Befehlsreferenz](wiki/Befehle.md), [Konfiguration](wiki/Konfiguration.md), [Arbeitsverzeichnisse](wiki/Arbeitsverzeichnisse.md), [Jahrgangswechsel](wiki/Jahrgangswechsel.md) und [Updateverfahren](wiki/Updates.md).
 
 ## Git Flow und Tests
 

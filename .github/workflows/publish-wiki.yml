@@ -1,0 +1,51 @@
+name: Wiki veröffentlichen
+
+# Das GitHub-Wiki ist ein eigenes Git-Repository. Die Quelldateien liegen in wiki/.
+on:
+  push:
+    branches: [develop]
+    paths:
+      - 'wiki/**'
+      - 'scripts/publish_wiki.py'
+      - '.github/workflows/publish-wiki.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mao-publish-wiki
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'hhgym/MaO'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Quellen abrufen
+        uses: actions/checkout@v4
+
+      - name: Git-Identität festlegen
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: GitHub-Authentifizierung für Wiki-Git einrichten
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/mao-wiki-askpass" <<'SH'
+          #!/usr/bin/env bash
+          case "$1" in
+            *Username*) printf '%s\n' 'x-access-token' ;;
+            *Password*) printf '%s\n' "$WIKI_TOKEN" ;;
+          esac
+          SH
+          chmod 700 "$RUNNER_TEMP/mao-wiki-askpass"
+          echo "GIT_ASKPASS=$RUNNER_TEMP/mao-wiki-askpass" >> "$GITHUB_ENV"
+
+      - name: Markdown-Seiten ins GitHub-Wiki übertragen
+        env:
+          WIKI_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_TERMINAL_PROMPT: '0'
+        run: |
+          python scripts/publish_wiki.py --remote "https://github.com/${{ github.repository }}.wiki.git"
