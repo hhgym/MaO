@@ -110,7 +110,7 @@ def test_rollback_requires_confirmation(tmp_path):
 
 def test_develop_install_failure_keeps_managed_state(monkeypatch, tmp_path):
     from mao_cli import update_install as ins
-    build = u.DevelopBuild("hhgym/MaO", "b"*40, 21, "dummy.whl", "https://github.com/x.whl", "https://github.com/x.sha256")
+    build = u.DevelopBuild("hhgym/MaO", "b"*40, 21, "mao_cli-0.6.0.dev0+g"+"b"*12+"-py3-none-any.whl", "https://github.com/x.whl", "https://github.com/x.sha256")
     monkeypatch.setattr(u, "find_develop", lambda repository: build)
     monkeypatch.setattr(u, "_installed_version", lambda home: "0.6.0.dev0")
     def fake_stage(build, directory):
@@ -118,6 +118,7 @@ def test_develop_install_failure_keeps_managed_state(monkeypatch, tmp_path):
         wheel.write_bytes(b"dummy")
         return wheel, "0.6.0.dev0+gbbbbbbbbbbbb"
     monkeypatch.setattr(u, "stage_develop", fake_stage)
+    monkeypatch.setattr(u, "_packaged_source_matches", lambda path:False)
     monkeypatch.setattr(u, "install_managed", lambda *args: (_ for _ in ()).throw(ins.InstallError("pip kaputt")))
     with pytest.raises(u.UpdateError, match="pip kaputt"):
         u.update_action("install", "develop", None, yes=True, home=tmp_path)

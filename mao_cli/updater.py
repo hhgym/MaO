@@ -9,6 +9,7 @@ import hashlib
 import subprocess
 import json
 import os
+import zipfile
 import re
 import tempfile
 import urllib.error
@@ -297,6 +298,47 @@ def stage_develop(build: DevelopBuild, directory: Path) -> tuple[Path, str]:
     return path, str(version)
 
 
+
+def _packaged_source_matches(wheel: Path) -> bool:
+    """Vergleicht ZIP-/Quellinstallationen mit dem getesteten Wheel-Inhalt.
+
+    Branch-ZIPs besitzen keine Commit-ID. Verglichen werden deshalb die
+    tatsächlich ausgelieferten Programm-/Konfigurationsdateien statt nur die
+    gleiche Basis-Versionsnummer. Das Build-spezifische __version__ wird dabei
+    ausgenommen; ZIP und CI-Wheel haben hier erwartungsgemäß andere Werte.
+    """
+    package = Path(__file__).resolve().parent
+    def included(relative: str) -> bool:
+        path = Path(relative)
+        return (path.suffix in (".py", ".yaml", ".ini", ".example")
+                and "__pycache__" not in path.parts)
+    def normalized(relative: str, data: bytes) -> bytes:
+        if relative == "__init__.py":
+            return re.sub(rb'(?m)^__version__ = ["\'][^"\']+["\']\s*$',
+                          b'__version__ = "<VERSION>"', data)
+        return data
+    local: dict[str, bytes] = {}
+    for candidate in package.rglob("*"):
+        if candidate.is_file():
+            rel = candidate.relative_to(package).as_posix()
+            if included(rel):
+                local[rel] = normalized(rel, candidate.read_bytes())
+    try:
+        with zipfile.ZipFile(wheel) as archive:
+            remote: dict[str, bytes] = {}
+            for name in archive.namelist():
+                if not name.startswith("mao_cli/") or name.endswith("/"):
+                    continue
+                rel = name[len("mao_cli/"):]
+                if included(rel):
+                    if rel in remote:
+                        raise UpdateError("Mehrfache Programmdatei im Develop-Wheel")
+                    remote[rel] = normalized(rel, archive.read(name))
+    except (zipfile.BadZipFile, RuntimeError, OSError) as exc:
+        raise UpdateError("Develop-Wheel ist kein lesbares ZIP-Archiv") from exc
+    return bool(local) and local == remote
+
+
 def _installed_version(home: Path | None = None) -> str:
     from .update_install import read_state
     state = read_state(home_path(home))
@@ -316,6 +358,17 @@ def _update_develop(action: str, repository: str | None, *, yes: bool,
         raise UpdateError(str(exc)) from exc
     if installed.endswith("+g" + build.commit[:12]):
         return f"Develop ist aktuell (Commit {build.commit[:12]}, MaO {installed})"
+    # Für ein ZIP/eine klassische pip-Installation fehlt die Git-Commit-Kennung.
+    # Bei identischer Basisversion die tatsächlich installierten Paketdateien
+    # mit dem geprüften Build vergleichen (statt ein falsches Update zu melden).
+    if "+g" not in installed and installed == str(__version__):
+        _, wheel_version, _, _ = parse_wheel_filename(build.wheel_name)
+        if Version(installed).base_version == wheel_version.base_version and Version(installed).public == wheel_version.public:
+            with tempfile.TemporaryDirectory(prefix="mao-compare-") as tmp:
+                verified_wheel, _ = stage_develop(build, Path(tmp))
+                if _packaged_source_matches(verified_wheel):
+                    return (f"Develop ist aktuell (Paketdateien identisch mit Commit "
+                            f"{build.commit[:12]}; installiert aus Quellcode ohne Commit-Kennung)")
     if action == "check":
         return (f"Neuer getesteter Develop-Stand verfügbar: Commit {build.commit[:12]} "
                 f"(GitHub Actions {build.run_id}); derzeit MaO {installed}")
