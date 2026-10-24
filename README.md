@@ -186,7 +186,7 @@ vorhandener Datenbanksicherung stattfinden.
 
 `mao update check --channel develop` und `mao update install --channel develop --yes` verwenden öffentliche GitHub-Release-Dateien und benötigen weder Token noch Git-Checkout. Nach erfolgreichen Develop-CI-Builds veröffentlicht der Workflow commitgebundene Wheels samt SHA-256 im [Develop-Release](https://github.com/hhgym/MaO/releases/tag/develop-build). Für ältere CLI-Installationen ist einmalig ein neues Wheel erforderlich.
 
-Die SQL-Abfragen in `gf-import.yaml` verwenden `{{table.teachers_table}}`, `{{table.students_view}}` und `{{table.current_groups_view}}` aus der zentralen `tables.ini`. Eine separate Mathematikfilterung ist derzeit nicht erforderlich, da nur Mathematik-Lerngruppen verwaltet werden.
+Die SQL-Abfragen in `gf-import.yaml` verwenden `{{table.teachers_table}}`, `{{table.students_table}}` und `{{table.current_groups_view}}` aus der zentralen `tables.ini`. Eine separate Mathematikfilterung ist derzeit nicht erforderlich, da nur Mathematik-Lerngruppen verwaltet werden.
 
 ### Aktualisieren der Editable-Installation
 
@@ -206,3 +206,10 @@ enthält diese Funktion noch nicht. Zunächst einmalig die aktuelle
 `develop`-Quell-ZIP nach `D:/MaO` übernehmen; anschließend können
 weitere Updates direkt über `mao update install` erfolgen.
 Weitere Hinweise: [Updateverfahren](wiki/Updates.md).
+
+
+### Lokale Konfiguration, Schülerstammdaten und Leermeldung
+
+Bei Editable-Installationen (`D:/MaO/mao_cli`, `D:/MaO/pyproject.toml`, `D:/MaO/config`) wird der private Ordner automatisch verwendet; `--config-dir` und `MAO_CONFIG` haben Vorrang. Die Kennung für die Schülerstammdatentabelle lautet `students_table`. `mao config init` migriert vorhandene `students_view`-Einträge und erhält den Tabellennamen.
+
+Gravity-Forms-Checkbox 10 (`Leermeldung`) bedeutet keine ausgewählten Schülerinnen und Schüler. Solche Einträge werden im Dry-Run pro Klasse gezählt, nicht als Teilnahme gespeichert. Eine gleichzeitige Teilnehmerauswahl blockiert den Import; Pflichtteilnahmen werden unabhängig davon ergänzt.

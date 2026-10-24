@@ -26,7 +26,7 @@ def test_entry_checkbox_and_mandatory(opts):
     assert [r["tnr"] for r in items] == [1, 2]
     assert items[0]["kurs_id"] == 83 and items[0]["lehrkraft_id"] == 7
     assert items[1]["kurs_id"] == 84 and items[1]["stufe"] == 5
-    assert stat == {"gf_entries": 1, "inactive_entries": 1, "mandatory_added": 1,
+    assert stat == {"gf_entries": 1, "inactive_entries": 1, "empty_reports": 0, "mandatory_added": 1,
                     "mandatory_classes_present": 1, "optional_classes_present": 0}
 
 
@@ -133,7 +133,7 @@ def test_import_resolves_identifiers_from_central_tables(tmp_path):
     init_config(tmp_path, cli.DEFAULTS)
     tables_path = tmp_path / "tables.ini"
     text = tables_path.read_text(encoding="utf-8")
-    text = text.replace("students_view = DEMO_CURRENT_STUDENTS", "students_view = STUDENT_CURRENT")
+    text = text.replace("students_table = DEMO_CURRENT_STUDENTS", "students_table = STUDENT_CURRENT")
     text = text.replace("current_groups_view = DEMO_CURRENT_GROUP_VIEW", "current_groups_view = GROUPS_CURRENT")
     text = text.replace("teachers_table = DEMO_TEACHERS", "teachers_table = TEACHER_MASTER")
     tables_path.write_text(text, encoding="utf-8")
@@ -153,7 +153,7 @@ def test_import_rejects_invalid_and_unknown_table_names(tmp_path):
     tables_path.write_text(text.replace("DEMO_TEACHERS", "TEACHERS; DROP TABLE USERS"), encoding="utf-8")
     with pytest.raises(Exception, match="Ungültiger Tabellen-/Viewname"):
         g.load_import_settings(tmp_path / "gf-import.yaml")
-    tables_path.write_text(text.replace("teachers_table = DEMO_TEACHERS\n", "").replace("students_view = DEMO_CURRENT_STUDENTS", "students_view = STUDENT_CURRENT").replace("current_groups_view = DEMO_CURRENT_GROUP_VIEW", "current_groups_view = GROUP_CURRENT"), encoding="utf-8")
+    tables_path.write_text(text.replace("teachers_table = DEMO_TEACHERS\n", "").replace("students_table = DEMO_CURRENT_STUDENTS", "students_table = STUDENT_CURRENT").replace("current_groups_view = DEMO_CURRENT_GROUP_VIEW", "current_groups_view = GROUP_CURRENT"), encoding="utf-8")
     with pytest.raises(Exception, match="Unbekannte Tabellenkennung"):
         g.load_import_settings(tmp_path / "gf-import.yaml")
 
@@ -260,7 +260,7 @@ def test_init_adds_missing_table_names_to_existing_config_without_overwrite(tmp_
     text = (tmp_path / "tables.ini").read_text(encoding="utf-8")
     assert "teachers_table = SCHOOL_TEACHERS" in text
     assert "# bewusst behalten" in text
-    assert "students_view = DEMO_CURRENT_STUDENTS" in text
+    assert "students_table = DEMO_CURRENT_STUDENTS" in text
     assert "current_groups_view = DEMO_CURRENT_GROUP_VIEW" in text
     assert "{{table.teachers_table}}" in (tmp_path / "gf-import.yaml").read_text(encoding="utf-8")
     init_config(tmp_path, cli.DEFAULTS)

@@ -50,7 +50,7 @@ def load_import_settings(path: Path) -> ImportSettings:
         raise ConfigurationError("gf-import.yaml: ungültige oder unbekannte Schlüssel")
     fields = raw.get("fields")
     queries = raw.get("queries")
-    if not isinstance(fields, dict) or set(fields) != {"klasse", "kurs", "lehrkraft", "teilnehmende"}:
+    if not isinstance(fields, dict) or (not {"klasse", "kurs", "lehrkraft", "teilnehmende"}.issubset(fields) or set(fields) - {"klasse", "kurs", "lehrkraft", "teilnehmende", "leermeldung"}):
         raise ConfigurationError("gf-import.yaml: fields benötigt klasse, kurs, lehrkraft und teilnehmende")
     if not all(isinstance(x, str) and re.fullmatch(r"\d+", x) for x in fields.values()):
         raise ConfigurationError("gf-import.yaml: Gravity-Forms-Feldnummern müssen Zeichenketten sein")
@@ -71,6 +71,8 @@ def load_import_settings(path: Path) -> ImportSettings:
     # Namen aus Gravity Forms werden hier niemals als SQL-Identifier eingesetzt.
     needs_tables = any(isinstance(value, str) and "{{" in value for value in queries.values())
     tables = load_tables(path.parent / "tables.ini") if needs_tables else {}
+    if "students_table" not in tables and "students_view" in tables:
+        tables["students_table"] = tables["students_view"]
     resolved_queries: dict[str, str] = {}
     for key, value in queries.items():
         if not value and key == "mandatory" and not (mand or opt_mand):
@@ -78,6 +80,7 @@ def load_import_settings(path: Path) -> ImportSettings:
             continue
         if not isinstance(value, str) or not value.strip():
             raise ConfigurationError(f"gf-import.yaml: SELECT-Abfrage '{key}' fehlt")
+        value = value.replace("{{table.students_view}}", "{{table.students_table}}")
         value = resolve_sql_table_tokens(value, tables, label=f"gf-import.yaml/queries.{key}")
         if "DEMO_" in value:
             raise ConfigurationError(f"gf-import.yaml: Tabellenkennung für '{key}' in tables.ini noch DEMO_ – bitte anpassen")
@@ -192,6 +195,17 @@ def selected_students(entry: Mapping[str, Any], field: str) -> list[int]:
     return list(dict.fromkeys(out))
 
 
+def is_empty_report(entry: Mapping[str, Any], field: str = "10") -> bool:
+    """GF-Checkbox 10 oder 10.1, deren aktivierter Wert 'Leermeldung' ist."""
+    for key, value in entry.items():
+        if key != field and not re.fullmatch(re.escape(field) + r"\.\d+", key):
+            continue
+        values = value if isinstance(value, list) else [value]
+        if any(isinstance(v, str) and v.strip().casefold() == "leermeldung" for v in values):
+            return True
+    return False
+
+
 def _rows(cursor: Any, sql: str) -> list[dict[str, Any]]:
     cursor.execute(sql)
     columns = list(cursor.column_names or [])
@@ -274,6 +288,7 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
     seen: dict[int, dict] = {}
     count_gf = 0
     skipped = 0
+    empty_count = 0
     field = options.fields
     for entry in entries:
         if entry.get("status") not in (None, "active"):
@@ -281,6 +296,11 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
             continue
         count_gf += 1
         chosen = selected_students(entry, field["teilnehmende"])
+        if is_empty_report(entry, field.get("leermeldung", "10")):
+            if chosen:
+                raise ImportErrorGF(f"GF-Eintrag {entry.get('id', '(ohne ID)')}: Leermeldung und Teilnehmende gleichzeitig ausgewählt")
+            empty_count += 1
+            continue
         if not chosen:
             raise ImportErrorGF(f"Aktiver GF-Eintrag {entry.get('id', '(ohne ID)')} hat keine auslesbare Teilnehmerauswahl")
         for matrikel in chosen:
@@ -369,7 +389,8 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
     result = sorted(seen.values(), key=sort_key)
     for i, row in enumerate(result, 1):
         row["tnr"] = i
-    return result, {"gf_entries": count_gf, "inactive_entries": skipped, "mandatory_added": mandatory_count,
+    return result, {"gf_entries": count_gf, "inactive_entries": skipped, "empty_reports": empty_count,
+                    "mandatory_added": mandatory_count,
                     "mandatory_classes_present": len(mandatory_classes_present),
                     "optional_classes_present": len(optional_classes_present)}
 
@@ -377,7 +398,7 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
 WRITE_COLUMNS = ("tnr", "matrikelnummer", "vorname", "nachname", "geschlecht", "klasse", "stufe", "lehrkraft_id", "kurs_id")
 
 
-def _entry_id_issues(entries: list[dict], students: list[dict], field: str) -> list[str]:
+def _entry_id_issues(entries: list[dict], students: list[dict], field: str, empty_field: str = "10") -> list[str]:
     """Alle unbekannten/doppelten Matrikelnummern vor dem Import sammeln."""
     known = {int(s["matrikelnummer"]) for s in students if s.get("matrikelnummer") is not None
              and str(s["matrikelnummer"]).strip().isdigit()}
@@ -392,6 +413,10 @@ def _entry_id_issues(entries: list[dict], students: list[dict], field: str) -> l
         except ImportErrorGF as exc:
             issues.append(f"GF-Meldung {ident}: {exc}")
             continue
+        if is_empty_report(entry, empty_field):
+            if selected:
+                issues.append(f"GF-Meldung {ident}: Leermeldung und Teilnehmende gleichzeitig ausgewählt")
+            continue
         if not selected:
             issues.append(f"GF-Meldung {ident}: keine Teilnehmerauswahl")
         for number in selected:
@@ -404,17 +429,30 @@ def _entry_id_issues(entries: list[dict], students: list[dict], field: str) -> l
     return issues
 
 
-def _class_summary(rows: list[dict]) -> list[dict[str, Any]]:
+def _class_summary(rows: list[dict], entries: list[dict] | None = None,
+                   fields: Mapping[str, str] | None = None) -> list[dict[str, Any]]:
     """Zählt Klassen und Quellen ohne personenbezogene Angaben im Bericht."""
     classes: dict[str, dict[str, Any]] = {}
     for row in rows:
         klass = row["klasse"]
         item = classes.setdefault(klass, {"klasse": klass, "gf": 0, "mandatory": 0,
-                                          "participants": 0, "missing_teacher": 0, "missing_course": 0})
+                                          "participants": 0, "missing_teacher": 0, "missing_course": 0,
+                                           "empty_reports": 0})
         item["participants"] += 1
         item["mandatory" if row.get("_source") == "mandatory" else "gf"] += 1
         item["missing_teacher"] += int(row["lehrkraft_id"] is None)
         item["missing_course"] += int(row["kurs_id"] is None)
+    if entries is not None and fields is not None:
+        for entry in entries:
+            if entry.get("status") not in (None, "active"):
+                continue
+            if not is_empty_report(entry, fields.get("leermeldung", "10")):
+                continue
+            klass = str(entry.get(fields["klasse"]) or "(ohne Klasse)").strip()
+            item = classes.setdefault(klass, {"klasse": klass, "gf": 0, "mandatory": 0,
+                                              "participants": 0, "missing_teacher": 0, "missing_course": 0,
+                                              "empty_reports": 0})
+            item["empty_reports"] += 1
     return [classes[key] for key in sorted(classes, key=lambda name: (grade(name) or 99, name))]
 
 
@@ -438,7 +476,7 @@ def write_import_report(workspace: Path, config_dir: Path, filename: Path,
                 json.dump(report, file, ensure_ascii=False, indent=2, sort_keys=True)
                 file.write("\n")
             else:
-                cols = ("klasse", "gf", "mandatory", "participants", "missing_teacher", "missing_course", "status", "issue")
+                cols = ("klasse", "gf", "mandatory", "participants", "missing_teacher", "missing_course", "empty_reports", "status", "issue")
                 writer = csv.DictWriter(file, fieldnames=cols, extrasaction="ignore")
                 writer.writeheader()
                 def safe_csv(value: Any) -> Any:
@@ -448,6 +486,7 @@ def write_import_report(workspace: Path, config_dir: Path, filename: Path,
                 summary = report.get("summary", {})
                 writer.writerow({"klasse": "GESAMT", "gf": summary.get("gf_entries", ""),
                                  "mandatory": summary.get("mandatory_added", ""),
+                                 "empty_reports": summary.get("empty_reports", ""),
                                  "participants": summary.get("participants", ""),
                                  "missing_teacher": summary.get("missing_teacher", ""),
                                  "missing_course": summary.get("missing_course_total", ""),
@@ -478,7 +517,8 @@ def import_participants(db: Any, config_dir: Path, target_table: str, *, dry_run
         if report is not None:
             report["sources"] = {"gf_entries_total": len(entries), "gf_entries_active": len(active_entries),
                                  "students": len(students), "teachers": len(teachers), "assignments": len(courses)}
-        issues = _entry_id_issues(entries, students, config.fields["teilnehmende"])
+        issues = _entry_id_issues(entries, students, config.fields["teilnehmende"],
+                                  config.fields.get("leermeldung", "10"))
         if issues:
             if report is not None:
                 report.setdefault("issues", []).extend(issues)
@@ -486,7 +526,7 @@ def import_participants(db: Any, config_dir: Path, target_table: str, *, dry_run
         mapped, stats = build_participants(entries, students, mandatory, teachers, courses,
                                             config if not no_mandatory else ImportSettings(config.form_id, config.page_size, config.timeout, (), (), config.fields, config.queries))
         if report is not None:
-            report["classes"] = _class_summary(mapped)
+            report["classes"] = _class_summary(mapped, entries, config.fields)
         if not mapped:
             raise ImportErrorGF("Keine Teilnehmenden ermittelt – Import aus Sicherheitsgründen abgebrochen")
         if len(mapped) != len(set(x["matrikelnummer"] for x in mapped)):

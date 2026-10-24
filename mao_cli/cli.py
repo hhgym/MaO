@@ -329,15 +329,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     saved = write_import_report(workspace, config_dir, args.report, report)
                     LOGGER.info("Blockierter GF-Prüfbericht: %s", saved)
                 raise
-            LOGGER.info("GF-Import | Formular-Einträge: %s | inaktive Meldungen: %s | "
+            LOGGER.info("GF-Import | Formular-Einträge: %s | inaktive Meldungen: %s | Leermeldungen: %s | "
                         "Pflichtteilnahmen ergänzt: %s | Teilnehmende: %s | Lehrkraft fehlt: %s | "
                         "Kurs fehlt (11/12): %s | geschrieben: %s | Modus: %s",
-                        stats["gf_entries"], stats["inactive_entries"], stats["mandatory_added"],
+                        stats["gf_entries"], stats["inactive_entries"], stats["empty_reports"], stats["mandatory_added"],
                         stats["participants"], stats["missing_teacher"], stats["missing_course"],
                         stats["inserted"], "APPLY" if args.apply else "DRY-RUN")
             for item in report["classes"]:
-                LOGGER.info("  Klasse %-5s | GF: %s | Pflicht ergänzt: %s | Gesamt: %s",
-                            item["klasse"], item["gf"], item["mandatory"], item["participants"])
+                LOGGER.info("  Klasse %-5s | GF: %s | Leermeldungen: %s | Pflicht ergänzt: %s | Gesamt: %s",
+                            item["klasse"], item["gf"], item.get("empty_reports", 0), item["mandatory"], item["participants"])
             if args.report:
                 saved = write_import_report(workspace, config_dir, args.report, report)
                 LOGGER.info("GF-Prüfbericht: %s", saved)

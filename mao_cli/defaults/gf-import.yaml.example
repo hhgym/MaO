@@ -10,13 +10,14 @@ fields:
   kurs: "5"
   lehrkraft: "3"
   teilnehmende: "7"
+  leermeldung: "10"  # Checkboxwert Leermeldung, falls keine Schueler:innen gemeldet werden
 # Alle vorhandenen Schülerinnen und Schüler der folgenden Klassen werden ergänzt.
 mandatory_classes: ["5-1", "5-2", "6-1", "6-2", "7-3"]
 # 7-4 nur ergänzen, wenn diese Klasse im aktiven Schuljahr existiert.
 optional_mandatory_classes: ["7-4"]
 queries:
   # Stammdaten des aktiven Schuljahres; Spaltennamen müssen genau passen.
-  students: 'SELECT matrikelnummer, vorname, nachname, geschlecht, klasse FROM {{table.students_view}}'
+  students: 'SELECT matrikelnummer, vorname, nachname, geschlecht, klasse FROM {{table.students_table}}'
   # Aktuelle Lerngruppen (derzeit alle Mathematik): pro Pflichtklasse genau eine
   # eindeutige Lerngruppe mit Lehrkraft. Später bei weiteren Fächern filtern.
   mandatory: "SELECT klassenname AS klasse, lehrkraft_id, lerngruppe_schuljahr_id FROM {{table.current_groups_view}} WHERE typ = 'klasse' AND klassenname IN ('5-1', '5-2', '6-1', '6-2', '7-3', '7-4') AND lehrkraft_id IS NOT NULL"

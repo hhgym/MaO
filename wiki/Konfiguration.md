@@ -8,7 +8,7 @@ $env:MAO_CONFIG = "D:/MaO/Config"
 mao config show
 ```
 
-`config init` erzeugt direkt `settings.yaml`, `pipeline.yaml`, `profiles.ini`, `tables.ini`, `db.config`, `gf.config` und `gf-import.yaml` (ohne `.example`). Zugangsdaten bleiben zunächst leer und müssen privat ergänzt werden. Bestehende Dateien werden nicht überschrieben; frühere `.example`-Dateien bleiben erhalten. Die Inhalte individuell angepasster Vorlagen werden in fehlende Zieldateien übernommen; veraltete GF-Demo-Queries werden durch die neue Standardvorlage ersetzt. Fehlende Schlüssel `students_view` und `current_groups_view` werden in einer bestehenden `tables.ini` ergänzt, ohne vorhandene Werte zu ändern.
+`config init` erzeugt direkt `settings.yaml`, `pipeline.yaml`, `profiles.ini`, `tables.ini`, `db.config`, `gf.config` und `gf-import.yaml` (ohne `.example`). Zugangsdaten bleiben zunächst leer und müssen privat ergänzt werden. Bestehende Dateien werden nicht überschrieben; frühere `.example`-Dateien bleiben erhalten. Die Inhalte individuell angepasster Vorlagen werden in fehlende Zieldateien übernommen; veraltete GF-Demo-Queries werden durch die neue Standardvorlage ersetzt. Fehlende Schlüssel `students_table` und `current_groups_view` werden in einer bestehenden `tables.ini` ergänzt; ein bisheriger `students_view`-Eintrag wird unter Erhalt des Tabellenwerts in `students_table` umbenannt.
 
 | Datei | Aufgabe |
 |---|---|
@@ -71,7 +71,7 @@ consumer_secret=HIER_EINTRAGEN
 `gf-import.yaml` legt `form_id`, `fields`, `mandatory_classes`,
 `optional_mandatory_classes` und vier lokale SQL-SELECT-Abfragen fest:
 
-- `queries.students`: `{{table.students_view}}` aus `tables.ini`, Schülerstammdaten mit `matrikelnummer`, `vorname`, `nachname`, `geschlecht`, `klasse` des aktuellen Schuljahres.
+- `queries.students`: `{{table.students_table}}` aus `tables.ini`, Schülerstammdaten mit `matrikelnummer`, `vorname`, `nachname`, `geschlecht`, `klasse` des aktuellen Schuljahres.
 - `queries.mandatory`: `{{table.current_groups_view}}` aus `tables.ini`, aktuelle Lerngruppen (derzeit ausschließlich Mathematik) mit `klasse` (Alias für `klassenname`), `lehrkraft_id` und `lerngruppe_schuljahr_id`. Ein Fachfilter ist gegenwärtig nicht notwendig. Bei Einführung weiterer Fächer kann über `orga_lerngruppen_einsatz.fach_id = 1` auf Mathematik eingeschränkt werden. Pro Pflichtklasse genau eine eindeutige Lehrkraft.
 - `queries.teachers`: `{{table.teachers_table}}` aus `tables.ini`, gültige `id`-Werte der Lehrkräfte; Formularfeld `3` enthält bereits diese ID und wird nur geprüft.
 - `queries.courses`: `{{table.current_groups_view}}` aus `tables.ini`, die Spalten `lerngruppe_schuljahr_id`, `lehrkraft_id`, `lerngruppen_einsatz_id` aus der erweiterten Lerngruppen-View. Das Paar aus den GF-Feldern `5` und `3` muss genau einen Einsatz ergeben.
@@ -141,3 +141,12 @@ privaten Konfigurationsordner. Bei einem Fehler bleibt der Bericht als
 `blocked` gekennzeichnet; bei erfolgreicher Planung als `ready`.
 Für den echten Erstimport `mao import-gf --apply` ohne `--report` ausführen.
 Beide Befehle archivieren oder löschen keinerlei bestehende Datensätze.
+
+
+## Editable-Installation: lokaler Konfigurationsordner
+
+Bei `D:/MaO/mao_cli`, `D:/MaO/pyproject.toml` und `D:/MaO/config` erkennt MaO den vorhandenen Ordner `config` automatisch. `--config-dir` und `MAO_CONFIG` behalten Vorrang, für andere Installationstypen bleibt der Benutzer-Konfigurationsordner maßgeblich.
+
+## Leermeldungen im Meldeformular
+
+`fields.leermeldung: "10"` bezeichnet die Checkbox mit dem Wert `Leermeldung`. GF kann sie als `10` oder `10.1` übertragen. Aktive Leermeldungen ohne Teilnehmerauswahl werden als gültig gezählt, erzeugen keine Teilnehmerzeile und erscheinen im Prüfbericht unter `empty_reports` (insgesamt und je Klasse). Gleichzeitig ausgewählte Teilnehmende und Leermeldung gelten als Konflikt und blockieren den Import. Ohne Leermeldung bleibt eine fehlende Auswahl fehlerhaft. Für ältere lokale `gf-import.yaml` gilt Feld 10 auch ohne zusätzliche Konfiguration. Die automatisch ergänzten Pflichtteilnahmen bleiben bestehen. Bestehende `{{table.students_view}}`-Platzhalter werden beim GF-Import als `students_table` interpretiert.
