@@ -136,10 +136,29 @@ vollständigem Download und Prüfung werden Teilnehmernummern vergeben und die
 Zeilen transaktional eingefügt. Fehler führen zum Rollback; ein zweiter
 Import in eine bereits gefüllte Tabelle wird abgewiesen.
 
-**Wichtig:** Die Feldzuordnungen stammen aus dem alten GF-Formular. Die
-Tabellenstruktur wurde geändert: `lehrkraft_id` und `kurs_id` benötigen
-jetzt eindeutige Zuordnungs-SELECTs in der privaten `gf-import.yaml`.
-Zusätzliche SQL-Objektnamen und Zugangsdaten dürfen nicht ins Git-Repository.
-Die Pflichtklassen müssen in jedem Schuljahr geprüft und angepasst werden.
+**Feste ID-Zuordnung:** GF-Feld `3` enthält bereits `lehrkraft_id` und wird
+nur anhand der aktuellen Lehrkräfte überprüft. GF-Feld `5` enthält
+`lerngruppe_schuljahr_id`, nicht zwingend den Wert von
+der ID eines konkreten Lehrkrafteinsatzes. **Der bestehende Spaltenname
+`kurs_id` und seine Fremdschlüsseldefinition bleiben unverändert.** Die private
+`queries.courses` liest aus der erweiterten Lerngruppen-View die drei
+Spalten `lerngruppe_schuljahr_id`, `lehrkraft_id`, `lerngruppen_einsatz_id`.
+Ein konkreter Einsatz wird ausschließlich über die Kombination der beiden
+GF-IDs ausgewählt; `lerngruppe_schuljahr_id` selbst wird niemals in
+`kurs_id` der Organisationstabelle geschrieben. Nicht eindeutige oder fehlende Einsätze
+blockieren den Import. Diese Prüfung gilt für alle Klassenstufen.
+
+Die Pflichtklassen `5-1`, `5-2`, `6-1`, `6-2` und `7-3` stehen in
+`mandatory_classes`; `7-4` ist optional. Die Abfrage `queries.mandatory`
+ermittelt **nur Mathematik-Lerngruppen des aktiven Schuljahres** und liefert
+`klasse` (= `klassenname`), `lehrkraft_id` und `lerngruppe_schuljahr_id`. Die eigentlichen Schülerinnen
+und Schüler stammen aus `queries.students`. Vorhandene GF-Meldungen werden
+nicht doppelt angelegt. Fehlt eine feste Pflichtklasse oder ist die Mathe-
+Lehrkraft nicht eindeutig, wird der Import abgebrochen. 7-4 wird nur
+berücksichtigt, wenn sie im aktiven Schuljahr existiert.
+
+Produktive SQL-Objektnamen und Zugangsdaten bleiben in `MAO_CONFIG` außerhalb
+von GitHub. Die tatsächliche Auswahl der Mathematik-Lerngruppen hängt von
+der lokalen View-Definition ab und ist vor dem ersten Datenbanklauf zu prüfen.
 Die erste produktive Ausführung sollte zunächst als Dry-Run und mit
 vorhandener Datenbanksicherung stattfinden.

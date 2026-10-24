@@ -70,19 +70,47 @@ consumer_key=HIER_EINTRAGEN
 consumer_secret=HIER_EINTRAGEN
 ```
 
-`gf-import.yaml` legt `form_id`, `fields` und die vier (bei deaktivierter
-Pflichtteilnahme drei) SQL-Lookups fest:
+`gf-import.yaml` legt `form_id`, `fields`, `mandatory_classes`,
+`optional_mandatory_classes` und vier lokale SQL-SELECT-Abfragen fest:
 
-- `queries.students`: `matrikelnummer`, `vorname`, `nachname`, `geschlecht`, `klasse`.
-- `queries.mandatory`: dieselben Felder plus `lehrkraft_token`; erforderlich bei `mandatory_classes`.
-- `queries.teachers`: `id`, `token` mit der zugehörigen Kennung aus dem GF-Feld `lehrkraft`.
-- `queries.courses`: `id`, `token` mit dem passenden Wert aus dem GF-Feld `kurs`.
+- `queries.students`: Schülerstammdaten mit `matrikelnummer`, `vorname`, `nachname`, `geschlecht`, `klasse` des aktuellen Schuljahres.
+- `queries.mandatory`: aktuelle **Mathematik-Lerngruppen** mit `klasse` (Alias für `klassenname`), `lehrkraft_id` und `lerngruppe_schuljahr_id`. Die View enthält auch andere Lerngruppen; die SELECT-Abfrage muss auf Mathematik eingeschränkt werden. Pro Pflichtklasse genau eine eindeutige Lehrkraft.
+- `queries.teachers`: gültige `id`-Werte der Lehrkräfte; Formularfeld `3` enthält bereits diese ID und wird nur geprüft.
+- `queries.courses`: die beiden Spalten `lerngruppe_schuljahr_id`, `kurs_id` als explizite Abbildung von GF-Feld `5` auf den tatsächlichen Fremdschlüssel in der Organisationstabelle.
 
-Die beiden ID-Abfragen müssen die tatsächlichen Fremdschlüsselziele der lokalen
-Datenbank berücksichtigen; mehrdeutige Tokens werden abgewiesen. `course` wird
-für die Jahrgangsstufen 11/12 verwendet. Die SQL-Definitionen werden **nicht**
-mit dem Programm ausgeliefert; sie sind an das Schul-Datenbankschema anzupassen.
+**Achtung: unterschiedliche IDs.** Feld `5` enthält
+`lerngruppe_schuljahr_id`; der zuvor benannte Fremdschlüssel verweist auf
+eine **andere** Tabelle (Einsatz-ID einer anderen, privaten Tabelle). Die IDs sind ohne
+explizite Join-Zuordnung nicht austauschbar. Die aktuelle Lerngruppen-View
+enthält `lerngruppe_schuljahr_id` und `lehrkraft_id`, aber nicht
+nachgewiesenermaßen die benötigte Einsatz-ID. Entweder wird der FK bewusst
+auf die Schuljahr-Lerngruppe geändert oder die private SELECT-Abfrage stellt
+die eindeutige Beziehung zum Einsatz her. Bis dahin schlägt der Import bei
+nicht zuordenbaren Werten fehl, statt falsche IDs zu speichern.
+
+Standard-Pflichtklassen: `5-1`, `5-2`, `6-1`, `6-2`, `7-3`. Die `7-4`
+steht unter `optional_mandatory_classes`: Sie wird nur übernommen, wenn sie
+in den aktuellen Mathematik-Lerngruppen vorkommt. Alle Schülerinnen und
+Schüler der jeweiligen Klasse kommen aus der Schüler-Stammdatenabfrage.
+Eine bereits aus GF angemeldete Matrikelnummer wird nicht erneut hinzugefügt.
+Fehlt eine der fünf festen Klassen, ist eine Mathe-Lehrkraft mehrdeutig oder
+fehlt die Schülerliste, wird abgebrochen. Die erforderliche Mathematikfilterung
+muss in der **privaten** SQL-Abfrage umgesetzt werden; der View-Quelltext
+enthält kein eindeutiges `fach`-Feld.
 
 Die API wird paginiert per OAuth 1.0/HMAC-SHA1 über HTTPS abgefragt. Für den
 Schreibmodus wird ausschließlich der aktuelle Workspace akzeptiert; auf
 bestehende Ergebnisdaten wird nicht schreibend zugegriffen.
+
+### Lerngruppen-/Einsatzkennungen beim GF-Import
+
+`kurs_id` in der Organisationstabelle bleibt aus Kompatibilitätsgründen mit bestehenden
+Views und Fremdschlüsseln erhalten und referenziert die ID aus
+der Einsatz-Tabelle. Das GF-Feld 5 liefert dagegen
+`lerngruppe_schuljahr_id`, Feld 3 die `lehrkraft_id`. Die private SQL-Quelle
+`queries.courses` muss daher **drei Spalten** liefern:
+`lerngruppe_schuljahr_id`, `lehrkraft_id` und `lerngruppen_einsatz_id`.
+Die erweiterte View des aktuellen Schuljahres stellt diese bereit.
+Das Skript ordnet anhand **beider** GF-IDs genau eine Einsatz-ID zu.
+Gleiche Zahlenwerte aus unterschiedlichen Tabellen dürfen nicht als
+identische Primärschlüssel interpretiert werden.

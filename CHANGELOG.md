@@ -7,8 +7,11 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 ## [0.6.0.dev0] – in Entwicklung
 
 ### Gravity Forms (Erstbefüllung)
+- Einsatz-ID per `(lerngruppe_schuljahr_id, lehrkraft_id)` aus der erweiterten Lerngruppen-View auflösen; `kurs_id` und FK unverändert.
 - Separater `mao import-gf` mit zentraler privater `gf.config`/`gf-import.yaml` und explizitem `--apply`.
 - OAuth1-API, Checkboxmeldungen, Pflichtteilnahmen, Teilnehmernummern und FK-ID-Auflösung.
+- GF-Feld 3 direkt als Lehrkraft-ID; Feld 5 als Lerngruppe-Schuljahr-ID mit geprüfter Beziehung zur Kurs-FK-ID.
+- Feste Pflichtklassen 5-1, 5-2, 6-1, 6-2, 7-3; 7-4 nur falls im aktuellen Schuljahr vorhanden; vollständiger Stammdatenabgleich.
 - Nur Import in leere Organisationstabelle; niemals Archivierung oder TRUNCATE.
 
 ### Zentrale Konfigurationsverwaltung und Jahrgänge

@@ -1,5 +1,6 @@
-# Diese Vorlage NUR nach MAO_CONFIG/gf-import.yaml kopieren und privat anpassen.
-# Alle SQL-Objektnamen, Feldzuordnungen und Zugangsdaten verbleiben lokal.
+# Diese Vorlage NUR privat nach MAO_CONFIG/gf-import.yaml kopieren und anpassen.
+# Formular 3 speichert lehrkraft_id; Formular 5 speichert lerngruppe_schuljahr_id.
+# Da kurs_id auf eine ANDERE Tabelle zeigen kann, ist die sichere ID-Abbildung Pflicht.
 form_id: 16
 page_size: 200
 timeout: 60
@@ -8,14 +9,23 @@ fields:
   kurs: "5"
   lehrkraft: "3"
   teilnehmende: "7"
-# Pflichtteilnahme: pro Schuljahr anpassen; [] für keine Pflichtteilnahme.
-mandatory_classes: []
+# Alle vorhandenen Schülerinnen und Schüler der folgenden Klassen werden ergänzt.
+mandatory_classes: ["5-1", "5-2", "6-1", "6-2", "7-3"]
+# 7-4 nur ergänzen, wenn diese Klasse im aktiven Schuljahr existiert.
+optional_mandatory_classes: ["7-4"]
 queries:
-  # Liefert matrikelnummer, vorname, nachname, geschlecht, klasse
-  students: 'SELECT matrikelnummer, vorname, nachname, geschlecht, klasse FROM DEMO_STUDENTS'
-  # Liefert dieselben fünf Spalten und lehrkraft_token; wird nach Klassenmustern gefiltert
-  mandatory: ''  # bei mandatory_classes != [] als SELECT auflösen
-  # Liefert id und token (passend zu GF-Feld 3) – Mehrdeutigkeit wird abgelehnt
-  teachers: 'SELECT id, token FROM DEMO_TEACHERS'
-  # Liefert id und token (passend zu GF-Feld 5, ggf. über passenden JOIN)
-  courses: 'SELECT id, token FROM DEMO_COURSES'
+  # Stammdaten des aktiven Schuljahres; Spaltennamen müssen genau passen.
+  students: 'SELECT matrikelnummer, vorname, nachname, geschlecht, klasse FROM DEMO_CURRENT_STUDENTS'
+  # Aktuelle MATHE-Lerngruppen: genau EINE eindeutige Mathe-Lehrkraft je Klasse.
+  # Liefert klasse (aus klassenname), lehrkraft_id, lerngruppe_schuljahr_id.
+  # Andere Fächer herausfiltern! Mehrdeutige Mathe-Lerngruppen blockieren Import.
+  mandatory: 'SELECT klasse, lehrkraft_id, lerngruppe_schuljahr_id FROM DEMO_CURRENT_MATH_GROUPS'
+  # Feld 3: Lehrkraft-ID bereits numerisch. Nur Existenz anhand id prüfen.
+  teachers: 'SELECT id FROM DEMO_TEACHERS'
+  # Feld 5 liefert lerngruppe_schuljahr_id, Feld 3 liefert lehrkraft_id.
+  # Erforderliche Spalten: lerngruppe_schuljahr_id, lehrkraft_id,
+  # lerngruppen_einsatz_id (aus der ERWEITERTEN aktuellen Lerngruppen-View).
+  # Nur Zeilen mit eindeutigem Einsatz (lerngruppen_einsatz_id IS NOT NULL)
+  # lesen. Pro Kombination muss genau eine eindeutige Einsatz-ID existieren.
+  # orga_table.kurs_id bleibt unveraendert und erhaelt diese Einsatz-ID.
+  courses: 'SELECT lerngruppe_schuljahr_id, lehrkraft_id, lerngruppen_einsatz_id FROM DEMO_CURRENT_GROUP_VIEW'

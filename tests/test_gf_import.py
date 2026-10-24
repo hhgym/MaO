@@ -9,7 +9,7 @@ from mao_cli import cli
 
 @pytest.fixture()
 def opts():
-    return g.ImportSettings(16, 200, 60, ("5-*", "7-3"),
+    return g.ImportSettings(16, 200, 60, ("5-1",), ("7-4",),
                             {"klasse": "1", "kurs": "5", "lehrkraft": "3", "teilnehmende": "7"}, {})
 
 
@@ -18,15 +18,16 @@ def test_entry_checkbox_and_mandatory(opts):
         {"matrikelnummer": 12, "vorname": "Ada", "nachname": "X", "geschlecht": "w", "klasse": "11"},
         {"matrikelnummer": 34, "vorname": "Ben", "nachname": "Y", "geschlecht": "m", "klasse": "5-1"},
     ]
-    entries = [{"1": "11", "3": "Mu", "5": "LK A", "7.1": "12: Ada", "status": "active"},
-               {"1": "5-1", "3": "Mu", "7.1": "34", "status": "spam"}]
-    mandatory = [dict(students[1], lehrkraft_token="Mu")]
-    items, stat = g.build_participants(entries, students, mandatory, {"mu": 7}, {"lk a": 83}, opts)
+    entries = [{"1": "11", "3": "7", "5": "100", "7.1": "12: Ada", "status": "active"},
+               {"1": "5-1", "3": "7", "7.1": "34", "status": "spam"}]
+    mandatory = [{"klasse": "5-1", "lehrkraft_id": 7, "lerngruppe_schuljahr_id": 200}]
+    items, stat = g.build_participants(entries, students, mandatory, {7}, {(100, 7): 83, (200, 7): 84}, opts)
     assert [r["matrikelnummer"] for r in items] == [12, 34]
     assert [r["tnr"] for r in items] == [1, 2]
     assert items[0]["kurs_id"] == 83 and items[0]["lehrkraft_id"] == 7
-    assert items[1]["kurs_id"] is None and items[1]["stufe"] == 5
-    assert stat == {"gf_entries": 1, "inactive_entries": 1, "mandatory_added": 1}
+    assert items[1]["kurs_id"] == 84 and items[1]["stufe"] == 5
+    assert stat == {"gf_entries": 1, "inactive_entries": 1, "mandatory_added": 1,
+                    "mandatory_classes_present": 1, "optional_classes_present": 0}
 
 
 def test_duplicate_matrikel_fails(opts):
@@ -38,15 +39,75 @@ def test_duplicate_matrikel_fails(opts):
 
 def test_unknown_student_fails(opts):
     with pytest.raises(g.ImportErrorGF, match="nicht im Schülerverzeichnis"):
-        g.build_participants([{"1": "11", "7.1": "42"}], [], [], {}, {}, opts)
+        g.build_participants([{"1": "11", "7.1": "42"}], [], [], set(), {}, opts)
 
 
-def test_ambiguous_mapping_and_unresolved_text(opts):
+def test_course_ids_are_not_assumed_identical(opts):
+    assert g._course_links([{"lerngruppe_schuljahr_id": 124, "lehrkraft_id": 7, "lerngruppen_einsatz_id": 920}]) == {(124, 7): 920}
     with pytest.raises(g.ImportErrorGF, match="Mehrdeutige"):
-        g._mapping([{"id": 1, "token": "LK A"}, {"id": 2, "token": "lk a"}], "Kurse")
-    students = [{"matrikelnummer": 12, "vorname": "Ada", "nachname": "X", "geschlecht": "w", "klasse": "11"}]
-    with pytest.raises(g.ImportErrorGF, match="Keine eindeutige"):
-        g.build_participants([{"1": "11", "3": "unknown", "7.1": "12"}], students, [], {}, {}, opts)
+        g._course_links([{"lerngruppe_schuljahr_id": 124, "lehrkraft_id": 7, "lerngruppen_einsatz_id": 920},
+                         {"lerngruppe_schuljahr_id": 124, "lehrkraft_id": 7, "lerngruppen_einsatz_id": 921}])
+    with pytest.raises(g.ImportErrorGF, match="Kein eindeutiger Einsatz"):
+        g._resolve_course("124", 7, {(200, 7): 920})
+
+
+def test_same_group_different_teachers_have_distinct_einsatz_ids(opts):
+    links = g._course_links([
+        {"lerngruppe_schuljahr_id": 100, "lehrkraft_id": 7, "lerngruppen_einsatz_id": 900},
+        {"lerngruppe_schuljahr_id": 100, "lehrkraft_id": 8, "lerngruppen_einsatz_id": 901},
+    ])
+    assert g._resolve_course("100", 7, links) == 900
+    assert g._resolve_course("100", 8, links) == 901
+    with pytest.raises(g.ImportErrorGF, match="Kein eindeutiger Einsatz"):
+        g._resolve_course("100", 9, links)
+    with pytest.raises(g.ImportErrorGF, match="fehlt die Lehrkraft-ID"):
+        g._resolve_course("100", None, links)
+
+
+def test_numeric_teacher_id_validation():
+    assert g._resolve_teacher("7", {7}, "Lehrkraft") == 7
+    with pytest.raises(g.ImportErrorGF, match="existiert nicht"):
+        g._resolve_teacher("9", {7}, "Lehrkraft")
+    with pytest.raises(g.ImportErrorGF, match="positive numerische ID"):
+        g._resolve_teacher("MU", {7}, "Lehrkraft")
+    assert g._resolve_teacher("  ", {7}, "Lehrkraft") is None
+
+
+def test_mandatory_groups_and_optional_7_4(opts):
+    students = [
+        {"matrikelnummer": 1, "vorname": "A", "nachname": "A", "geschlecht": "w", "klasse": "5-1"},
+        {"matrikelnummer": 2, "vorname": "B", "nachname": "B", "geschlecht": "m", "klasse": "5-1"},
+        {"matrikelnummer": 3, "vorname": "C", "nachname": "C", "geschlecht": "w", "klasse": "7-4"},
+    ]
+    groups = [{"klasse": "5-1", "lehrkraft_id": 7, "lerngruppe_schuljahr_id": 100}]
+    rows, stats = g.build_participants([{"1": "5-1", "3": "7", "7.1": "1"}], students[:2],
+                                      groups, {7}, {(100, 7): 900}, opts)
+    assert {r["matrikelnummer"] for r in rows} == {1, 2}
+    assert stats["mandatory_added"] == 1 and stats["optional_classes_present"] == 0
+    with pytest.raises(g.ImportErrorGF, match="Optionale Klasse vorhanden"):
+        g.build_participants([], students, groups, {7}, {(100, 7): 900}, opts)
+    groups.append({"klasse": "7-4", "lehrkraft_id": 11, "lerngruppe_schuljahr_id": 200})
+    rows, stats = g.build_participants([], students, groups, {7, 11}, {(100, 7): 900, (200, 11): 901}, opts)
+    assert {r["matrikelnummer"] for r in rows} == {1, 2, 3}
+    assert stats["mandatory_added"] == 3 and stats["optional_classes_present"] == 1
+    assert {row["kurs_id"] for row in rows} == {900, 901}
+
+
+def test_mandatory_required_missing_and_ambiguous_teacher(opts):
+    students = [{"matrikelnummer": 12, "vorname": "Ada", "nachname": "X", "geschlecht": "w", "klasse": "5-1"}]
+    with pytest.raises(g.ImportErrorGF, match="Erforderliche Pflichtklasse"):
+        g.build_participants([], students, [], {7}, {}, opts)
+    with pytest.raises(g.ImportErrorGF, match="Mehrdeutige Mathe-Lerngruppe/Lehrkraft"):
+        g.build_participants([], students, [{"klasse": "5-1", "lehrkraft_id": 7, "lerngruppe_schuljahr_id": 100},
+                                           {"klasse": "5-1", "lehrkraft_id": 8, "lerngruppe_schuljahr_id": 100}], {7, 8}, {(100, 7): 900, (100, 8): 901}, opts)
+
+
+def test_course_id_mapped_for_non_oberstufe(opts):
+    students = [{"matrikelnummer": 12, "vorname": "Ada", "nachname": "X", "geschlecht": "w", "klasse": "5-1"}]
+    entries = [{"1": "5-1", "3": "7", "5": "100", "7.1": "12"}]
+    result, _ = g.build_participants(entries, students,
+                                      [{"klasse": "5-1", "lehrkraft_id": 7, "lerngruppe_schuljahr_id": 100}], {7}, {(100, 7): 900}, opts)
+    assert result[0]["kurs_id"] == 900
 
 
 def test_credential_validation(tmp_path):
