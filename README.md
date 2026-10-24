@@ -115,8 +115,8 @@ keine Tabellen und übernimmt noch keine Raumzuteilung.
 `mao config init` erzeugt zwei **leere bzw. neutrale Vorlagen** im zentralen
 Konfigurationsverzeichnis. Diese privat kopieren und vervollständigen:
 
-- `gf.config.example` → `gf.config`: `[oauth1]` mit `api_base`, `consumer_key`, `consumer_secret`.
-- `gf-import.yaml.example` → `gf-import.yaml`: Formular-ID (ursprünglich 16),
+- `gf.config` (durch `mao config init` direkt angelegt): `[oauth1]` mit `api_base`, `consumer_key`, `consumer_secret`.
+- `gf-import.yaml` (durch `mao config init` direkt angelegt): Formular-ID (ursprünglich 16),
   Gravity-Forms-Feldnummern, aktuelle Pflichtklassen und **private SQL-SELECT-Abfragen**.
   Die SELECT-Abfragen müssen die festgelegten Alias-Spalten zurückgeben.
 
@@ -167,3 +167,5 @@ vorhandener Datenbanksicherung stattfinden.
 ### Öffentliche Develop-Updates
 
 `mao update check --channel develop` und `mao update install --channel develop --yes` verwenden öffentliche GitHub-Release-Dateien und benötigen weder Token noch Git-Checkout. Nach erfolgreichen Develop-CI-Builds veröffentlicht der Workflow commitgebundene Wheels samt SHA-256 im [Develop-Release](https://github.com/hhgym/MaO/releases/tag/develop-build). Für ältere CLI-Installationen ist einmalig ein neues Wheel erforderlich.
+
+Die SQL-Abfragen in `gf-import.yaml` verwenden `{{table.teachers_table}}`, `{{table.students_view}}` und `{{table.current_groups_view}}` aus der zentralen `tables.ini`. Eine separate Mathematikfilterung ist derzeit nicht erforderlich, da nur Mathematik-Lerngruppen verwaltet werden.

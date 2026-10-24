@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import configparser
 import re
 import shutil
 import tempfile
@@ -137,21 +138,61 @@ def init_config(config_dir: Path, defaults_dir: Path) -> list[Path]:
             created.append(dest)
     if not (config_dir / SETTINGS).exists():
         created.append(save_settings(config_dir, _default_settings()))
-    gf_example = config_dir / "gf.config.example"
-    if not gf_example.exists():
-        gf_example.write_text("# In gf.config kopieren; niemals in Git veröffentlichen.\n"
-                              "[oauth1]\napi_base=https://example.org/wp-json/gf/v2\n"
-                              "consumer_key=\nconsumer_secret=\n", encoding="utf-8")
-        created.append(gf_example)
-    mapping_example = config_dir / "gf-import.yaml.example"
-    if not mapping_example.exists():
-        shutil.copyfile(defaults_dir / "gf-import.yaml.example", mapping_example)
-        created.append(mapping_example)
-    example = config_dir / "db.config.example"
-    if not example.exists():
-        example.write_text("# Lokal in db.config kopieren und anpassen (niemals ins Git-Repository)\n"
-                           "host=localhost\nport=3306\nuser=\npassword=\ndatabase=\n", encoding="utf-8")
-        created.append(example)
+    # Alte, bereits personalisierte tables.ini um neue Kennungen ergänzen,
+    # ohne bestehende Zuordnungen oder Kommentare umzuschreiben.
+    tables_file = config_dir / "tables.ini"
+    tables_parser = configparser.ConfigParser(interpolation=None)
+    with tables_file.open(encoding="utf-8-sig") as handle:
+        tables_parser.read_file(handle)
+    if not tables_parser.has_section("table"):
+        raise ConfigurationError(f"tables.ini benötigt Abschnitt [table]: {tables_file}")
+    missing = {
+        "students_view": "DEMO_CURRENT_STUDENTS",
+        "current_groups_view": "DEMO_CURRENT_GROUP_VIEW",
+    }
+    missing = {key: value for key, value in missing.items() if not tables_parser.has_option("table", key)}
+    if missing:
+        content = tables_file.read_text(encoding="utf-8-sig")
+        lines = content.splitlines(keepends=True)
+        section_index = next(i for i, line in enumerate(lines)
+                             if line.strip().lower() == "[table]")
+        insert_at = next((i for i in range(section_index + 1, len(lines))
+                          if lines[i].lstrip().startswith("[")), len(lines))
+        addition = "\n# Ergänzte GF-Importdatenquellen (reale Namen privat anpassen)\n" + "".join(
+            f"{key} = {value}\n" for key, value in missing.items())
+        if insert_at > 0 and not lines[insert_at - 1].endswith(("\n", "\r")):
+            addition = "\n" + addition
+        lines.insert(insert_at, addition)
+        tables_file.write_text("".join(lines), encoding="utf-8")
+    # Die kopierbaren Vorlagen dienen nur als paketinterne Quellen. Im privaten
+    # Konfigurationsordner werden sofort die benutzbaren Dateinamen angelegt.
+    # Bestehende Dateien niemals überschreiben oder löschen.
+    private_defaults = {
+        "db.config": ("# Private MySQL-Zugangsdaten; niemals in Git veröffentlichen.\n"
+                      "host=localhost\nport=3306\nuser=\npassword=\ndatabase=\n"),
+        "gf.config": ("# Private Gravity-Forms-Zugangsdaten; niemals in Git veröffentlichen.\n"
+                      "[oauth1]\napi_base=https://example.org/wp-json/gf/v2\n"
+                      "consumer_key=\nconsumer_secret=\n"),
+    }
+    for filename, default_content in private_defaults.items():
+        destination = config_dir / filename
+        if not destination.exists():
+            old_example = config_dir / (filename + ".example")
+            if old_example.is_file():
+                shutil.copyfile(old_example, destination)
+            else:
+                destination.write_text(default_content, encoding="utf-8")
+            created.append(destination)
+    gf_import = config_dir / "gf-import.yaml"
+    if not gf_import.exists():
+        old_example = config_dir / "gf-import.yaml.example"
+        # Unveränderte alte DEMO-Vorlagen durch die neue Platzhalter-Vorlage
+        # ersetzen; bereits individuell angepasste Vorlagen aber übernehmen.
+        template = defaults_dir / "gf-import.yaml.example"
+        if old_example.is_file() and "DEMO_" not in old_example.read_text(encoding="utf-8"):
+            template = old_example
+        shutil.copyfile(template, gf_import)
+        created.append(gf_import)
     return created
 
 

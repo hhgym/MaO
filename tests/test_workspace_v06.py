@@ -25,8 +25,10 @@ def test_init_is_idempotent_and_does_not_create_secrets(tmp_path):
     created = init_config(config, cli.DEFAULTS)
     assert len(created) == 7
     assert init_config(config, cli.DEFAULTS) == []
-    assert not (config/'db.config').exists()
-    assert (config/'db.config.example').exists()
+    assert (config/'db.config').exists()
+    assert (config/'gf.config').exists()
+    assert (config/'gf-import.yaml').exists()
+    assert not any(config.glob('*.example'))
     assert load_settings(config)['workspaces'] == {}
 
 

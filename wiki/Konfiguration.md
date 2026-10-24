@@ -8,7 +8,7 @@ $env:MAO_CONFIG = "D:/MaO/Config"
 mao config show
 ```
 
-`config init` erzeugt `settings.yaml`, `pipeline.yaml`, `profiles.ini`, `tables.ini` und `db.config.example`, sofern sie noch nicht vorhanden sind. Bestehende Dateien werden nicht überschrieben. `db.config` mit echten Zugangsdaten muss man selbst anlegen.
+`config init` erzeugt direkt `settings.yaml`, `pipeline.yaml`, `profiles.ini`, `tables.ini`, `db.config`, `gf.config` und `gf-import.yaml` (ohne `.example`). Zugangsdaten bleiben zunächst leer und müssen privat ergänzt werden. Bestehende Dateien werden nicht überschrieben; frühere `.example`-Dateien bleiben erhalten. Die Inhalte individuell angepasster Vorlagen werden in fehlende Zieldateien übernommen; veraltete GF-Demo-Queries werden durch die neue Standardvorlage ersetzt. Fehlende Schlüssel `students_view` und `current_groups_view` werden in einer bestehenden `tables.ini` ergänzt, ohne vorhandene Werte zu ändern.
 
 | Datei | Aufgabe |
 |---|---|
@@ -56,9 +56,7 @@ Programmdateien und ausgelieferte `DEMO_`-Defaults werden mit MaO aktualisiert; 
 
 ## Gravity Forms (private zentrale Konfiguration)
 
-Mit `mao config init` werden zusätzlich `gf.config.example` und
-`gf-import.yaml.example` angelegt. Beide Vorlagen in derselben zentralen
-Konfiguration als `gf.config` und `gf-import.yaml` kopieren und privat anpassen.
+Mit `mao config init` werden `gf.config` und `gf-import.yaml` direkt angelegt. Es ist kein Umbenennen erforderlich. Beide Dateien werden nur im privaten Konfigurationsordner gepflegt.
 Im Repository existieren weder Zugangsdaten noch produktive GF-Importabfragen.
 
 `gf.config` hat das bestehende Format:
@@ -73,10 +71,10 @@ consumer_secret=HIER_EINTRAGEN
 `gf-import.yaml` legt `form_id`, `fields`, `mandatory_classes`,
 `optional_mandatory_classes` und vier lokale SQL-SELECT-Abfragen fest:
 
-- `queries.students`: Schülerstammdaten mit `matrikelnummer`, `vorname`, `nachname`, `geschlecht`, `klasse` des aktuellen Schuljahres.
-- `queries.mandatory`: aktuelle **Mathematik-Lerngruppen** mit `klasse` (Alias für `klassenname`), `lehrkraft_id` und `lerngruppe_schuljahr_id`. Die View enthält auch andere Lerngruppen; die SELECT-Abfrage muss auf Mathematik eingeschränkt werden. Pro Pflichtklasse genau eine eindeutige Lehrkraft.
-- `queries.teachers`: gültige `id`-Werte der Lehrkräfte; Formularfeld `3` enthält bereits diese ID und wird nur geprüft.
-- `queries.courses`: die Spalten `lerngruppe_schuljahr_id`, `lehrkraft_id`, `lerngruppen_einsatz_id` aus der erweiterten Lerngruppen-View. Das Paar aus den GF-Feldern `5` und `3` muss genau einen Einsatz ergeben.
+- `queries.students`: `{{table.students_view}}` aus `tables.ini`, Schülerstammdaten mit `matrikelnummer`, `vorname`, `nachname`, `geschlecht`, `klasse` des aktuellen Schuljahres.
+- `queries.mandatory`: `{{table.current_groups_view}}` aus `tables.ini`, aktuelle Lerngruppen (derzeit ausschließlich Mathematik) mit `klasse` (Alias für `klassenname`), `lehrkraft_id` und `lerngruppe_schuljahr_id`. Ein Fachfilter ist gegenwärtig nicht notwendig. Bei Einführung weiterer Fächer kann über `orga_lerngruppen_einsatz.fach_id = 1` auf Mathematik eingeschränkt werden. Pro Pflichtklasse genau eine eindeutige Lehrkraft.
+- `queries.teachers`: `{{table.teachers_table}}` aus `tables.ini`, gültige `id`-Werte der Lehrkräfte; Formularfeld `3` enthält bereits diese ID und wird nur geprüft.
+- `queries.courses`: `{{table.current_groups_view}}` aus `tables.ini`, die Spalten `lerngruppe_schuljahr_id`, `lehrkraft_id`, `lerngruppen_einsatz_id` aus der erweiterten Lerngruppen-View. Das Paar aus den GF-Feldern `5` und `3` muss genau einen Einsatz ergeben.
 
 **Achtung: unterschiedliche IDs.** Gravity Forms liefert in Feld `5` die
 `lerngruppe_schuljahr_id` und in Feld `3` die `lehrkraft_id`. Die bereits
