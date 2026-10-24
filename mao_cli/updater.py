@@ -313,6 +313,9 @@ def _packaged_source_matches(wheel: Path) -> bool:
         return (path.suffix in (".py", ".yaml", ".ini", ".example")
                 and "__pycache__" not in path.parts)
     def normalized(relative: str, data: bytes) -> bytes:
+        # Unter Windows können bearbeitete Quell-ZIPs CRLF-Zeilenenden haben,
+        # die CI-Wheels dagegen LF. Das ist keine Programmänderung.
+        data = data.replace(b"\r\n", b"\n")
         if relative == "__init__.py":
             return re.sub(rb'(?m)^__version__ = ["\'][^"\']+["\']\s*$',
                           b'__version__ = "<VERSION>"', data)

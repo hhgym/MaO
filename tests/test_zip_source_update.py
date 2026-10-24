@@ -39,6 +39,15 @@ def test_branch_zip_and_ci_wheel_identical_despite_commit_stamp(monkeypatch, tmp
     assert u._packaged_source_matches(wheel)
 
 
+def test_crlf_line_endings_are_not_treated_as_different_code(monkeypatch, tmp_path):
+    pkg, wheel = _wheel(tmp_path)
+    for candidate in pkg.rglob("*"):
+        if candidate.is_file():
+            candidate.write_bytes(candidate.read_bytes().replace(b"\n", b"\r\n"))
+    monkeypatch.setattr(u, "__file__", str(pkg / "updater.py"))
+    assert u._packaged_source_matches(wheel)
+
+
 def test_branch_zip_differs_in_one_module(monkeypatch, tmp_path):
     pkg, wheel = _wheel(tmp_path, changed=True)
     monkeypatch.setattr(u, "__file__", str(pkg / "updater.py"))
