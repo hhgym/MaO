@@ -1,4 +1,4 @@
-"""Authentifizierte GitHub-Updates, getrennte Stable/RC- und Develop-Kanäle.
+"""Authentifizierte GitHub-Updates für Stable, RC und Develop ohne Git-Checkout.
 
 Release-Updates verwenden versionierte virtuelle Umgebungen mit atomarem
 Umschalten und Rollback. Die installierte Python-Umgebung wird nicht überschrieben.
@@ -6,12 +6,14 @@ Umschalten und Rollback. Die installierte Python-Umgebung wird nicht überschrie
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import re
 import sys
 import subprocess
 import tempfile
+import zipfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -27,6 +29,7 @@ from .update_install import InstallError, home_path, install_managed, managed_st
 API = "https://api.github.com"
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 HEX_RE = re.compile(r"^[0-9a-f]{64}$")
+COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 class UpdateError(RuntimeError):
@@ -40,6 +43,15 @@ class Release:
     wheel_url: str
     checksum_url: str
     wheel_name: str
+
+
+@dataclass(frozen=True)
+class DevelopBuild:
+    repository: str
+    commit: str
+    run_id: int
+    artifact_id: int
+
 
 
 def _repo(value: str | None) -> str:
@@ -80,7 +92,8 @@ class _RestrictedRedirect(urllib.request.HTTPRedirectHandler):
         dst = urllib.parse.urlsplit(newurl)
         host = (dst.hostname or "").lower()
         if dst.scheme != "https" or (host not in {"github.com", "api.github.com"} and
-                                  not host.endswith(".githubusercontent.com")):
+                                  not host.endswith(".githubusercontent.com") and
+                                  not host.endswith(".blob.core.windows.net")):
             raise UpdateError("Unsicheres GitHub-Redirectziel")
         next_req = super().redirect_request(req, fp, code, msg, headers, newurl)
         if next_req is None:
@@ -205,90 +218,107 @@ def stage_release(release: Release, directory: Path) -> Path:
     return path
 
 
-def _git(*arguments: str, cwd: Path) -> str:
-    try:
-        p = subprocess.run(["git", *arguments], cwd=cwd, capture_output=True, text=True, timeout=60)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise UpdateError(f"Git nicht verfügbar: {type(exc).__name__}") from exc
-    if p.returncode:
-        raise UpdateError(f"Git-Aufruf fehlgeschlagen ({arguments[0]}, Exitcode {p.returncode})")
-    return p.stdout.strip()
-
-
-def git_checkout_root(path: Path | None = None) -> Path:
-    source = path or Path(__file__).resolve().parents[1]
-    root = _git("rev-parse", "--show-toplevel", cwd=source)
-    dest = Path(root).resolve()
-    if dest != source.resolve():
-        raise UpdateError("Develop-Updates nur aus dem Projektstamm eines Git-Checkouts")
-    return dest
-
-
-def _repository_from_origin(root: Path) -> str:
-    remote = _git("remote", "get-url", "origin", cwd=root)
-    match = re.fullmatch(r"(?:https://github\.com/|git@github\.com:)([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?", remote)
-    if not match:
-        raise UpdateError("Develop setzt GitHub-origin voraus")
-    return _repo(match.group(1))
-
-
-def _ci_success(repository: str, sha: str) -> bool:
-    runs = _github_json(f"/repos/{repository}/actions/workflows/ci.yml/runs?branch=develop&head_sha={sha}&per_page=25")
+def find_develop(repository: str | None) -> DevelopBuild:
+    """Der HEAD von develop muss exakt einen erfolgreich gebauten, gültigen CI-Artefakt haben."""
+    repo = _repo(repository)
+    branch = _github_json(f"/repos/{repo}/branches/develop")
+    if not isinstance(branch, dict) or not isinstance(branch.get("commit"), dict):
+        raise UpdateError("GitHub lieferte keinen gültigen develop-Branch")
+    sha = branch["commit"].get("sha", "")
+    if not isinstance(sha, str) or not COMMIT_RE.fullmatch(sha):
+        raise UpdateError("Ungültige develop-Commit-ID")
+    runs = _github_json(f"/repos/{repo}/actions/workflows/ci.yml/runs?branch=develop&head_sha={sha}&event=push&per_page=25")
     if not isinstance(runs, dict) or not isinstance(runs.get("workflow_runs"), list):
         raise UpdateError("GitHub-CI-Status konnte nicht ermittelt werden")
-    return any(r.get("head_sha") == sha and r.get("conclusion") == "success" for r in runs["workflow_runs"])
+    candidates = [r for r in runs["workflow_runs"]
+                  if isinstance(r, dict) and r.get("head_sha") == sha and
+                  r.get("event") == "push" and r.get("conclusion") == "success" and
+                  isinstance(r.get("id"), int)]
+    if not candidates:
+        raise UpdateError(f"Develop-Commit {sha[:12]} ist noch nicht erfolgreich gebaut (GitHub Actions)")
+    run_id = max(r["id"] for r in candidates)
+    artifacts = _github_json(f"/repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100")
+    if not isinstance(artifacts, dict) or not isinstance(artifacts.get("artifacts"), list):
+        raise UpdateError("GitHub-Artefaktliste konnte nicht gelesen werden (Actions: read erforderlich)")
+    matches = [a for a in artifacts["artifacts"]
+               if isinstance(a, dict) and a.get("name") == f"mao-develop-{sha}" and
+               a.get("expired") is False and isinstance(a.get("id"), int)]
+    if len(matches) != 1:
+        raise UpdateError(f"Kein gültiges Build-Artefakt für Develop {sha[:12]}; CI noch nicht abgeschlossen oder Artefakt abgelaufen")
+    return DevelopBuild(repo, sha, run_id, matches[0]["id"])
 
 
-def develop_status(root: Path, *, fetch: bool = True) -> tuple[str, str]:
-    if _git("branch", "--show-current", cwd=root) != "develop":
-        raise UpdateError("Develop-Update nur auf Branch develop möglich")
-    if _git("status", "--porcelain", cwd=root):
-        raise UpdateError("Git-Arbeitsverzeichnis nicht sauber; Änderungen committen/stashen")
-    if fetch:
-        _git("fetch", "--no-tags", "origin", "develop", cwd=root)
-    local = _git("rev-parse", "HEAD", cwd=root)
-    remote = _git("rev-parse", "origin/develop", cwd=root)
-    _git("merge-base", "--is-ancestor", local, remote, cwd=root)
-    return local, remote
-
-
-def _update_develop(action: str, repository: str | None, *, yes: bool, root: Path | None):
-    if action == "download":
-        raise UpdateError("Develop nutzt einen Git-Checkout statt Release-Downloads")
-    worktree = root or git_checkout_root()
-    local, remote = develop_status(worktree)
-    if local == remote:
-        return f"Develop ist aktuell ({local[:12]})"
-    actual_repo = _repository_from_origin(worktree)
-    if repository is not None and _repo(repository).lower() != actual_repo.lower():
-        raise UpdateError("Repository und Git-origin stimmen nicht überein")
-    if not _ci_success(actual_repo, remote):
-        raise UpdateError(f"Develop-Commit {remote[:12]} hat keinen erfolgreichen CI-Lauf")
-    if action == "check":
-        return f"Neuer getesteter Develop-Stand: {local[:12]} -> {remote[:12]}"
-    if not yes:
-        raise UpdateError("Installation erfordert --yes")
-    _git("merge", "--ff-only", "origin/develop", cwd=worktree)
-    original_error = None
+def stage_develop(build: DevelopBuild, directory: Path) -> tuple[Path, str]:
+    """Actions-ZIP kontrolliert entpacken, SHA-256 prüfen und Wheel-Version an Commit binden."""
+    repo = build.repository
+    archive_bytes = _download(f"{API}/repos/{repo}/actions/artifacts/{build.artifact_id}/zip")
     try:
-        p = subprocess.run([sys.executable, "-m", "pip", "install", "-e", str(worktree)],
-                           capture_output=True, text=True, timeout=300)
-        if p.returncode:
-            raise UpdateError(f"pip-Installation fehlgeschlagen (Exitcode {p.returncode})")
-    except (OSError, subprocess.TimeoutExpired, UpdateError) as exc:
-        original_error = exc if isinstance(exc, UpdateError) else UpdateError(
-            f"pip fehlgeschlagen ({type(exc).__name__})")
-    if original_error is not None:
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+            items = [i for i in archive.infolist() if not i.is_dir()]
+            if len(items) != 2 or any(i.file_size > 40_000_000 or i.file_size < 1 or
+                                       i.filename != Path(i.filename).name or i.filename.startswith(".")
+                                       for i in items):
+                raise UpdateError("Develop-Artefakt enthält unerwartete Dateien")
+            wheels = [i for i in items if i.filename.endswith(".whl")]
+            if len(wheels) != 1 or {i.filename for i in items} != {wheels[0].filename, wheels[0].filename + ".sha256"}:
+                raise UpdateError("Develop-Artefakt benötigt genau ein Wheel und seine SHA-256-Datei")
+            wheel_name = wheels[0].filename
+            package, version, _build, _tags = parse_wheel_filename(wheel_name)
+            if str(package) != "mao-cli" or version.local != f"g{build.commit[:12]}":
+                raise UpdateError("Develop-Wheel stimmt nicht mit dem GitHub-Commit überein")
+            checksum = archive.read(wheel_name + ".sha256").decode("utf-8").strip()
+            match = re.fullmatch(r"([0-9a-fA-F]{64})(?:\s+\*?([^\s/\\]+))?", checksum)
+            if not match or (match.group(2) and match.group(2) != wheel_name):
+                raise UpdateError("Ungültige Develop-Prüfsumme")
+            content = archive.read(wheel_name)
+            if hashlib.sha256(content).hexdigest() != match.group(1).lower():
+                raise UpdateError("SHA-256-Prüfung fehlgeschlagen; Develop-Wheel wird nicht gespeichert")
+    except (zipfile.BadZipFile, UnicodeDecodeError, ValueError) as exc:
+        raise UpdateError("Ungültiges Develop-Artefakt (ZIP/Version/Prüfsumme)") from exc
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / wheel_name
+    try:
+        with path.open("xb") as handle:
+            handle.write(content)
+    except OSError as exc:
+        raise UpdateError(f"Geprüftes Develop-Wheel kann nicht gespeichert werden: {type(exc).__name__}") from exc
+    return path, str(version)
+
+
+def _installed_version(home: Path | None = None) -> str:
+    from .update_install import read_state
+    state = read_state(home_path(home))
+    return state["active"] or __version__
+
+
+def _update_develop(action: str, repository: str | None, *, yes: bool,
+                    dest: Path | None, home: Path | None) -> str:
+    if action == "install" and not yes:
+        raise UpdateError("Installation erfordert --yes")
+    if action == "download" and dest is None:
+        raise UpdateError("Für Downloads ist --output erforderlich")
+    build = find_develop(repository)
+    try:
+        installed = _installed_version(home)
+    except InstallError as exc:
+        raise UpdateError(str(exc)) from exc
+    if installed.endswith("+g" + build.commit[:12]):
+        return f"Develop ist aktuell (Commit {build.commit[:12]}, MaO {installed})"
+    if action == "check":
+        return (f"Neuer getesteter Develop-Stand verfügbar: Commit {build.commit[:12]} "
+                f"(GitHub Actions {build.run_id}); derzeit MaO {installed}")
+    if action == "download":
+        path, version = stage_develop(build, dest)
+        return f"Geprüftes Develop-Wheel {version} heruntergeladen: {path}"
+    with tempfile.TemporaryDirectory(prefix="mao-develop-") as tmp:
+        path, version = stage_develop(build, Path(tmp))
         try:
-            _git("reset", "--hard", local, cwd=worktree)
-            restore = subprocess.run([sys.executable, "-m", "pip", "install", "-e", str(worktree)],
-                                     capture_output=True, text=True, timeout=300)
-            if restore.returncode:
-                raise UpdateError("Rücksetzen des Quellcodes gelungen, aber pip-Wiederherstellung fehlgeschlagen")
-        except (OSError, subprocess.TimeoutExpired, UpdateError) as rollback_error:
-            raise UpdateError(f"{original_error}; Rollback nicht vollständig: {type(rollback_error).__name__}") from None
-        raise original_error
-    return f"Develop auf {remote[:12]} aktualisiert; Neustart erforderlich"
+            launcher, old = install_managed(path, version, home)
+        except InstallError as exc:
+            raise UpdateError(str(exc)) from exc
+    return (f"Develop {version} (Commit {build.commit[:12]}) installiert. Starter: {launcher}\n"
+            f"Rollback auf: {old or 'keine vorherige verwaltete Version'}\n"
+            "Künftig den angegebenen MaO-Starter verwenden. Neustart erforderlich.")
 
 
 def update_action(action: str, channel: str, repository: str | None, *, yes: bool = False,
@@ -309,7 +339,7 @@ def update_action(action: str, channel: str, repository: str | None, *, yes: boo
     if action not in ("check", "download", "install"):
         raise UpdateError("Ungültige Updateaktion")
     if channel == "develop":
-        return _update_develop(action, repository, yes=yes, root=root)
+        return _update_develop(action, repository, yes=yes, dest=dest, home=home)
     latest = find_release(repository, channel)
     if latest is None:
         raise UpdateError(f"Kein nutzbares Release für Kanal {channel} gefunden")

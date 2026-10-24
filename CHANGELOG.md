@@ -6,6 +6,12 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Updateverwaltung
+- Develop-Kanal nutzt direkt den GitHub-Branch-HEAD und ein erfolgreich getestetes Actions-Artefakt statt `git rev-parse` und Git-Checkout.
+- `mao update check|download|install --channel develop` mit Commit-Versionierung der Wheels, SHA-256-Prüfung und verwalteter Installation samt Rollback.
+- Für private Develop-Artefakte `Actions: read` zusätzlich zu GitHub-Zugriff erforderlich.
+
+
 ### Gravity Forms (Erstbefüllung)
 - Einsatz-ID per `(lerngruppe_schuljahr_id, lehrkraft_id)` aus der erweiterten Lerngruppen-View auflösen; `kurs_id` und FK unverändert.
 - Separater `mao import-gf` mit zentraler privater `gf.config`/`gf-import.yaml` und explizitem `--apply`.

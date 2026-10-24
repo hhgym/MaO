@@ -22,7 +22,7 @@ class InstallError(RuntimeError):
     """Installationsfehler, der die bisherige Installation nicht ersetzen darf."""
 
 
-VERSION_ID = re.compile(r"^[A-Za-z0-9_.-]+$")
+VERSION_ID = re.compile(r"^[A-Za-z0-9_.+-]+$")
 STATE_FILE = "active.json"
 
 
@@ -130,7 +130,7 @@ home = Path(__file__).resolve().parent.parent
 try:
     data = json.loads((home / "active.json").read_text(encoding="utf-8"))
     active = data["active"]
-    if not isinstance(active, str) or not active or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-" for c in active) or active in (".", ".."):
+    if not isinstance(active, str) or not active or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.+-" for c in active) or active in (".", ".."):
         raise ValueError("ungueltige Versionskennung")
     env = home / "versions" / active
     exe = env / ("Scripts/python.exe" if os.name == "nt" else "bin/python")

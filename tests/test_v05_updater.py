@@ -108,17 +108,37 @@ def test_rollback_requires_confirmation(tmp_path):
     assert cli.parse_args(['update','status','--home',str(tmp_path)]).home == tmp_path
 
 
-def test_develop_pip_failure_rolls_back_git(monkeypatch,tmp_path):
-    monkeypatch.setattr(u,'develop_status',lambda path: ('a'*40,'b'*40))
-    monkeypatch.setattr(u,'_repository_from_origin',lambda path:'hhgym/MaO')
-    monkeypatch.setattr(u,'_ci_success',lambda *a:True)
-    cmds=[]
-    monkeypatch.setattr(u,'_git',lambda *args,cwd: cmds.append(args) or '')
-    monkeypatch.setattr(u.subprocess,'run',lambda *a,**kw: SimpleNamespace(returncode=1))
-    with pytest.raises(u.UpdateError,match='pip-Installation'):
-        u.update_action('install','develop',None,yes=True,root=tmp_path)
-    assert ('reset','--hard','a'*40) in cmds
+def test_develop_install_failure_keeps_managed_state(monkeypatch, tmp_path):
+    from mao_cli import update_install as ins
+    build = u.DevelopBuild("hhgym/MaO", "b"*40, 21, 90)
+    monkeypatch.setattr(u, "find_develop", lambda repository: build)
+    monkeypatch.setattr(u, "_installed_version", lambda home: "0.6.0.dev0")
+    def fake_stage(build, directory):
+        wheel = directory / "mao_cli-0.6.0.dev0+gbbbbbbbbbbbb-py3-none-any.whl"
+        wheel.write_bytes(b"dummy")
+        return wheel, "0.6.0.dev0+gbbbbbbbbbbbb"
+    monkeypatch.setattr(u, "stage_develop", fake_stage)
+    monkeypatch.setattr(u, "install_managed", lambda *args: (_ for _ in ()).throw(ins.InstallError("pip kaputt")))
+    with pytest.raises(u.UpdateError, match="pip kaputt"):
+        u.update_action("install", "develop", None, yes=True, home=tmp_path)
+    assert not (tmp_path / "active.json").exists()
 
 
 def test_updated_help():
     assert cli.main(['update','status','--home','/tmp/mao-fake-never-used'])==0
+
+
+def test_managed_install_accepts_develop_local_versions(monkeypatch, tmp_path):
+    wheel=tmp_path/'develop.whl'; wheel.write_bytes(b'a')
+    def mock_install(env, wheel, version):
+        ins.python_in(env).parent.mkdir(parents=True, exist_ok=True)
+        ins.python_in(env).write_bytes(b'fake')
+    monkeypatch.setattr(ins, '_install_wheel', mock_install)
+    home=tmp_path/'maohome'
+    version='0.6.0.dev0+gabcdef123456'
+    launcher, previous = ins.install_managed(wheel, version, home)
+    assert launcher.is_file() and previous is None
+    assert ins.read_state(home)['active'] == version
+    assert "0123456789_.+-" in ins.LAUNCHER
+    with pytest.raises(ins.InstallError, match='Ungültige'):
+        ins.install_managed(wheel, '../bad', home)
