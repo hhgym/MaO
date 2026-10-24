@@ -25,7 +25,8 @@ from .updater import update_action, UpdateError
 from .workspaces import (config_dir_for, load_settings, save_settings, init_config,
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
-from .gf_import import import_participants, ImportErrorGF
+from .gf_import import import_participants, ImportErrorGF, write_import_report
+from .validation import validate_online
 
 DEFAULTS = Path(__file__).resolve().parent / "defaults"
 FILES = ("pipeline.yaml", "profiles.ini", "tables.ini")
@@ -99,8 +100,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     common(latex, profile=True)
     latex.add_argument("--mao", type=int, help="MaO-Nummer für Dokumente (nicht Datenquelle!)")
 
-    validate = commands.add_parser("validate", help="Konfiguration ohne Datenbank prüfen")
+    validate = commands.add_parser("validate", help="Konfiguration prüfen; optional mit Datenbank und Gravity Forms")
     common(validate, profile=True)
+    validate.add_argument("--online", action="store_true", help="Zusätzlich Datenbank, SQL-Quellen und Gravity-Forms-API lesen")
 
     profiles = commands.add_parser("profiles", help="Verfügbare Ausführungsprofile anzeigen")
     common(profiles)
@@ -130,6 +132,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     gf_mode.add_argument("--apply", action="store_true", help="Erstbefüllung der LEEREN Organisationstabelle durchführen")
     gf_mode.add_argument("--dry-run", action="store_true", help="Nur Meldungen und Zuordnungen prüfen (Standard)")
     gf.add_argument("--no-mandatory", action="store_true", help="Pflichtteilnahmen ausnahmsweise nicht ergänzen")
+    gf.add_argument("--report", type=Path, metavar="DATEI.json|DATEI.csv",
+                    help="Prüfbericht im Workspace speichern (ohne vorhandene Datei zu überschreiben)")
 
     init_year = commands.add_parser("init-jahrgang", help="Jahrgangswechsel sicher vorprüfen (read-only)")
     global_overrides(init_year)
@@ -150,6 +154,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         cmd.add_argument("--home", type=Path, help="Verzeichnis für verwaltete Versionen (alternativ MAO_UPDATE_HOME)")
 
     args = parser.parse_args(argv)
+    if args.command == "import-gf" and args.apply and args.report:
+        parser.error("--report ist für den Import-Dry-Run vorgesehen; --apply ohne --report verwenden")
     if getattr(args, "year", None) is not None:
         try:
             check_year(args.year)
@@ -305,18 +311,36 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             db_config = load_db_config(config_dir)
             if not can_reach(db_config.host, db_config.port, timeout=3):
                 raise ConnectionError("Datenbank für GF-Import nicht erreichbar")
-            with DB(db_config) as db:
-                db_mao = current_MaO_number_db(db, tables)
-                if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
-                    raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
-                stats = import_participants(db, config_dir, target, dry_run=not args.apply,
-                                            no_mandatory=args.no_mandatory)
+            report: dict = {"schema_version": 1, "status": "blocked", "mode": "apply" if args.apply else "dry-run",
+                            "issues": [], "classes": [], "summary": {}}
+            try:
+                with DB(db_config) as db:
+                    db_mao = current_MaO_number_db(db, tables)
+                    if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
+                        raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
+                    stats = import_participants(db, config_dir, target, dry_run=not args.apply,
+                                                no_mandatory=args.no_mandatory, report=report)
+            except Exception as exc:
+                if str(exc) not in report["issues"] and not (
+                    report["issues"] and "Einzelheiten im Prüfbericht" in str(exc)
+                ):
+                    report["issues"].append(str(exc))
+                if args.report:
+                    saved = write_import_report(workspace, config_dir, args.report, report)
+                    LOGGER.info("Blockierter GF-Prüfbericht: %s", saved)
+                raise
             LOGGER.info("GF-Import | Formular-Einträge: %s | inaktive Meldungen: %s | "
                         "Pflichtteilnahmen ergänzt: %s | Teilnehmende: %s | Lehrkraft fehlt: %s | "
                         "Kurs fehlt (11/12): %s | geschrieben: %s | Modus: %s",
                         stats["gf_entries"], stats["inactive_entries"], stats["mandatory_added"],
                         stats["participants"], stats["missing_teacher"], stats["missing_course"],
                         stats["inserted"], "APPLY" if args.apply else "DRY-RUN")
+            for item in report["classes"]:
+                LOGGER.info("  Klasse %-5s | GF: %s | Pflicht ergänzt: %s | Gesamt: %s",
+                            item["klasse"], item["gf"], item["mandatory"], item["participants"])
+            if args.report:
+                saved = write_import_report(workspace, config_dir, args.report, report)
+                LOGGER.info("GF-Prüfbericht: %s", saved)
             return 0
         cfg, profiles, config_files, tables = load_pipeline(config_dir, workspace, profile_name if args.command not in ("profiles", "init-jahrgang") else None)
         LOGGER.info("Konfiguration: %s", config_dir)
@@ -348,6 +372,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         profile_name, len(cfg["datasets"]),
                         sum(ex.get("enabled", True) for ex in cfg["exports"]),
                         sum(job.get("enabled", True) for job in cfg["latex"].get("jobs", [])))
+            if args.online:
+                db_config = load_db_config(config_dir)
+                if not can_reach(db_config.host, db_config.port, timeout=3):
+                    raise ConnectionError("Datenbank für Online-Validierung nicht erreichbar")
+                with DB(db_config) as db:
+                    for line in validate_online(db, config_dir, tables, cfg):
+                        LOGGER.info("ONLINE | %s", line)
+                LOGGER.info("Online-Validierung abgeschlossen (nur lesende Abfragen)")
             return 0
         LOGGER.info("Profil: %s", profile_name)
 

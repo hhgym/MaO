@@ -7,6 +7,12 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Validierung und Importberichte
+- `mao validate --online` ergänzt die bestehende Offline-Prüfung um lesende MySQL-Schema-, SQL-Quellen-, ID- und Gravity-Forms-API-Checks; kein weiterer Hauptbefehl.
+- `mao import-gf --dry-run --report <pfad>.json|.csv` erzeugt private Prüfberichte mit Klassen-, Pflichtteilnahme- und Zuordnungsstatistik sowie Abbruchdiagnosen. Ohne `--report` weiterhin keine Berichtsdateien; `--apply` unverändert transaktional und ohne Bericht.
+- Doppelte/unbekannte Matrikelnummern aus GF werden vorab gemeinsam als Fehler ausgewiesen; keine INSERTs bei Konflikten.
+
+
 ### Updateverwaltung
 - ZIP-/Quellinstallationen werden gegen das SHA-256-geprüfte Develop-Wheel inhaltlich abgeglichen; identische Paketdateien werden nicht fälschlich als Update gemeldet.
 - Isolierte Wheel-Selbstprüfung mit `python -I` verhindert über `PYTHONPATH` importierte Quell-ZIPs; verständlichere Diagnose bei fehlgeschlagener Prüfung und eigener Smoke-Test des CI-Wheels.

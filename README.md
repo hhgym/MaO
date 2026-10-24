@@ -80,7 +80,8 @@ Der Jahrgang bestimmt das Arbeitsverzeichnis, **nicht** automatisch den Datenban
 
 ```powershell
 mao --config-dir "D:/MaO/Config" workspace select 2026-27
-mao validate
+mao validate                 # bisherige Offline-Prüfung
+mao validate --online        # zusätzlich MySQL, SQL-Quellen, GF-API
 mao profiles
 mao run --profile vorbereitung --no-latex
 mao plan --profile ergebnisse
@@ -123,9 +124,26 @@ Konfigurationsverzeichnis. Diese privat kopieren und vervollständigen:
 Beispiel:
 
 ```powershell
-mao --config-dir "D:\MaO\Config" import-gf --dry-run
+mao --config-dir "D:\MaO\Config" import-gf --dry-run --report reports/mao-pruefung.json
 mao --config-dir "D:\MaO\Config" import-gf --apply
 ```
+
+Das **Online-Validieren** mit `mao validate --online` prüft die konfigurierte
+MySQL-Verbindung, Spaltenstruktur der Organisationstabelle, Pipeline- und GF-SQL-
+Abfragen, Stammdaten-IDs, eindeutige Lerngruppeneinsätze, Pflichtklassen sowie
+die Erreichbarkeit der GF-API. Nur `--online` verbindet sich extern; die normale
+`validate`-Variante bleibt offline und schnell. Eine nicht leere Zieltabellen-
+struktur wird als nicht importbereit gemeldet, ohne die allgemeine Validierung
+zu blockieren.
+
+Mit `--report PFAD.json` oder `--report PFAD.csv` schreibt der Import-Dry-Run
+im registrierten Workspace einen neuen Prüfbericht. Darin stehen Gesamtzahlen,
+Klassenübersichten, direkt angemeldete und automatisch ergänzte Teilnehmende,
+fehlende Lehrer-/Kurszuordnungen und bei Abbruch Diagnosen wie doppelte oder
+unbekannte Matrikelnummern. Der Bericht überschreibt keine vorhandene Datei.
+Keine persönlichen Namen werden in den regulären Klassensummen veröffentlicht;
+bei Fehlern können Matrikelnummern in der privaten Berichtdatei stehen.
+`--report` ist mit `--apply` bewusst nicht kombinierbar.
 
 Standard ist **Dry-Run**. Schreibmodus erfordert `--apply` und eine **vollständig
 leere** Organisationstabelle. Es gibt kein TRUNCATE, kein blindes UPSERT und
