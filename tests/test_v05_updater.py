@@ -1,4 +1,4 @@
-"""Sicherheits-, Rollback-, Privat-Repo- und plattformübergreifende Update-Tests."""
+"""Sicherheits-, Rollback-, öffentliches Repo- und plattformübergreifende Update-Tests."""
 import hashlib
 import json
 import subprocess
@@ -19,14 +19,14 @@ def test_private_release_asset_ids(monkeypatch):
     monkeypatch.setattr(u, '_github_json', lambda path: data)
     v = u.find_release('hhgym/MaO', 'rc')
     assert v.version == Version('0.5.0rc1')
-    assert v.wheel_url == 'https://api.github.com/repos/hhgym/MaO/releases/assets/300'
+    assert v.wheel_url == 'https://github.com/example'
     assert u.find_release('hhgym/MaO', 'stable') is None
 
 
 def test_token_priority_and_no_leak(monkeypatch):
     monkeypatch.setenv('GITHUB_TOKEN', 'secret-a')
     monkeypatch.setenv('MAO_GITHUB_TOKEN', 'secret-b')
-    assert u._headers()['Authorization'] == 'Bearer secret-b'
+    assert 'Authorization' not in u._headers()  # ungültige Tokens dürfen öffentliche Abrufe nicht stören
     req = u.urllib.request.Request('https://api.github.com/repos/hhgym/MaO/releases/assets/4',
                                    headers=u._headers(binary=True))
     handler = u._RestrictedRedirect()
@@ -110,7 +110,7 @@ def test_rollback_requires_confirmation(tmp_path):
 
 def test_develop_install_failure_keeps_managed_state(monkeypatch, tmp_path):
     from mao_cli import update_install as ins
-    build = u.DevelopBuild("hhgym/MaO", "b"*40, 21, 90)
+    build = u.DevelopBuild("hhgym/MaO", "b"*40, 21, "dummy.whl", "https://github.com/x.whl", "https://github.com/x.sha256")
     monkeypatch.setattr(u, "find_develop", lambda repository: build)
     monkeypatch.setattr(u, "_installed_version", lambda home: "0.6.0.dev0")
     def fake_stage(build, directory):

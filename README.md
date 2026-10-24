@@ -162,3 +162,8 @@ von GitHub. Die tatsächliche Auswahl der Mathematik-Lerngruppen hängt von
 der lokalen View-Definition ab und ist vor dem ersten Datenbanklauf zu prüfen.
 Die erste produktive Ausführung sollte zunächst als Dry-Run und mit
 vorhandener Datenbanksicherung stattfinden.
+
+
+### Öffentliche Develop-Updates
+
+`mao update check --channel develop` und `mao update install --channel develop --yes` verwenden öffentliche GitHub-Release-Dateien und benötigen weder Token noch Git-Checkout. Nach erfolgreichen Develop-CI-Builds veröffentlicht der Workflow commitgebundene Wheels samt SHA-256 im [Develop-Release](https://github.com/hhgym/MaO/releases/tag/develop-build). Für ältere CLI-Installationen ist einmalig ein neues Wheel erforderlich.

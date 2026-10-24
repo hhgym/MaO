@@ -1,4 +1,4 @@
-"""Authentifizierte GitHub-Updates für Stable, RC und Develop ohne Git-Checkout.
+"""Öffentliche GitHub-Updates für Stable, RC und Develop ohne Git-Checkout.
 
 Release-Updates verwenden versionierte virtuelle Umgebungen mit atomarem
 Umschalten und Rollback. Die installierte Python-Umgebung wird nicht überschrieben.
@@ -6,14 +6,11 @@ Umschalten und Rollback. Die installierte Python-Umgebung wird nicht überschrie
 from __future__ import annotations
 
 import hashlib
-import io
+import subprocess
 import json
 import os
 import re
-import sys
-import subprocess
 import tempfile
-import zipfile
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -50,7 +47,9 @@ class DevelopBuild:
     repository: str
     commit: str
     run_id: int
-    artifact_id: int
+    wheel_name: str
+    wheel_url: str
+    checksum_url: str
 
 
 
@@ -61,27 +60,15 @@ def _repo(value: str | None) -> str:
     return result
 
 
-def _token() -> str | None:
-    for key in ("MAO_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"):
-        if value := os.environ.get(key):
-            return value.strip()
-    # Bestehende GitHub-CLI-Anmeldung ohne manuelle Speicherung eines weiteren Tokens nutzen.
-    try:
-        p = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True, timeout=8)
-        if p.returncode == 0 and p.stdout.strip():
-            return p.stdout.strip()
-    except (OSError, subprocess.TimeoutExpired):
-        pass
-    return None
-
-
 def _headers(*, binary: bool = False) -> dict[str, str]:
-    headers = {"Accept": "application/octet-stream" if binary else "application/vnd.github+json",
-               "User-Agent": "MaO-updater/0.5", "X-GitHub-Api-Version": "2022-11-28"}
-    token = _token()
-    if token:
-        headers["Authorization"] = "Bearer " + token
-    return headers
+    """Öffentliche Releases und GitHub-Metadaten ausschließlich anonym abfragen.
+
+    Sogar ein abgelaufenes GH_TOKEN darf öffentliches Update-Checking nicht
+    durch einen HTTP 401 unbrauchbar machen. Es werden keine Tokens aus
+    Umgebungsvariablen oder einer gh-Installation mitgeschickt.
+    """
+    return {"Accept": "application/octet-stream" if binary else "application/vnd.github+json",
+            "User-Agent": "MaO-updater/0.6-public", "X-GitHub-Api-Version": "2022-11-28"}
 
 
 class _RestrictedRedirect(urllib.request.HTTPRedirectHandler):
@@ -117,7 +104,7 @@ def _request(url: str, *, binary: bool = False, limit: int = 40_000_000) -> byte
             data = res.read(limit + 1)
     except urllib.error.HTTPError as exc:
         if exc.code in (401, 403, 404):
-            raise UpdateError(f"GitHub antwortet mit HTTP {exc.code}; bei privaten Repos Anmeldung über gh auth login oder MAO_GITHUB_TOKEN prüfen") from None
+            raise UpdateError(f"GitHub antwortet mit HTTP {exc.code}; öffentliche GitHub-API/Release-Datei und Zugriff prüfen") from None
         raise UpdateError(f"GitHub-Anfrage fehlgeschlagen (HTTP {exc.code})") from None
     except (urllib.error.URLError, OSError, TimeoutError) as exc:
         raise UpdateError(f"GitHub-Verbindung fehlgeschlagen ({type(exc).__name__})") from None
@@ -184,12 +171,11 @@ def find_release(repository: str | None, channel: str) -> Release | None:
             chk = name + ".sha256"
             if chk not in assets:
                 continue
-            def asset_url(a):
-                # Authentifizierbarer GitHub-API-Endpunkt anstelle browser_download_url.
-                if isinstance(a.get("id"), int):
-                    return f"{API}/repos/{repo}/releases/assets/{a['id']}"
-                return a.get("browser_download_url")
-            wheel_url, chk_url = asset_url(asset), asset_url(assets[chk])
+            # Bei öffentlichen Repositories browser_download_url nutzen. Der
+            # Assets-API-Endpunkt kann eine Authentifizierung verlangen.
+            wheel_url = asset.get("browser_download_url")
+            chk_url = assets[chk].get("browser_download_url")
+
             if wheel_url and chk_url:
                 options.append(Release(v, tag, wheel_url, chk_url, name))
     return max(options, key=lambda r: r.version) if options else None
@@ -218,8 +204,22 @@ def stage_release(release: Release, directory: Path) -> Path:
     return path
 
 
+def _public_asset_url(value: object, repository: str, name: str) -> str:
+    """Nur öffentliche Downloadadressen des eigenen Develop-Releases erlauben."""
+    if not isinstance(value, str):
+        raise UpdateError("Öffentliche Release-Datei besitzt keine Downloadadresse")
+    parsed = urllib.parse.urlsplit(value)
+    prefix = f"/{repository}/releases/download/develop-build/"
+    if (parsed.scheme != "https" or parsed.hostname != "github.com" or
+            parsed.username or parsed.password or parsed.query or parsed.fragment or
+            not parsed.path.startswith(prefix) or
+            urllib.parse.unquote(parsed.path[len(prefix):]) != name):
+        raise UpdateError("Ungültige öffentliche GitHub-Downloadadresse")
+    return value
+
+
 def find_develop(repository: str | None) -> DevelopBuild:
-    """Der HEAD von develop muss exakt einen erfolgreich gebauten, gültigen CI-Artefakt haben."""
+    """Entwicklungsstand: erfolgreicher CI-HEAD und öffentliches, SHA-gebundenes Release."""
     repo = _repo(repository)
     branch = _github_json(f"/repos/{repo}/branches/develop")
     if not isinstance(branch, dict) or not isinstance(branch.get("commit"), dict):
@@ -237,49 +237,61 @@ def find_develop(repository: str | None) -> DevelopBuild:
     if not candidates:
         raise UpdateError(f"Develop-Commit {sha[:12]} ist noch nicht erfolgreich gebaut (GitHub Actions)")
     run_id = max(r["id"] for r in candidates)
-    artifacts = _github_json(f"/repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100")
-    if not isinstance(artifacts, dict) or not isinstance(artifacts.get("artifacts"), list):
-        raise UpdateError("GitHub-Artefaktliste konnte nicht gelesen werden (Actions: read erforderlich)")
-    matches = [a for a in artifacts["artifacts"]
-               if isinstance(a, dict) and a.get("name") == f"mao-develop-{sha}" and
-               a.get("expired") is False and isinstance(a.get("id"), int)]
-    if len(matches) != 1:
-        raise UpdateError(f"Kein gültiges Build-Artefakt für Develop {sha[:12]}; CI noch nicht abgeschlossen oder Artefakt abgelaufen")
-    return DevelopBuild(repo, sha, run_id, matches[0]["id"])
+    try:
+        release = _github_json(f"/repos/{repo}/releases/tags/develop-build")
+    except UpdateError as exc:
+        raise UpdateError("Öffentliches Develop-Release fehlt; Build-Veröffentlichung kontrollieren") from exc
+    assets = release.get("assets") if isinstance(release, dict) else None
+    if not isinstance(assets, list):
+        raise UpdateError("Ungültige Liste öffentlicher Develop-Release-Dateien")
+    matching = []
+    for item in assets:
+        if not isinstance(item, dict):
+            continue
+        name = item.get("name")
+        if not isinstance(name, str) or not name.endswith(".whl"):
+            continue
+        try:
+            package, version, _, _ = parse_wheel_filename(name)
+        except (ValueError, TypeError):
+            continue
+        if str(package) == "mao-cli" and version.local == "g" + sha[:12]:
+            matching.append(item)
+    if len(matching) != 1:
+        raise UpdateError(f"Kein öffentliches Develop-Wheel für Commit {sha[:12]} gefunden")
+    wheel = matching[0]
+    checksums = [a for a in assets if isinstance(a, dict) and a.get("name") == wheel["name"] + ".sha256"]
+    if len(checksums) != 1:
+        raise UpdateError("Öffentliche Develop-SHA-256-Prüfdatei fehlt oder ist doppelt")
+    return DevelopBuild(repo, sha, run_id, wheel["name"],
+                        _public_asset_url(wheel.get("browser_download_url"), repo, wheel["name"]),
+                        _public_asset_url(checksums[0].get("browser_download_url"), repo, wheel["name"] + ".sha256"))
 
 
 def stage_develop(build: DevelopBuild, directory: Path) -> tuple[Path, str]:
-    """Actions-ZIP kontrolliert entpacken, SHA-256 prüfen und Wheel-Version an Commit binden."""
-    repo = build.repository
-    archive_bytes = _download(f"{API}/repos/{repo}/actions/artifacts/{build.artifact_id}/zip")
+    """Öffentliches Develop-Wheel laden und Prüfsumme + Commitbindung prüfen."""
+    name = build.wheel_name
     try:
-        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
-            items = [i for i in archive.infolist() if not i.is_dir()]
-            if len(items) != 2 or any(i.file_size > 40_000_000 or i.file_size < 1 or
-                                       i.filename != Path(i.filename).name or i.filename.startswith(".")
-                                       for i in items):
-                raise UpdateError("Develop-Artefakt enthält unerwartete Dateien")
-            wheels = [i for i in items if i.filename.endswith(".whl")]
-            if len(wheels) != 1 or {i.filename for i in items} != {wheels[0].filename, wheels[0].filename + ".sha256"}:
-                raise UpdateError("Develop-Artefakt benötigt genau ein Wheel und seine SHA-256-Datei")
-            wheel_name = wheels[0].filename
-            package, version, _build, _tags = parse_wheel_filename(wheel_name)
-            if str(package) != "mao-cli" or version.local != f"g{build.commit[:12]}":
-                raise UpdateError("Develop-Wheel stimmt nicht mit dem GitHub-Commit überein")
-            checksum = archive.read(wheel_name + ".sha256").decode("utf-8").strip()
-            match = re.fullmatch(r"([0-9a-fA-F]{64})(?:\s+\*?([^\s/\\]+))?", checksum)
-            if not match or (match.group(2) and match.group(2) != wheel_name):
-                raise UpdateError("Ungültige Develop-Prüfsumme")
-            content = archive.read(wheel_name)
-            if hashlib.sha256(content).hexdigest() != match.group(1).lower():
-                raise UpdateError("SHA-256-Prüfung fehlgeschlagen; Develop-Wheel wird nicht gespeichert")
-    except (zipfile.BadZipFile, UnicodeDecodeError, ValueError) as exc:
-        raise UpdateError("Ungültiges Develop-Artefakt (ZIP/Version/Prüfsumme)") from exc
+        package, version, _, _ = parse_wheel_filename(name)
+    except (ValueError, TypeError) as exc:
+        raise UpdateError("Ungültiger Develop-Wheel-Dateiname") from exc
+    if str(package) != "mao-cli" or version.local != "g" + build.commit[:12]:
+        raise UpdateError("Develop-Wheel stimmt nicht mit dem GitHub-Commit überein")
+    wheel_bytes = _download(build.wheel_url)
+    try:
+        checksum = _download(build.checksum_url, limit=2048).decode("utf-8").strip()
+    except UnicodeDecodeError as exc:
+        raise UpdateError("Develop-Prüfsumme ist keine Textdatei") from exc
+    match = re.fullmatch(r"([0-9a-fA-F]{64})(?:\s+\*?([^\s/\\]+))?", checksum)
+    if not match or (match.group(2) and match.group(2) != name):
+        raise UpdateError("Ungültige Develop-Prüfsumme")
+    if hashlib.sha256(wheel_bytes).hexdigest() != match.group(1).lower():
+        raise UpdateError("SHA-256-Prüfung fehlgeschlagen; Develop-Wheel wird nicht gespeichert")
     directory.mkdir(parents=True, exist_ok=True)
-    path = directory / wheel_name
+    path = directory / name
     try:
         with path.open("xb") as handle:
-            handle.write(content)
+            handle.write(wheel_bytes)
     except OSError as exc:
         raise UpdateError(f"Geprüftes Develop-Wheel kann nicht gespeichert werden: {type(exc).__name__}") from exc
     return path, str(version)
