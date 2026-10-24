@@ -1,7 +1,8 @@
 # Wird von mao config init direkt als gf-import.yaml angelegt.
 # Alle tatsächlichen Tabellen- und Viewnamen stehen zentral in tables.ini.
 # Formular 3 speichert lehrkraft_id; Formular 5 speichert lerngruppe_schuljahr_id.
-# Da kurs_id auf eine ANDERE Tabelle zeigen kann, ist die sichere ID-Abbildung Pflicht.
+# MaO_Orga_2.kurs_id bekommt nur in Stufe 11/12 die unveränderte
+# orga_lerngruppe_schuljahr.id; in Stufe 5–10 bleibt kurs_id NULL.
 form_id: 16
 page_size: 200
 timeout: 60
@@ -24,9 +25,6 @@ queries:
   # Feld 3: Lehrkraft-ID bereits numerisch. Nur Existenz anhand id prüfen.
   teachers: 'SELECT id FROM {{table.teachers_table}}'
   # Feld 5 liefert lerngruppe_schuljahr_id, Feld 3 liefert lehrkraft_id.
-  # Erforderliche Spalten: lerngruppe_schuljahr_id, lehrkraft_id,
-  # lerngruppen_einsatz_id (aus der ERWEITERTEN aktuellen Lerngruppen-View).
-  # Nur Zeilen mit eindeutigem Einsatz (lerngruppen_einsatz_id IS NOT NULL)
-  # lesen. Pro Kombination muss genau eine eindeutige Einsatz-ID existieren.
-  # orga_table.kurs_id bleibt unveraendert und erhaelt diese Einsatz-ID.
-  courses: 'SELECT lerngruppe_schuljahr_id, lehrkraft_id, lerngruppen_einsatz_id FROM {{table.current_groups_view}} WHERE lerngruppen_einsatz_id IS NOT NULL AND lehrkraft_id IS NOT NULL'
+  # Erforderliche Spalten: lerngruppe_schuljahr_id, lehrkraft_id.
+  # Kombinationen aus Lerngruppe und Lehrkraft prüfen; keine Einsatz-ID abbilden.
+  courses: 'SELECT lerngruppe_schuljahr_id, lehrkraft_id FROM {{table.current_groups_view}} WHERE lerngruppe_schuljahr_id IS NOT NULL AND lehrkraft_id IS NOT NULL'

@@ -24,8 +24,8 @@ def test_entry_checkbox_and_mandatory(opts):
     items, stat = g.build_participants(entries, students, mandatory, {7}, {(100, 7): 83, (200, 7): 84}, opts)
     assert [r["matrikelnummer"] for r in items] == [12, 34]
     assert [r["tnr"] for r in items] == [1, 2]
-    assert items[0]["kurs_id"] == 83 and items[0]["lehrkraft_id"] == 7
-    assert items[1]["kurs_id"] == 84 and items[1]["stufe"] == 5
+    assert items[0]["kurs_id"] == 100 and items[0]["lehrkraft_id"] == 7
+    assert items[1]["kurs_id"] is None and items[1]["stufe"] == 5
     assert stat == {"gf_entries": 1, "inactive_entries": 1, "empty_reports": 0, "mandatory_added": 1,
                     "mandatory_classes_present": 1, "optional_classes_present": 0}
 
@@ -42,27 +42,29 @@ def test_unknown_student_fails(opts):
         g.build_participants([{"1": "11", "7.1": "42"}], [], [], set(), {}, opts)
 
 
-def test_course_ids_are_not_assumed_identical(opts):
-    assert g._course_links([{"lerngruppe_schuljahr_id": 124, "lehrkraft_id": 7, "lerngruppen_einsatz_id": 920}]) == {(124, 7): 920}
-    with pytest.raises(g.ImportErrorGF, match="Mehrdeutige"):
-        g._course_links([{"lerngruppe_schuljahr_id": 124, "lehrkraft_id": 7, "lerngruppen_einsatz_id": 920},
-                         {"lerngruppe_schuljahr_id": 124, "lehrkraft_id": 7, "lerngruppen_einsatz_id": 921}])
-    with pytest.raises(g.ImportErrorGF, match="Kein eindeutiger Einsatz"):
-        g._resolve_course("124", 7, {(200, 7): 920})
 
-
-def test_same_group_different_teachers_have_distinct_einsatz_ids(opts):
+def test_course_ids_preserved_from_gravity_forms(opts):
     links = g._course_links([
-        {"lerngruppe_schuljahr_id": 100, "lehrkraft_id": 7, "lerngruppen_einsatz_id": 900},
-        {"lerngruppe_schuljahr_id": 100, "lehrkraft_id": 8, "lerngruppen_einsatz_id": 901},
+        {"lerngruppe_schuljahr_id": 124, "lehrkraft_id": 7},
+        {"lerngruppe_schuljahr_id": 124, "lehrkraft_id": 7},
     ])
-    assert g._resolve_course("100", 7, links) == 900
-    assert g._resolve_course("100", 8, links) == 901
-    with pytest.raises(g.ImportErrorGF, match="Kein eindeutiger Einsatz"):
+    assert links == {(124, 7): 124}
+    assert g._resolve_course("124", 7, links) == 124
+    with pytest.raises(g.ImportErrorGF, match="Keine gültige Lerngruppen"):
+        g._resolve_course("124", 8, links)
+
+
+def test_same_group_multiple_teachers_keep_group_id(opts):
+    links = g._course_links([
+        {"lerngruppe_schuljahr_id": 100, "lehrkraft_id": 7},
+        {"lerngruppe_schuljahr_id": 100, "lehrkraft_id": 8},
+    ])
+    assert g._resolve_course("100", 7, links) == 100
+    assert g._resolve_course("100", 8, links) == 100
+    with pytest.raises(g.ImportErrorGF, match="Keine gültige Lerngruppen"):
         g._resolve_course("100", 9, links)
     with pytest.raises(g.ImportErrorGF, match="fehlt die Lehrkraft-ID"):
         g._resolve_course("100", None, links)
-
 
 def test_numeric_teacher_id_validation():
     assert g._resolve_teacher("7", {7}, "Lehrkraft") == 7
@@ -90,7 +92,7 @@ def test_mandatory_groups_and_optional_7_4(opts):
     rows, stats = g.build_participants([], students, groups, {7, 11}, {(100, 7): 900, (200, 11): 901}, opts)
     assert {r["matrikelnummer"] for r in rows} == {1, 2, 3}
     assert stats["mandatory_added"] == 3 and stats["optional_classes_present"] == 1
-    assert {row["kurs_id"] for row in rows} == {900, 901}
+    assert {row["kurs_id"] for row in rows} == {None}
 
 
 def test_mandatory_required_missing_and_ambiguous_teacher(opts):
@@ -102,13 +104,42 @@ def test_mandatory_required_missing_and_ambiguous_teacher(opts):
                                            {"klasse": "5-1", "lehrkraft_id": 8, "lerngruppe_schuljahr_id": 100}], {7, 8}, {(100, 7): 900, (100, 8): 901}, opts)
 
 
-def test_course_id_mapped_for_non_oberstufe(opts):
+
+def test_non_oberstufe_course_is_null_even_with_field_5(opts):
     students = [{"matrikelnummer": 12, "vorname": "Ada", "nachname": "X", "geschlecht": "w", "klasse": "5-1"}]
     entries = [{"1": "5-1", "3": "7", "5": "100", "7.1": "12"}]
     result, _ = g.build_participants(entries, students,
-                                      [{"klasse": "5-1", "lehrkraft_id": 7, "lerngruppe_schuljahr_id": 100}], {7}, {(100, 7): 900}, opts)
-    assert result[0]["kurs_id"] == 900
+                                      [{"klasse": "5-1", "lehrkraft_id": 7, "lerngruppe_schuljahr_id": 100}],
+                                      {7}, {(100, 7): 100}, opts)
+    assert result[0]["kurs_id"] is None
 
+
+def test_oberstufe_uses_original_lerngruppe_schuljahr_id(opts):
+    options = g.ImportSettings(opts.form_id, opts.page_size, opts.timeout, (), (), opts.fields, opts.queries)
+    students = [
+        {"matrikelnummer": 11, "vorname": "A", "nachname": "X", "geschlecht": "w", "klasse": "11"},
+        {"matrikelnummer": 12, "vorname": "B", "nachname": "Y", "geschlecht": "m", "klasse": "12"},
+        {"matrikelnummer": 10, "vorname": "C", "nachname": "Z", "geschlecht": "m", "klasse": "10-1"},
+    ]
+    entries = [
+        {"1": "11", "3": "7", "5": "100", "7.1": "11"},
+        {"1": "12", "3": "8", "5": "200", "7.1": "12"},
+        {"1": "10-1", "3": "7", "5": "999", "7.1": "10"},
+    ]
+    rows, _ = g.build_participants(entries, students, [], {7, 8},
+                                   {(100, 7): 100, (200, 8): 200}, options)
+    by_student = {r["matrikelnummer"]: r for r in rows}
+    assert by_student[11]["kurs_id"] == 100
+    assert by_student[12]["kurs_id"] == 200
+    assert by_student[10]["kurs_id"] is None
+
+
+def test_oberstufe_rejects_wrong_teacher_for_group(opts):
+    options = g.ImportSettings(opts.form_id, opts.page_size, opts.timeout, (), (), opts.fields, opts.queries)
+    students = [{"matrikelnummer": 12, "vorname": "A", "nachname": "X", "geschlecht": "w", "klasse": "11"}]
+    with pytest.raises(g.ImportErrorGF, match="Keine gültige Lerngruppen"):
+        g.build_participants([{"1": "11", "3": "7", "5": "100", "7.1": "12"}],
+                             students, [], {7}, {(100, 8): 100}, options)
 
 def test_credential_validation(tmp_path):
     f = tmp_path / "gf.config"

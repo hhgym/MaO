@@ -59,7 +59,7 @@ def validate_online(db: Any, config_dir: Path, tables: Mapping[str, str],
         expected = {
             "students": {"matrikelnummer", "vorname", "nachname", "geschlecht", "klasse"},
             "teachers": {"id"},
-            "courses": {"lerngruppe_schuljahr_id", "lehrkraft_id", "lerngruppen_einsatz_id"},
+            "courses": {"lerngruppe_schuljahr_id", "lehrkraft_id"},
             "mandatory": {"klasse", "lehrkraft_id", "lerngruppe_schuljahr_id"},
         }
         for key, query in options.queries.items():
@@ -81,12 +81,12 @@ def validate_online(db: Any, config_dir: Path, tables: Mapping[str, str],
         teachers = _teacher_ids(_rows(cur, options.queries["teachers"]))
         courses = _course_links(_rows(cur, options.queries["courses"]))
         if not teachers or not courses or not students_by_id:
-            raise ImportErrorGF("Lehrkräfte, Lerngruppeneinsätze oder Schülerstammdaten sind leer")
+            raise ImportErrorGF("Lehrkräfte, Lerngruppen oder Schülerstammdaten sind leer")
         result.append(f"Stammdaten: {len(students_by_id)} Schüler:innen, "
-                      f"{len(teachers)} Lehrkräfte, {len(courses)} Einsatzzuordnungen")
+                      f"{len(teachers)} Lehrkräfte, {len(courses)} Lerngruppen-/Lehrkraftzuordnungen")
         for (_, teacher_id), _ in courses.items():
             if teacher_id not in teachers:
-                raise ImportErrorGF(f"Einsatz referenziert unbekannte Lehrkraft-ID {teacher_id}")
+                raise ImportErrorGF(f"Lerngruppe referenziert unbekannte Lehrkraft-ID {teacher_id}")
 
         if options.mandatory_classes or options.optional_mandatory_classes:
             groups = _rows(cur, options.queries["mandatory"])
@@ -99,7 +99,7 @@ def validate_online(db: Any, config_dir: Path, tables: Mapping[str, str],
                 teacher = _valid_id(item["lehrkraft_id"], f"Pflichtklasse {klass}: Lehrkraft")
                 group = _valid_id(item["lerngruppe_schuljahr_id"], f"Pflichtklasse {klass}: Lerngruppe")
                 if teacher not in teachers or (group, teacher) not in courses:
-                    raise ImportErrorGF(f"Pflichtklasse {klass}: ungültiger Mathematik-Einsatz")
+                    raise ImportErrorGF(f"Pflichtklasse {klass}: ungültige Mathematik-Lerngruppe/Lehrkraft")
                 pair = (teacher, group)
                 if klass in chosen and chosen[klass] != pair:
                     raise ImportErrorGF(f"Pflichtklasse {klass}: mehrdeutige Lerngruppe/Lehrkraft")
