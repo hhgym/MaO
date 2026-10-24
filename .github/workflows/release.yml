@@ -41,7 +41,7 @@ jobs:
         run: python -m mao_cli validate
       - run: python -m build --wheel
       - name: Generate SHA256 sidecars
-        run: for f in dist/*.whl; do sha256sum "$f" > "$f.sha256"; done
+        run: (cd dist && for f in *.whl; do sha256sum "$f" > "$f.sha256"; done)
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}

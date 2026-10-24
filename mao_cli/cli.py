@@ -137,10 +137,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     init_year.add_argument("--dry-run", action="store_true", default=True,
                            help="Immer ohne Datenänderung (Standard)")
 
-    update = commands.add_parser("update", help="GitHub-Release oder develop-Checkout prüfen/aktualisieren")
+    update = commands.add_parser("update", help="GitHub-Builds (Stable/RC/Develop) prüfen/aktualisieren")
     sub = update.add_subparsers(dest="update_command", required=True)
     for action in ("check", "download", "install", "status", "rollback"):
-        cmd = sub.add_parser(action, help={"check": "Updates nur prüfen", "download": "Releasewheel geprüft herunterladen", "install": "Update ausdrücklich installieren", "status": "Aktive Version und Rollback anzeigen", "rollback": "Vorherige Version wieder aktivieren"}[action])
+        cmd = sub.add_parser(action, help={"check": "Updates nur prüfen", "download": "Geprüftes GitHub-Wheel herunterladen", "install": "Update ausdrücklich installieren", "status": "Aktive Version und Rollback anzeigen", "rollback": "Vorherige Version wieder aktivieren"}[action])
         cmd.add_argument("--channel", choices=("stable", "rc", "develop"), default="stable")
         cmd.add_argument("--repository", metavar="OWNER/REPO", help="GitHub-Repository (alternativ MAO_GITHUB_REPO)")
         if action == "download":

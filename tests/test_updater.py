@@ -54,17 +54,39 @@ def test_valid_checksum_and_no_overwrite(monkeypatch,tmp_path):
         u.stage_release(release,tmp_path)
 
 
-def test_develop_checks_git_dirty_and_branch(monkeypatch,tmp_path):
-    cmds=[]
-    def fakegit(*args,cwd):
-        cmds.append(args)
-        if args[0]=='branch': return 'develop'
-        if args[0]=='status': return ' M README.md'
-        return 'abc'
-    monkeypatch.setattr(u,'_git',fakegit)
-    with pytest.raises(u.UpdateError, match='nicht sauber'):
-        u.develop_status(tmp_path)
-    assert ('status','--porcelain') in cmds
+def test_develop_find_build_requires_successful_exact_head(monkeypatch):
+    sha = "a" * 40
+    calls = []
+    def fakejson(url):
+        calls.append(url)
+        if url.endswith("/branches/develop"):
+            return {"commit": {"sha": sha}}
+        if "/ci.yml/runs?" in url:
+            return {"workflow_runs": [{"id": 43, "head_sha": sha, "event": "push", "conclusion": "success"},
+                                      {"id": 44, "head_sha": "b" * 40, "event": "push", "conclusion": "success"}]}
+        return {"artifacts": [{"id": 91, "name": f"mao-develop-{sha}", "expired": False}]}
+    monkeypatch.setattr(u, "_github_json", fakejson)
+    result = u.find_develop("hhgym/MaO")
+    assert result == u.DevelopBuild("hhgym/MaO", sha, 43, 91)
+    assert len(calls) == 3
+
+
+def test_develop_check_without_local_git(monkeypatch, tmp_path):
+    build = u.DevelopBuild("hhgym/MaO", "a"*40, 43, 91)
+    monkeypatch.setattr(u, "find_develop", lambda repository: build)
+    monkeypatch.setattr(u, "_installed_version", lambda home: "0.6.0.dev0")
+    monkeypatch.setattr(u, "git_checkout_root", lambda: pytest.fail("Git darf nicht aufgerufen werden"), raising=False)
+    assert "Neuer getesteter" in u.update_action("check", "develop", None, home=tmp_path)
+    assert "43" in u.update_action("check", "develop", None, home=tmp_path)
+    with pytest.raises(u.UpdateError, match="--yes"):
+        u.update_action("install", "develop", None, home=tmp_path)
+
+
+def test_develop_already_current(monkeypatch, tmp_path):
+    build = u.DevelopBuild("hhgym/MaO", "a"*40, 43, 91)
+    monkeypatch.setattr(u, "find_develop", lambda repository: build)
+    monkeypatch.setattr(u, "_installed_version", lambda home: "0.6.0.dev0+gaaaaaaaaaaaa")
+    assert "aktuell" in u.update_action("check", "develop", None, home=tmp_path)
 
 
 def test_cli_update_check_bypasses_pipeline(monkeypatch):
@@ -80,12 +102,11 @@ def test_install_without_yes_will_not_call_pip(monkeypatch):
     with pytest.raises(u.UpdateError, match='--yes'):
         u.update_action('install','rc','hhgym/mao-cli')
 
-def test_develop_needs_successful_ci(monkeypatch,tmp_path):
-    monkeypatch.setattr(u,'develop_status',lambda root: ('a'*40, 'b'*40))
-    monkeypatch.setattr(u,'_repository_from_origin',lambda root: 'school/mao-cli')
-    monkeypatch.setattr(u,'_ci_success',lambda repo,sha: False)
-    with pytest.raises(u.UpdateError, match='CI-Lauf'):
-        u.update_action('install','develop','school/mao-cli',yes=True,root=tmp_path)
+def test_develop_no_successful_ci(monkeypatch):
+    monkeypatch.setattr(u, "_github_json", lambda path: {"commit": {"sha": "a"*40}} if path.endswith("/branches/develop")
+                        else {"workflow_runs": []})
+    with pytest.raises(u.UpdateError, match="noch nicht erfolgreich"):
+        u.find_develop("hhgym/MaO")
 
 
 def test_check_release_tag_matches_version():
