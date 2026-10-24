@@ -123,12 +123,64 @@ def test_credential_validation(tmp_path):
 def test_private_import_config(tmp_path):
     from mao_cli.workspaces import init_config
     init_config(tmp_path, cli.DEFAULTS)
-    with pytest.raises(Exception, match="fehlt"):
+    assert (tmp_path / "gf-import.yaml").is_file()
+    with pytest.raises(Exception, match="DEMO_"):
         g.load_import_settings(tmp_path / "gf-import.yaml")
-    example = tmp_path / "gf-import.yaml.example"
-    example.rename(tmp_path / "gf-import.yaml")
-    with pytest.raises(Exception, match="angepasst"):
+
+
+def test_import_resolves_identifiers_from_central_tables(tmp_path):
+    from mao_cli.workspaces import init_config
+    init_config(tmp_path, cli.DEFAULTS)
+    tables_path = tmp_path / "tables.ini"
+    text = tables_path.read_text(encoding="utf-8")
+    text = text.replace("students_view = DEMO_CURRENT_STUDENTS", "students_view = STUDENT_CURRENT")
+    text = text.replace("current_groups_view = DEMO_CURRENT_GROUP_VIEW", "current_groups_view = GROUPS_CURRENT")
+    text = text.replace("teachers_table = DEMO_TEACHERS", "teachers_table = TEACHER_MASTER")
+    tables_path.write_text(text, encoding="utf-8")
+    settings = g.load_import_settings(tmp_path / "gf-import.yaml")
+    assert settings.queries["students"] == "SELECT matrikelnummer, vorname, nachname, geschlecht, klasse FROM STUDENT_CURRENT"
+    assert settings.queries["teachers"] == "SELECT id FROM TEACHER_MASTER"
+    assert "FROM GROUPS_CURRENT WHERE" in settings.queries["courses"]
+    assert "GROUPS_CURRENT WHERE" in settings.queries["mandatory"]
+    assert "fach_id" not in settings.queries["mandatory"]  # Aktuell nur Mathematik
+
+
+def test_import_rejects_invalid_and_unknown_table_names(tmp_path):
+    from mao_cli.workspaces import init_config
+    init_config(tmp_path, cli.DEFAULTS)
+    tables_path = tmp_path / "tables.ini"
+    text = tables_path.read_text(encoding="utf-8")
+    tables_path.write_text(text.replace("DEMO_TEACHERS", "TEACHERS; DROP TABLE USERS"), encoding="utf-8")
+    with pytest.raises(Exception, match="Ungültiger Tabellen-/Viewname"):
         g.load_import_settings(tmp_path / "gf-import.yaml")
+    tables_path.write_text(text.replace("teachers_table = DEMO_TEACHERS\n", "").replace("students_view = DEMO_CURRENT_STUDENTS", "students_view = STUDENT_CURRENT").replace("current_groups_view = DEMO_CURRENT_GROUP_VIEW", "current_groups_view = GROUP_CURRENT"), encoding="utf-8")
+    with pytest.raises(Exception, match="Unbekannte Tabellenkennung"):
+        g.load_import_settings(tmp_path / "gf-import.yaml")
+
+
+def test_init_does_not_overwrite_private_existing_configs(tmp_path):
+    from mao_cli.workspaces import init_config
+    tmp_path.mkdir(exist_ok=True)
+    (tmp_path / "db.config").write_text("secret_database", encoding="utf-8")
+    (tmp_path / "gf.config").write_text("secret_gravity", encoding="utf-8")
+    (tmp_path / "gf-import.yaml").write_text("special: custom", encoding="utf-8")
+    assert init_config(tmp_path, cli.DEFAULTS)
+    assert init_config(tmp_path, cli.DEFAULTS) == []
+    assert (tmp_path / "db.config").read_text() == "secret_database"
+    assert (tmp_path / "gf.config").read_text() == "secret_gravity"
+    assert (tmp_path / "gf-import.yaml").read_text() == "special: custom"
+
+
+def test_init_copies_legacy_examples_without_overwriting(tmp_path):
+    from mao_cli.workspaces import init_config
+    (tmp_path / "gf.config.example").write_text("legacy_GF", encoding="utf-8")
+    (tmp_path / "db.config.example").write_text("legacy_DB", encoding="utf-8")
+    (tmp_path / "gf-import.yaml.example").write_text("legacy_SQL", encoding="utf-8")
+    init_config(tmp_path, cli.DEFAULTS)
+    assert (tmp_path / "gf.config").read_text() == "legacy_GF"
+    assert (tmp_path / "db.config").read_text() == "legacy_DB"
+    assert (tmp_path / "gf-import.yaml").read_text() == "legacy_SQL"
+    assert (tmp_path / "gf.config.example").read_text() == "legacy_GF"
 
 
 def test_cli_mode_and_no_import_in_version():
@@ -198,3 +250,18 @@ def test_persist_never_replaces_existing_rows():
         g.persist_import(SimpleNamespace(conn=cnx), "SAMPLE_TABLE", [{x: 1 for x in g.WRITE_COLUMNS}], dry_run=False)
     assert cnx.commits == 0
     assert not any("INSERT" in sql for sql, _ in cnx.cursor_obj.executed)
+
+
+def test_init_adds_missing_table_names_to_existing_config_without_overwrite(tmp_path):
+    from mao_cli.workspaces import init_config
+    (tmp_path / "tables.ini").write_text("[table]\nteachers_table = SCHOOL_TEACHERS\n# bewusst behalten\n", encoding="utf-8")
+    (tmp_path / "gf-import.yaml.example").write_text("queries: DEMO_TEACHERS", encoding="utf-8")
+    init_config(tmp_path, cli.DEFAULTS)
+    text = (tmp_path / "tables.ini").read_text(encoding="utf-8")
+    assert "teachers_table = SCHOOL_TEACHERS" in text
+    assert "# bewusst behalten" in text
+    assert "students_view = DEMO_CURRENT_STUDENTS" in text
+    assert "current_groups_view = DEMO_CURRENT_GROUP_VIEW" in text
+    assert "{{table.teachers_table}}" in (tmp_path / "gf-import.yaml").read_text(encoding="utf-8")
+    init_config(tmp_path, cli.DEFAULTS)
+    assert (tmp_path / "tables.ini").read_text(encoding="utf-8") == text

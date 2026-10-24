@@ -199,21 +199,31 @@ def load_tables(path: Path) -> dict[str, str]:
     return values
 
 
+def resolve_sql_table_tokens(sql: str, tables: dict[str, str], *, label: str) -> str:
+    """Ersetzt ausschließlich SQL-Identifier aus der zentralen tables.ini.
+
+    Die Zielwerte werden bereits von load_tables() gegen IDENTIFIER_RE geprüft.
+    Andere SQL-Parameter sind niemals über diese Tokens einzusetzen.
+    """
+    def replace(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key not in tables:
+            raise ConfigurationError(f"{label}: Unbekannte Tabellenkennung '{key}' in tables.ini")
+        return tables[key]
+
+    resolved = TABLE_TOKEN_RE.sub(replace, sql)
+    if "{{" in resolved or "}}" in resolved:
+        raise ConfigurationError(f"{label}: Ungültiger Tabellenplatzhalter")
+    return resolved
+
+
 def resolve_table_placeholders(cfg: Dict[str, Any], tables: dict[str, str]) -> Dict[str, Any]:
-    """Ersetzt ausschliesslich {{table.<key>}}-Token im SQL, ohne bestehende Literale anzufassen."""
+    """Gleiche sichere {{table.*}}-Auflösung für Pipeline und GF-Import."""
     changed = copy.deepcopy(cfg)
     for dataset in changed.get("datasets", []):
         sql = dataset.get("sql", "")
-        if not isinstance(sql, str):
-            continue
-        def replace(match):
-            key = match.group(1)
-            if key not in tables:
-                raise ConfigurationError(f"Dataset '{dataset.get('name')}': Unbekannte Tabellenkennung '{key}'")
-            return tables[key]
-        dataset["sql"] = TABLE_TOKEN_RE.sub(replace, sql)
-        if "{{" in dataset["sql"] or "}}" in dataset["sql"]:
-            raise ConfigurationError(f"Dataset '{dataset.get('name')}': Ungültiger Tabellenplatzhalter")
+        if isinstance(sql, str):
+            dataset["sql"] = resolve_sql_table_tokens(sql, tables, label=f"Dataset '{dataset.get('name')}'")
     return changed
 
 

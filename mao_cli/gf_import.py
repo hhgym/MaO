@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
-from .config import ConfigurationError
+from .config import ConfigurationError, load_tables, resolve_sql_table_tokens
 
 LOGGER = logging.getLogger(__name__)
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -39,7 +39,7 @@ class ImportSettings:
 
 def load_import_settings(path: Path) -> ImportSettings:
     if not path.is_file():
-        raise ConfigurationError(f"GF-Importkonfiguration fehlt: {path}; Vorlage gf-import.yaml.example verwenden")
+        raise ConfigurationError(f"GF-Importkonfiguration fehlt: {path}; bitte mao config init ausführen")
     try:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
@@ -65,20 +65,30 @@ def load_import_settings(path: Path) -> ImportSettings:
         raise ConfigurationError("gf-import.yaml: Pflicht- und optionale Klassen überlappen")
     if (mand or opt_mand) and not queries.get("mandatory"):
         raise ConfigurationError("gf-import.yaml: Pflichtteilnahmen benötigen queries.mandatory (aktuelle Mathematik-Lerngruppen)")
+    # Die SQL-Quellen referenzieren dieselbe zentrale tables.ini wie die Pipeline.
+    # Namen aus Gravity Forms werden hier niemals als SQL-Identifier eingesetzt.
+    needs_tables = any(isinstance(value, str) and "{{" in value for value in queries.values())
+    tables = load_tables(path.parent / "tables.ini") if needs_tables else {}
+    resolved_queries: dict[str, str] = {}
     for key, value in queries.items():
         if not value and key == "mandatory" and not (mand or opt_mand):
+            resolved_queries[key] = ""
             continue
-        if not isinstance(value, str) or not value.strip() or "DEMO_" in value:
-            raise ConfigurationError(f"gf-import.yaml: lokale SELECT-Abfrage '{key}' muss angepasst sein")
+        if not isinstance(value, str) or not value.strip():
+            raise ConfigurationError(f"gf-import.yaml: SELECT-Abfrage '{key}' fehlt")
+        value = resolve_sql_table_tokens(value, tables, label=f"gf-import.yaml/queries.{key}")
+        if "DEMO_" in value:
+            raise ConfigurationError(f"gf-import.yaml: Tabellenkennung für '{key}' in tables.ini noch DEMO_ – bitte anpassen")
         if not re.match(r"^\s*SELECT\b", value, re.I) or ";" in value or re.search(r"\b(INTO\s+OUTFILE|FOR\s+UPDATE|LOCK\s+IN\s+SHARE\s+MODE)\b", value, re.I):
             raise ConfigurationError("gf-import.yaml: nur einfache lesende SELECT-Abfragen sind erlaubt")
+        resolved_queries[key] = value
     def positive(key: str, default: int, maximum: int):
         n = raw.get(key, default)
         if type(n) is not int or not 1 <= n <= maximum:
             raise ConfigurationError(f"gf-import.yaml: {key} außerhalb zulässiger Grenzen")
         return n
     return ImportSettings(positive("form_id", 16, 100000), positive("page_size", 200, 500),
-                          positive("timeout", 60, 300), tuple(mand), tuple(opt_mand), fields, queries)
+                          positive("timeout", 60, 300), tuple(mand), tuple(opt_mand), fields, resolved_queries)
 
 
 def load_gf_credentials(path: Path) -> dict[str, str]:
