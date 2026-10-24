@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import logging
 import sys
 import time
@@ -21,6 +22,9 @@ from .db import DB, current_MaO_number_db, current_MaO_number_fallback, load_db_
 from .exports import ExportPlan, load_datasets, render_plan, run_exports
 from .latex import run_latex_jobs
 from .updater import update_action, UpdateError
+from .workspaces import (config_dir_for, load_settings, save_settings, init_config,
+                         resolve_workspace, write_wrapper, check_year)
+from .year_ops import preliminary_plan, database_preflight
 
 DEFAULTS = Path(__file__).resolve().parent / "defaults"
 FILES = ("pipeline.yaml", "profiles.ini", "tables.ini")
@@ -58,14 +62,24 @@ def setup_logging(verbose: bool, log_file: Optional[Path] = None) -> LogCounter:
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="mao", description="MaO: Datenbankexporte und LaTeX-Dokumente")
     parser.add_argument("--version", action="version", version=f"mao {__version__}")
+    # Die drei globalen Angaben werden vor UND nach dem Unterbefehl akzeptiert.
+    parser.add_argument("--config-dir", type=Path, metavar="ORDNER", help="Zentrale Konfiguration (alternativ MAO_CONFIG)")
+    parser.add_argument("--year", metavar="YYYY-YY", help="Registriertes Schuljahr")
+    parser.add_argument("--workspace", type=Path, metavar="ORDNER", help="Expliziter Workspace")
     commands = parser.add_subparsers(dest="command", required=True)
 
+    def global_overrides(sub: argparse.ArgumentParser) -> None:
+        # SUPPRESS verhindert, dass ein leerer Subparser-Wert globale Optionen überschreibt.
+        sub.add_argument("--config-dir", type=Path, default=argparse.SUPPRESS)
+        sub.add_argument("--year", default=argparse.SUPPRESS)
+        sub.add_argument("--workspace", type=Path, default=argparse.SUPPRESS)
+
+
     def common(sub: argparse.ArgumentParser, *, profile: bool = False) -> None:
-        sub.add_argument("--workspace", metavar="ORDNER", type=Path, default=Path.cwd(),
-                         help="Arbeitsordner (Standard: aktuelles Verzeichnis)")
+        global_overrides(sub)
         if profile:
-            sub.add_argument("--profile", default=DEFAULT_PROFILE, metavar="NAME",
-                             help=f"Ausführungsprofil (Standard: {DEFAULT_PROFILE})")
+            sub.add_argument("--profile", default=None, metavar="NAME",
+                             help="Ausführungsprofil (Standard aus settings.yaml)")
         sub.add_argument("--verbose", action="store_true", help="Ausführliche Meldungen")
         sub.add_argument("--log-file", type=Path, metavar="DATEI", help="Zusätzliche Logdatei")
 
@@ -90,6 +104,31 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     profiles = commands.add_parser("profiles", help="Verfügbare Ausführungsprofile anzeigen")
     common(profiles)
 
+    config_cmd = commands.add_parser("config", help="Zentrale Konfiguration verwalten")
+    global_overrides(config_cmd)
+    csub = config_cmd.add_subparsers(dest="config_command", required=True)
+    for action in ("init", "show"):
+        item = csub.add_parser(action)
+        global_overrides(item)
+
+    work = commands.add_parser("workspace", help="Jahrgangsverzeichnisse verwalten")
+    global_overrides(work)
+    wsub = work.add_subparsers(dest="workspace_command", required=True)
+    for action in ("list", "add", "select", "wrapper"):
+        item = wsub.add_parser(action)
+        global_overrides(item)
+        if action != "list":
+            item.add_argument("target_year", metavar="YYYY-YY")
+        if action == "add":
+            item.add_argument("--root", type=Path, required=True)
+            item.add_argument("--no-wrapper", action="store_true")
+
+    init_year = commands.add_parser("init-jahrgang", help="Jahrgangswechsel sicher vorprüfen (read-only)")
+    global_overrides(init_year)
+    init_year.add_argument("--offline", action="store_true", help="Nur geplante Prüfschritte anzeigen")
+    init_year.add_argument("--dry-run", action="store_true", default=True,
+                           help="Immer ohne Datenänderung (Standard)")
+
     update = commands.add_parser("update", help="GitHub-Release oder develop-Checkout prüfen/aktualisieren")
     sub = update.add_subparsers(dest="update_command", required=True)
     for action in ("check", "download", "install", "status", "rollback"):
@@ -103,19 +142,24 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         cmd.add_argument("--home", type=Path, help="Verzeichnis für verwaltete Versionen (alternativ MAO_UPDATE_HOME)")
 
     args = parser.parse_args(argv)
+    if getattr(args, "year", None) is not None:
+        try:
+            check_year(args.year)
+        except ConfigurationError as exc:
+            parser.error(str(exc))
     if getattr(args, "mao", None) is not None and args.mao < 1:
         parser.error("--mao muss positiv sein")
     return args
 
 
-def resolve_config_file(workspace: Path, filename: str) -> Path:
-    """Arbeitsordner/ config/ überschreibt die ausgelieferten Standarddateien."""
-    local = workspace / "config" / filename
+def resolve_config_file(config_dir: Path, filename: str) -> Path:
+    """Zentrale Nutzerdatei überschreibt paketinterne Dummy-Defaults."""
+    local = config_dir / filename
     return local if local.is_file() else DEFAULTS / filename
 
 
-def load_pipeline(workspace: Path, profile: Optional[str]):
-    files = {name: resolve_config_file(workspace, name) for name in FILES}
+def load_pipeline(config_dir: Path, workspace: Path, profile: Optional[str]):
+    files = {name: resolve_config_file(config_dir, name) for name in FILES}
     if any(not path.is_file() for path in files.values()):
         raise ConfigurationError(f"Fehlende Konfiguration: {files}")
     tables = load_tables(files["tables.ini"])
@@ -137,6 +181,70 @@ def load_pipeline(workspace: Path, profile: Optional[str]):
     return cfg, profiles, files, tables
 
 
+def management_action(args: argparse.Namespace, config_dir: Path) -> int:
+    """Konfiguration und Workspaces verwalten, ohne DB/Export-Pipeline zu laden."""
+    try:
+        if args.command == "config":
+            if args.config_command == "init":
+                for path in init_config(config_dir, DEFAULTS):
+                    print(f"Erstellt: {path}")
+                print(f"Konfigurationsverzeichnis: {config_dir}")
+            else:
+                doc = load_settings(config_dir)
+                print(f"Konfiguration: {config_dir}\nAktuelles Schuljahr: {doc['current_year'] or '-'}")
+                print(f"Registrierte Workspaces: {len(doc['workspaces'])}")
+                for name in (*FILES, "db.config", "settings.yaml"):
+                    where = config_dir / name
+                    print(f"  {name}: {'vorhanden' if where.exists() else 'nicht vorhanden'}")
+            return 0
+        if args.command == "workspace":
+            doc = load_settings(config_dir)
+            action = args.workspace_command
+            if action == "list":
+                for year, item in sorted(doc["workspaces"].items()):
+                    current = "*" if year == doc["current_year"] else " "
+                    print(f"{current} {year}: {item['root']} ({item['status']})")
+                return 0
+            year = check_year(args.target_year)
+            if action == "add":
+                if year in doc["workspaces"]:
+                    raise ConfigurationError(f"Jahrgang {year} existiert bereits")
+                root = args.root.expanduser().resolve()
+                if any(root == Path(v["root"]) for v in doc["workspaces"].values()):
+                    raise ConfigurationError(f"Workspace {root} ist bereits einem anderen Jahrgang zugeordnet")
+                if not args.no_wrapper and any((root / name).exists() for name in ("mao-hier.cmd", "mao-hier.sh")):
+                    raise ConfigurationError("Wrapper existiert bereits; --no-wrapper wählen oder Pfad ändern")
+                doc["workspaces"][year] = {"root": str(root), "status": "planned"}
+                if doc["current_year"] is None:
+                    doc["current_year"] = year
+                    doc["workspaces"][year]["status"] = "current"
+                save_settings(config_dir, doc)
+                print(f"Registriert: {year} → {root}")
+                if not args.no_wrapper:
+                    for path in write_wrapper(config_dir, year, root):
+                        print(f"Wrapper: {path}")
+            elif action == "select":
+                if year not in doc["workspaces"]:
+                    raise ConfigurationError(f"Jahrgang {year} nicht registriert")
+                for key, entry in doc["workspaces"].items():
+                    if entry["status"] == "current":
+                        entry["status"] = "archived" if key != year else "current"
+                doc["workspaces"][year]["status"] = "current"
+                doc["current_year"] = year
+                save_settings(config_dir, doc)
+                print(f"Aktueller Jahrgang: {year}")
+            else:
+                if year not in doc["workspaces"]:
+                    raise ConfigurationError(f"Jahrgang {year} nicht registriert")
+                for path in write_wrapper(config_dir, year, Path(doc["workspaces"][year]["root"])):
+                    print(f"Wrapper: {path}")
+            return 0
+    except (ConfigurationError, OSError, ValueError) as exc:
+        print(f"Konfigurationsfehler: {exc}", file=sys.stderr)
+        return 2
+    raise AssertionError("Nicht unterstützter Verwaltungsbefehl")
+
+
 def _checked_plan_path(workspace: Path, dest: Path, protected: set[Path]) -> Path:
     target = (workspace / dest).resolve() if not dest.is_absolute() else dest.resolve()
     if target in protected:
@@ -156,36 +264,64 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         except UpdateError as exc:
             print(f"Updatefehler: {exc}", file=sys.stderr)
             return 5
-    workspace = args.workspace.expanduser().resolve()
-    logfile = args.log_file
+    config_dir = config_dir_for(getattr(args, "config_dir", None))
+    if args.command in ("config", "workspace"):
+        return management_action(args, config_dir)
+    try:
+        settings = load_settings(config_dir)
+        selection = resolve_workspace(settings, year=getattr(args, "year", None),
+                                      workspace=getattr(args, "workspace", None),
+                                      allow_unregistered=(args.command in ("validate", "profiles")))
+        workspace = selection.directory
+    except ConfigurationError as exc:
+        print(f"Workspace-Fehler: {exc}", file=sys.stderr)
+        return 2
+    logfile = getattr(args, "log_file", None)
     if logfile is not None and not logfile.is_absolute():
         logfile = workspace / logfile
     try:
-        logger = setup_logging(args.verbose, logfile)
+        logger = setup_logging(getattr(args, "verbose", False), logfile)
     except OSError as exc:
         print(f"Logdatei nicht erreichbar: {exc}", file=sys.stderr)
         return 2
     started = time.monotonic()
     try:
-        profile_name = getattr(args, "profile", None)
-        cfg, profiles, config_files, tables = load_pipeline(workspace, profile_name)
+        profile_name = getattr(args, "profile", None) or settings["defaults"]["profile"]
+        cfg, profiles, config_files, tables = load_pipeline(config_dir, workspace, profile_name if args.command not in ("profiles", "init-jahrgang") else None)
+        LOGGER.info("Konfiguration: %s", config_dir)
         LOGGER.info("Arbeitsordner: %s", workspace)
+        if args.command in ("run", "plan") and selection.year and selection.year != settings["current_year"]:
+            raise ConfigurationError("SQL-Exporte für einen anderen als den aktuell ausgewählten Jahrgang "
+                                     "sind gesperrt, damit keine aktuellen Daten historische Dateien überschreiben")
         if args.command == "profiles":
             for name, profile in profiles.items():
                 LOGGER.info("%-20s %s", name, profile["description"])
             return 0
+        if args.command == "init-jahrgang":
+            if selection.year is None:
+                raise ConfigurationError("init-jahrgang benötigt einen registrierten Jahrgang")
+            for item in preliminary_plan(tables, selection.year):
+                print(item)
+            if not args.offline:
+                db_config = load_db_config(config_dir)
+                if not can_reach(db_config.host, db_config.port, timeout=3):
+                    raise ConnectionError("Datenbank nicht erreichbar")
+                with DB(db_config) as db:
+                    for item in database_preflight(db, tables):
+                        print(item)
+            return 0
         if args.command == "validate":
             if any(value.startswith("DEMO_") for value in tables.values()):
-                LOGGER.warning("Nur DEMO-Tabellennamen konfiguriert: Für Datenbankläufe lokale config/tables.ini anlegen")
+                LOGGER.warning("Nur DEMO-Tabellennamen konfiguriert: Für Datenbankläufe zentrale tables.ini anlegen")
             LOGGER.info("Konfiguration gültig | Profil: %s | Datasets: %d | Exporte: %d | LaTeX-Jobs: %d",
-                        args.profile, len(cfg["datasets"]),
+                        profile_name, len(cfg["datasets"]),
                         sum(ex.get("enabled", True) for ex in cfg["exports"]),
                         sum(job.get("enabled", True) for job in cfg["latex"].get("jobs", [])))
             return 0
-        LOGGER.info("Profil: %s", args.profile)
+        LOGGER.info("Profil: %s", profile_name)
 
         if args.command == "latex":
-            mao = args.mao or current_MaO_number_fallback()
+            mao = args.mao or selection.mao_number or current_MaO_number_fallback()
             LOGGER.info("LaTeX-Jahrgang: %d (keine Datenbankabfrage)", mao)
             latex_stats = run_latex_jobs(cfg, workspace, mao)
             LOGGER.info("ABSCHLUSS | PDF-Jobs: %d | übersprungen: %d | Warnungen: %d | Dauer: %.2f s",
@@ -197,11 +333,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if placeholders:
             raise ConfigurationError(
                 "Die Standard-tables.ini enthält Demo-Namen. "
-                "Lege im Arbeitsordner config/tables.ini mit allen echten SQL-Objektnamen an. "
+                "Lege im zentralen Konfigurationsordner tables.ini mit allen echten SQL-Objektnamen an. "
                 f"Fehlende Einträge: {', '.join(placeholders)}"
             )
         try:
-            db_config = load_db_config(workspace)
+            db_config = load_db_config(config_dir)
         except (OSError, ValueError) as exc:
             raise ConnectionError(f"Datenbankkonfiguration: {exc}") from exc
         timeout = float(((cfg.get("db") or {}).get("connectivity_check") or {}).get("timeout_sec", 2.0))
@@ -209,7 +345,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             raise ConnectionError(f"Datenbank nicht erreichbar: {db_config.host}:{db_config.port}")
         with DB(db_config) as db:
             db_mao = current_MaO_number_db(db, tables)
-            mao = args.mao or db_mao or current_MaO_number_fallback()
+            if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
+                raise ConfigurationError("Der registrierte MaO-Jahrgang stimmt nicht mit der aktiven Datenbank überein")
+            mao = args.mao or selection.mao_number or db_mao or current_MaO_number_fallback()
             if args.mao is not None and db_mao is not None and db_mao != args.mao:
                 LOGGER.warning("--mao=%d weicht von DB-Jahrgang %d ab; SQL-Datenquelle bleibt unverändert",
                                args.mao, db_mao)
@@ -221,7 +359,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         planner = ExportPlan(workspace, active_owners=owners)
         run_exports(data, cfg, workspace, planner)
         protected = {path.resolve() for path in config_files.values()}
-        protected.add((workspace / "db.config").resolve())
+        protected.add((config_dir / "db.config").resolve())
+        protected.add((config_dir / "settings.yaml").resolve())
         protected.add(planner.manifest.resolve())
         for filename in planner.outputs:
             if planner._absolute(filename) in protected:
@@ -255,12 +394,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         return 3
     except (ConfigurationError, yaml.YAMLError, ValueError, TypeError, OSError) as exc:
         LOGGER.error("Konfigurations- oder Dateifehler: %s", exc)
-        if args.verbose:
+        if getattr(args, "verbose", False):
             LOGGER.debug("Traceback:\n%s", traceback.format_exc())
         return 2
     except Exception as exc:
         LOGGER.error("Verarbeitung fehlgeschlagen: %s (%s)", exc, type(exc).__name__)
-        if args.verbose:
+        if getattr(args, "verbose", False):
             LOGGER.debug("Traceback:\n%s", traceback.format_exc())
         return 4
 

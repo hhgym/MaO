@@ -26,9 +26,9 @@ class DBConfig:
     database: str
 
 
-def load_db_config(script_dir: Path) -> DBConfig:
-    """Reads db.config in script dir. Format: key=value per line."""
-    path = script_dir / "db.config"
+def load_db_config(config_dir: Path) -> DBConfig:
+    """Liest db.config aus MAO_CONFIG. Format: key=value pro Zeile."""
+    path = config_dir / "db.config"
     if not path.exists():
         raise FileNotFoundError(f"db.config nicht gefunden: {path}")
     data: Dict[str, str] = {}

@@ -11,7 +11,7 @@ DEFAULTS = ROOT / "mao_cli" / "defaults"
 
 def test_default_table_names_are_only_demo():
     values = load_tables(DEFAULTS / "tables.ini")
-    assert len(values) == 15
+    assert len(values) == 18
     assert all(v.startswith("DEMO_") for v in values.values())
     assert values["jahrgaenge_table"] == "DEMO_JAHRGAENGE"
 
@@ -28,7 +28,10 @@ def test_sql_current_year_uses_only_configured_identifiers():
         current_MaO_number_db(StubDB(), {"jahrgaenge_table":"oops;DROP", "schuljahre_table":"x"})
 
 
-def test_cli_refuses_database_run_with_demo_tables(tmp_path):
+def test_cli_refuses_database_run_with_demo_tables(tmp_path, monkeypatch):
+    central = tmp_path / "central"
+    cli.init_config(central, cli.DEFAULTS)
+    monkeypatch.setenv("MAO_CONFIG", str(central))
     assert cli.main(["validate", "--workspace", str(tmp_path)]) == 0
     assert cli.main(["plan", "--workspace", str(tmp_path)]) == 2
     assert cli.main(["run", "--workspace", str(tmp_path)]) == 2
