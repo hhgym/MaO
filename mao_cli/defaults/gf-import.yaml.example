@@ -1,0 +1,21 @@
+# Diese Vorlage NUR nach MAO_CONFIG/gf-import.yaml kopieren und privat anpassen.
+# Alle SQL-Objektnamen, Feldzuordnungen und Zugangsdaten verbleiben lokal.
+form_id: 16
+page_size: 200
+timeout: 60
+fields:
+  klasse: "1"
+  kurs: "5"
+  lehrkraft: "3"
+  teilnehmende: "7"
+# Pflichtteilnahme: pro Schuljahr anpassen; [] für keine Pflichtteilnahme.
+mandatory_classes: []
+queries:
+  # Liefert matrikelnummer, vorname, nachname, geschlecht, klasse
+  students: 'SELECT matrikelnummer, vorname, nachname, geschlecht, klasse FROM DEMO_STUDENTS'
+  # Liefert dieselben fünf Spalten und lehrkraft_token; wird nach Klassenmustern gefiltert
+  mandatory: ''  # bei mandatory_classes != [] als SELECT auflösen
+  # Liefert id und token (passend zu GF-Feld 3) – Mehrdeutigkeit wird abgelehnt
+  teachers: 'SELECT id, token FROM DEMO_TEACHERS'
+  # Liefert id und token (passend zu GF-Feld 5, ggf. über passenden JOIN)
+  courses: 'SELECT id, token FROM DEMO_COURSES'

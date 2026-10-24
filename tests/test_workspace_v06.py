@@ -23,7 +23,7 @@ def test_cli_and_env_config_precedence(tmp_path, monkeypatch):
 def test_init_is_idempotent_and_does_not_create_secrets(tmp_path):
     config = tmp_path/'central'
     created = init_config(config, cli.DEFAULTS)
-    assert len(created) == 5
+    assert len(created) == 7
     assert init_config(config, cli.DEFAULTS) == []
     assert not (config/'db.config').exists()
     assert (config/'db.config.example').exists()

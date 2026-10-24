@@ -1,5 +1,7 @@
 # Zugangsdaten und lokale Einstellungen
 **/db.config
+**/gf.config
+**/gf-import.yaml
 # Workspace overrides contain real SQL object names
 **/config/tables.ini
 **/config/pipeline.yaml

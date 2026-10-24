@@ -104,3 +104,42 @@ python -m mao_cli --version
 ```
 
 Produktive Datenbank- und LaTeX-Läufe müssen zusätzlich auf dem Zielsystem getestet werden. In der zentralen Konfiguration sollten Zugangsdaten restriktiv geschützt werden.
+
+## Gravity Forms: Teilnahme-Import (sichere Erstbefüllung)
+
+Das frühere Skript `mao_archive_and_import.py` fragte das Meldeformular via OAuth 1.0
+ab. Diese Funktion ist jetzt als `mao import-gf` integriert. Der Befehl ist vom
+späteren Archivierungs-/Jahrgangswechsel **getrennt**; er archiviert oder löscht
+keine Tabellen und übernimmt noch keine Raumzuteilung.
+
+`mao config init` erzeugt zwei **leere bzw. neutrale Vorlagen** im zentralen
+Konfigurationsverzeichnis. Diese privat kopieren und vervollständigen:
+
+- `gf.config.example` → `gf.config`: `[oauth1]` mit `api_base`, `consumer_key`, `consumer_secret`.
+- `gf-import.yaml.example` → `gf-import.yaml`: Formular-ID (ursprünglich 16),
+  Gravity-Forms-Feldnummern, aktuelle Pflichtklassen und **private SQL-SELECT-Abfragen**.
+  Die SELECT-Abfragen müssen die festgelegten Alias-Spalten zurückgeben.
+
+Beispiel:
+
+```powershell
+mao --config-dir "D:\MaO\Config" import-gf --dry-run
+mao --config-dir "D:\MaO\Config" import-gf --apply
+```
+
+Standard ist **Dry-Run**. Schreibmodus erfordert `--apply` und eine **vollständig
+leere** Organisationstabelle. Es gibt kein TRUNCATE, kein blindes UPSERT und
+keinen schreibenden Archivierungsaufruf. Das Programm prüft unbekannte und
+doppelte Matrikelnummern, nicht auflösbare Lehrer-/Kurskennungen und ein
+passendes Zielschema mit den Spalten `lehrkraft_id`, `kurs_id`. Erst nach
+vollständigem Download und Prüfung werden Teilnehmernummern vergeben und die
+Zeilen transaktional eingefügt. Fehler führen zum Rollback; ein zweiter
+Import in eine bereits gefüllte Tabelle wird abgewiesen.
+
+**Wichtig:** Die Feldzuordnungen stammen aus dem alten GF-Formular. Die
+Tabellenstruktur wurde geändert: `lehrkraft_id` und `kurs_id` benötigen
+jetzt eindeutige Zuordnungs-SELECTs in der privaten `gf-import.yaml`.
+Zusätzliche SQL-Objektnamen und Zugangsdaten dürfen nicht ins Git-Repository.
+Die Pflichtklassen müssen in jedem Schuljahr geprüft und angepasst werden.
+Die erste produktive Ausführung sollte zunächst als Dry-Run und mit
+vorhandener Datenbanksicherung stattfinden.

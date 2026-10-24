@@ -15,6 +15,7 @@ dependencies = [
   "tomli>=2;python_version < '3.11'",
   "python-dateutil>=2.8",
   "mysql-connector-python>=8.0",
+  "requests-oauthlib>=1.3",
 ]
 
 [project.optional-dependencies]
@@ -27,7 +28,7 @@ mao = "mao_cli.cli:main"
 include = ["mao_cli*"]
 
 [tool.setuptools.package-data]
-mao_cli = ["defaults/*.yaml", "defaults/*.ini"]
+mao_cli = ["defaults/*.yaml", "defaults/*.ini", "defaults/*.example"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -53,3 +53,36 @@ database=DATENBANK
 ## Konfiguration bei Updates
 
 Programmdateien und ausgelieferte `DEMO_`-Defaults werden mit MaO aktualisiert; zentrale Einstellungen und Arbeitsdaten bleiben unabhängig. Der Konfigurationsassistent überschreibt keine existierenden lokalen Dateien. Schema-Migrationen für neue Pflichtfelder erfolgen nicht automatisch; fehlende Werte werden gemeldet.
+
+## Gravity Forms (private zentrale Konfiguration)
+
+Mit `mao config init` werden zusätzlich `gf.config.example` und
+`gf-import.yaml.example` angelegt. Beide Vorlagen in derselben zentralen
+Konfiguration als `gf.config` und `gf-import.yaml` kopieren und privat anpassen.
+Im Repository existieren weder Zugangsdaten noch produktive GF-Importabfragen.
+
+`gf.config` hat das bestehende Format:
+
+```ini
+[oauth1]
+api_base=https://example.org/wp-json/gf/v2
+consumer_key=HIER_EINTRAGEN
+consumer_secret=HIER_EINTRAGEN
+```
+
+`gf-import.yaml` legt `form_id`, `fields` und die vier (bei deaktivierter
+Pflichtteilnahme drei) SQL-Lookups fest:
+
+- `queries.students`: `matrikelnummer`, `vorname`, `nachname`, `geschlecht`, `klasse`.
+- `queries.mandatory`: dieselben Felder plus `lehrkraft_token`; erforderlich bei `mandatory_classes`.
+- `queries.teachers`: `id`, `token` mit der zugehörigen Kennung aus dem GF-Feld `lehrkraft`.
+- `queries.courses`: `id`, `token` mit dem passenden Wert aus dem GF-Feld `kurs`.
+
+Die beiden ID-Abfragen müssen die tatsächlichen Fremdschlüsselziele der lokalen
+Datenbank berücksichtigen; mehrdeutige Tokens werden abgewiesen. `course` wird
+für die Jahrgangsstufen 11/12 verwendet. Die SQL-Definitionen werden **nicht**
+mit dem Programm ausgeliefert; sie sind an das Schul-Datenbankschema anzupassen.
+
+Die API wird paginiert per OAuth 1.0/HMAC-SHA1 über HTTPS abgefragt. Für den
+Schreibmodus wird ausschließlich der aktuelle Workspace akzeptiert; auf
+bestehende Ergebnisdaten wird nicht schreibend zugegriffen.
