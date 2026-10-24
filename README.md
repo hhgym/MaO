@@ -187,3 +187,22 @@ vorhandener Datenbanksicherung stattfinden.
 `mao update check --channel develop` und `mao update install --channel develop --yes` verwenden öffentliche GitHub-Release-Dateien und benötigen weder Token noch Git-Checkout. Nach erfolgreichen Develop-CI-Builds veröffentlicht der Workflow commitgebundene Wheels samt SHA-256 im [Develop-Release](https://github.com/hhgym/MaO/releases/tag/develop-build). Für ältere CLI-Installationen ist einmalig ein neues Wheel erforderlich.
 
 Die SQL-Abfragen in `gf-import.yaml` verwenden `{{table.teachers_table}}`, `{{table.students_view}}` und `{{table.current_groups_view}}` aus der zentralen `tables.ini`. Eine separate Mathematikfilterung ist derzeit nicht erforderlich, da nur Mathematik-Lerngruppen verwaltet werden.
+
+### Aktualisieren der Editable-Installation
+
+Wurde MaO mit `python -m pip install -e .` installiert, schreibt
+`mao update install --yes --channel develop` die geprüften Programmdateien
+in den tatsächlichen Quellordner zurück (beispielsweise `D:/MaO/mao_cli`
+und `D:/MaO/pyproject.toml`). `mao.exe` aus dem Python-Scripts-Verzeichnis
+bleibt der Einstiegspunkt, eine Änderung des PATH ist nicht erforderlich.
+Die vorherigen Dateien werden unter `D:/MaO/.mao-updates/` gesichert und
+können durch `mao update rollback --yes` wiederhergestellt werden.
+Der neue Code wird vor und nach dem Austausch geprüft; bei Fehlern erfolgt
+die Wiederherstellung automatisch. Werden Abhängigkeiten oder Entry-Points
+geändert, stoppt der Updater und fordert eine kontrollierte Neuinstallation.
+
+**Einmaliger Übergang:** Eine bereits installierte ältere Editable-Version
+enthält diese Funktion noch nicht. Zunächst einmalig die aktuelle
+`develop`-Quell-ZIP nach `D:/MaO` übernehmen; anschließend können
+weitere Updates direkt über `mao update install` erfolgen.
+Weitere Hinweise: [Updateverfahren](wiki/Updates.md).

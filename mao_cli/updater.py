@@ -5,6 +5,7 @@ Umschalten und Rollback. Die installierte Python-Umgebung wird nicht überschrie
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import subprocess
 import json
@@ -23,6 +24,7 @@ from packaging.version import InvalidVersion, Version
 
 from . import __version__
 from .update_install import InstallError, home_path, install_managed, managed_status, rollback_managed
+from .editable_update import detect_editable, editable_status, install_editable, rollback_editable
 
 API = "https://api.github.com"
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -343,9 +345,30 @@ def _packaged_source_matches(wheel: Path) -> bool:
 
 
 def _installed_version(home: Path | None = None) -> str:
+    # Bei pip install -e . zählt der *tatsächlich gestartete* Quellstand, nicht
+    # die eventuell daneben vorhandene verwaltete Umgebung.
+    if detect_editable() is not None:
+        return __version__
     from .update_install import read_state
     state = read_state(home_path(home))
     return state["active"] or __version__
+
+
+def _repository_pyproject(repository: str | None, ref: str) -> bytes:
+    """Die zu Wheel/CI gehörende pyproject.toml unverändert aus GitHub lesen."""
+    if not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', ref):
+        raise UpdateError('Ungültige GitHub-Referenz für pyproject.toml')
+    data = _github_json(f'/repos/{_repo(repository)}/contents/pyproject.toml?ref={ref}')
+    if (not isinstance(data, dict) or data.get('name') != 'pyproject.toml' or
+            data.get('encoding') != 'base64' or not isinstance(data.get('content'), str)):
+        raise UpdateError('pyproject.toml vom gewählten GitHub-Stand nicht verfügbar')
+    try:
+        content = base64.b64decode(data['content'], validate=False)
+    except (ValueError, TypeError) as exc:
+        raise UpdateError('Ungültige GitHub-Quelle für pyproject.toml') from exc
+    if not content or len(content) > 200_000:
+        raise UpdateError('Ungültige Größe der pyproject.toml')
+    return content
 
 
 def _update_develop(action: str, repository: str | None, *, yes: bool,
@@ -381,6 +404,13 @@ def _update_develop(action: str, repository: str | None, *, yes: bool,
     with tempfile.TemporaryDirectory(prefix="mao-develop-") as tmp:
         path, version = stage_develop(build, Path(tmp))
         try:
+            source = detect_editable()
+            if source is not None:
+                project = _repository_pyproject(repository, build.commit)
+                backup = install_editable(source, path, project, version)
+                return (f"Develop {version} (Commit {build.commit[:12]}) direkt in {source.root} aktualisiert.\n"
+                        f"Sicherung: {backup}\n"
+                        "Der bisherige mao.exe verwendet beim nächsten Aufruf den aktualisierten Quellcode.")
             launcher, old = install_managed(path, version, home)
         except InstallError as exc:
             raise UpdateError(str(exc)) from exc
@@ -392,12 +422,19 @@ def _update_develop(action: str, repository: str | None, *, yes: bool,
 def update_action(action: str, channel: str, repository: str | None, *, yes: bool = False,
                   dest: Path | None = None, root: Path | None = None,
                   home: Path | None = None) -> str:
+    try:
+        source = detect_editable()
+    except InstallError as exc:
+        raise UpdateError(str(exc)) from exc
     if action == "status":
-        return managed_status(home)
+        return editable_status(source) if source is not None else managed_status(home)
     if action == "rollback":
         if not yes:
             raise UpdateError("Rollback erfordert --yes")
         try:
+            if source is not None:
+                restored = rollback_editable(source)
+                return f"Editable-Rollback auf MaO {restored} in {source.root} erfolgreich; beim nächsten Start aktiv"
             restored = rollback_managed(home)
         except InstallError as exc:
             raise UpdateError(str(exc)) from exc
@@ -411,13 +448,8 @@ def update_action(action: str, channel: str, repository: str | None, *, yes: boo
     latest = find_release(repository, channel)
     if latest is None:
         raise UpdateError(f"Kein nutzbares Release für Kanal {channel} gefunden")
-    current = Version(__version__)
-    installed = __version__
-    from .update_install import read_state
-    managed = read_state(home_path(home))
-    if managed["active"]:
-        installed = managed["active"]
-        current = Version(installed)
+    installed = _installed_version(home)
+    current = Version(installed)
     if latest.version <= current:
         return f"Kein neueres {channel}-Release: installiert {installed}, verfügbar {latest.version}"
     if action == "check":
@@ -432,6 +464,12 @@ def update_action(action: str, channel: str, repository: str | None, *, yes: boo
     with tempfile.TemporaryDirectory(prefix="mao-wheel-") as temp:
         path = stage_release(latest, Path(temp))
         try:
+            if source is not None:
+                project = _repository_pyproject(repository, latest.tag)
+                backup = install_editable(source, path, project, str(latest.version))
+                return (f"MaO {latest.version} in {source.root} aktualisiert.\n"
+                        f"Sicherung: {backup}\n"
+                        "Der bestehende mao.exe startet beim nächsten Aufruf den aktualisierten Quellcode.")
             launcher, old = install_managed(path, str(latest.version), home)
         except InstallError as exc:
             raise UpdateError(str(exc)) from exc

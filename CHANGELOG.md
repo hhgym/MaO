@@ -1,4 +1,5 @@
 # Changelog
+- Editable-Installationen mit `pip install -e .` werden direkt am Quellort aktualisiert (Prüfsumme, Sicherung, Selbsttest, Rollback); klassische Wheel-Installationen bleiben verwaltet.
 - `mao config init` legt private `db.config`, `gf.config` und `gf-import.yaml` ohne `.example` an (ohne Überschreiben); GF-SQL nutzt dieselben geprüften `{{table.*}}`-Kennungen aus `tables.ini` wie die Pipeline.
 
 Änderungen am Programm werden hier direkt im **Haupt-Git-Repository** dokumentiert. Die Seiten im Ordner `wiki/` bilden die ausführliche Bedienungsanleitung.

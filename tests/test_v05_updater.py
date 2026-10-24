@@ -100,7 +100,8 @@ def test_state_path_traversal_and_lock(tmp_path):
     assert not (home/'.update.lock').exists()
 
 
-def test_rollback_requires_confirmation(tmp_path):
+def test_rollback_requires_confirmation(monkeypatch, tmp_path):
+    monkeypatch.setattr(u, 'detect_editable', lambda: None)
     with pytest.raises(u.UpdateError,match='--yes'):
         u.update_action('rollback','stable',None,home=tmp_path)
     assert 'noch keine' in u.update_action('status','stable',None,home=tmp_path)
@@ -109,6 +110,7 @@ def test_rollback_requires_confirmation(tmp_path):
 
 
 def test_develop_install_failure_keeps_managed_state(monkeypatch, tmp_path):
+    monkeypatch.setattr(u, 'detect_editable', lambda: None)
     from mao_cli import update_install as ins
     build = u.DevelopBuild("hhgym/MaO", "b"*40, 21, "mao_cli-0.6.0.dev0+g"+"b"*12+"-py3-none-any.whl", "https://github.com/x.whl", "https://github.com/x.sha256")
     monkeypatch.setattr(u, "find_develop", lambda repository: build)
@@ -125,7 +127,8 @@ def test_develop_install_failure_keeps_managed_state(monkeypatch, tmp_path):
     assert not (tmp_path / "active.json").exists()
 
 
-def test_updated_help():
+def test_updated_help(monkeypatch):
+    monkeypatch.setattr(u, 'detect_editable', lambda: None)
     assert cli.main(['update','status','--home','/tmp/mao-fake-never-used'])==0
 
 
