@@ -25,6 +25,12 @@ def config_dir_for(cli_value: Path | None = None) -> Path:
     env = os.environ.get("MAO_CONFIG")
     if env:
         return Path(env).expanduser().resolve()
+    # Editable Installation: der Quellordner enthaelt pyproject.toml und
+    # den privaten Konfigurationsordner direkt neben mao_cli/.
+    project = Path(__file__).resolve().parent.parent
+    source_config = project / "config"
+    if (project / "pyproject.toml").is_file() and source_config.is_dir():
+        return source_config.resolve()
     if os.name == "nt":
         return (Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))) / "MaO").resolve()
     return (Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "mao").resolve()
@@ -146,8 +152,27 @@ def init_config(config_dir: Path, defaults_dir: Path) -> list[Path]:
         tables_parser.read_file(handle)
     if not tables_parser.has_section("table"):
         raise ConfigurationError(f"tables.ini benötigt Abschnitt [table]: {tables_file}")
+    # Bestehende Konfigurationen migrieren, ohne den echten Namen zu verlieren.
+    # Die GF-SQL-Konfiguration versteht alte {{table.students_view}}-Tokens
+    # weiterhin; physisch wird nur students_table gepflegt.
+    if (tables_parser.has_option("table", "students_view") and
+            not tables_parser.has_option("table", "students_table")):
+        original = tables_file.read_text(encoding="utf-8-sig")
+        lines = original.splitlines(keepends=True)
+        in_table = False
+        for i, line in enumerate(lines):
+            if line.lstrip().startswith("["):
+                in_table = line.strip().lower() == "[table]"
+            if in_table and re.match(r"^\s*students_view\s*=", line):
+                lines[i] = re.sub(r"^(\s*)students_view(\s*=)", r"\1students_table\2", line, count=1)
+                break
+        else:
+            raise ConfigurationError("tables.ini: students_view konnte nicht umbenannt werden")
+        tables_file.write_text("".join(lines), encoding="utf-8")
+        tables_parser.set("table", "students_table", tables_parser.get("table", "students_view"))
+        tables_parser.remove_option("table", "students_view")
     missing = {
-        "students_view": "DEMO_CURRENT_STUDENTS",
+        "students_table": "DEMO_CURRENT_STUDENTS",
         "current_groups_view": "DEMO_CURRENT_GROUP_VIEW",
     }
     missing = {key: value for key, value in missing.items() if not tables_parser.has_option("table", key)}
