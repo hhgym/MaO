@@ -146,3 +146,17 @@ Stable und RC benötigen veröffentlichte GitHub-Releases mit Python-Wheel und S
 ## Updateverwaltung (ab v0.5)
 
 `mao update check|download|install|status|rollback` – Beispiele und Erklärung des versionierten Starters: [Updates](Updates.md).
+
+### Gravity-Forms-Import
+
+- `mao import-gf` oder `mao import-gf --dry-run` prüft das Meldeformular und
+  alle Zuordnungen **ohne INSERT**.
+- `mao import-gf --apply` fügt die Teilnehmenden ausschließlich in eine
+  nachweislich leere Organisationstabelle ein.
+- `mao import-gf --no-mandatory` unterdrückt ausnahmsweise Pflichtteilnahmen.
+- `mao --config-dir "D:/MaO/Config" --year 2026-27 import-gf` verwendet die
+  zentral hinterlegten Einstellungen des registrierten Schuljahres.
+
+Erforderlich sind `gf.config`, `gf-import.yaml`, `db.config` und die echte
+`orga_table` in der zentralen `tables.ini`. Archivieren, Leeren und die
+Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.

@@ -137,6 +137,16 @@ def init_config(config_dir: Path, defaults_dir: Path) -> list[Path]:
             created.append(dest)
     if not (config_dir / SETTINGS).exists():
         created.append(save_settings(config_dir, _default_settings()))
+    gf_example = config_dir / "gf.config.example"
+    if not gf_example.exists():
+        gf_example.write_text("# In gf.config kopieren; niemals in Git veröffentlichen.\n"
+                              "[oauth1]\napi_base=https://example.org/wp-json/gf/v2\n"
+                              "consumer_key=\nconsumer_secret=\n", encoding="utf-8")
+        created.append(gf_example)
+    mapping_example = config_dir / "gf-import.yaml.example"
+    if not mapping_example.exists():
+        shutil.copyfile(defaults_dir / "gf-import.yaml.example", mapping_example)
+        created.append(mapping_example)
     example = config_dir / "db.config.example"
     if not example.exists():
         example.write_text("# Lokal in db.config kopieren und anpassen (niemals ins Git-Repository)\n"

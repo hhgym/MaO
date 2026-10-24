@@ -6,6 +6,11 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Gravity Forms (Erstbefüllung)
+- Separater `mao import-gf` mit zentraler privater `gf.config`/`gf-import.yaml` und explizitem `--apply`.
+- OAuth1-API, Checkboxmeldungen, Pflichtteilnahmen, Teilnehmernummern und FK-ID-Auflösung.
+- Nur Import in leere Organisationstabelle; niemals Archivierung oder TRUNCATE.
+
 ### Zentrale Konfigurationsverwaltung und Jahrgänge
 - `MAO_CONFIG` und `--config-dir` statt Konfiguration pro Workspace.
 - `settings.yaml` mit explizitem, eindeutigem Arbeitsverzeichnis je Schuljahr und Standardprofil.

@@ -25,6 +25,7 @@ from .updater import update_action, UpdateError
 from .workspaces import (config_dir_for, load_settings, save_settings, init_config,
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
+from .gf_import import import_participants, ImportErrorGF
 
 DEFAULTS = Path(__file__).resolve().parent / "defaults"
 FILES = ("pipeline.yaml", "profiles.ini", "tables.ini")
@@ -122,6 +123,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         if action == "add":
             item.add_argument("--root", type=Path, required=True)
             item.add_argument("--no-wrapper", action="store_true")
+
+    gf = commands.add_parser("import-gf", help="Gravity-Forms-Meldungen sicher in die aktuelle Organisationstabelle importieren")
+    common(gf)
+    gf_mode = gf.add_mutually_exclusive_group()
+    gf_mode.add_argument("--apply", action="store_true", help="Erstbefüllung der LEEREN Organisationstabelle durchführen")
+    gf_mode.add_argument("--dry-run", action="store_true", help="Nur Meldungen und Zuordnungen prüfen (Standard)")
+    gf.add_argument("--no-mandatory", action="store_true", help="Pflichtteilnahmen ausnahmsweise nicht ergänzen")
 
     init_year = commands.add_parser("init-jahrgang", help="Jahrgangswechsel sicher vorprüfen (read-only)")
     global_overrides(init_year)
@@ -287,6 +295,29 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     started = time.monotonic()
     try:
         profile_name = getattr(args, "profile", None) or settings["defaults"]["profile"]
+        if args.command == "import-gf":
+            if selection.year is None or selection.year != settings["current_year"]:
+                raise ConfigurationError("GF-Import nur für den aktuell registrierten Jahrgang zulässig")
+            tables = load_tables(resolve_config_file(config_dir, "tables.ini"))
+            target = tables.get("orga_table", "")
+            if not target or target.startswith("DEMO_"):
+                raise ConfigurationError("Für import-gf muss in der privaten tables.ini eine echte orga_table stehen")
+            db_config = load_db_config(config_dir)
+            if not can_reach(db_config.host, db_config.port, timeout=3):
+                raise ConnectionError("Datenbank für GF-Import nicht erreichbar")
+            with DB(db_config) as db:
+                db_mao = current_MaO_number_db(db, tables)
+                if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
+                    raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
+                stats = import_participants(db, config_dir, target, dry_run=not args.apply,
+                                            no_mandatory=args.no_mandatory)
+            LOGGER.info("GF-Import | Formular-Einträge: %s | inaktive Meldungen: %s | "
+                        "Pflichtteilnahmen ergänzt: %s | Teilnehmende: %s | Lehrkraft fehlt: %s | "
+                        "Kurs fehlt (11/12): %s | geschrieben: %s | Modus: %s",
+                        stats["gf_entries"], stats["inactive_entries"], stats["mandatory_added"],
+                        stats["participants"], stats["missing_teacher"], stats["missing_course"],
+                        stats["inserted"], "APPLY" if args.apply else "DRY-RUN")
+            return 0
         cfg, profiles, config_files, tables = load_pipeline(config_dir, workspace, profile_name if args.command not in ("profiles", "init-jahrgang") else None)
         LOGGER.info("Konfiguration: %s", config_dir)
         LOGGER.info("Arbeitsordner: %s", workspace)
@@ -392,7 +423,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except ConnectionError as exc:
         LOGGER.error("Datenbankfehler: %s", exc)
         return 3
-    except (ConfigurationError, yaml.YAMLError, ValueError, TypeError, OSError) as exc:
+    except (ConfigurationError, ImportErrorGF, yaml.YAMLError, ValueError, TypeError, OSError) as exc:
         LOGGER.error("Konfigurations- oder Dateifehler: %s", exc)
         if getattr(args, "verbose", False):
             LOGGER.debug("Traceback:\n%s", traceback.format_exc())
