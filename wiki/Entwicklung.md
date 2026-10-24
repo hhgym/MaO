@@ -14,24 +14,26 @@ python -m pytest -q
 mao --version
 ```
 
-## Wiki-Quellen und Wiki-Repository
+## Wiki veröffentlichen
 
-`wiki/*.md` ist der versionierte, maßgebliche Dokumentationsstand im Hauptrepository. Ein GitHub- oder GitLab-Wiki hat normalerweise ein **eigenes Git-Repository**; deshalb erscheinen die Seiten nicht allein dadurch im Wiki, dass der Ordner `wiki/` im Hauptrepo liegt.
+Die Quelldateien liegen unter `wiki/*.md` auf `develop`. GitHub verwendet für das eigentliche Wiki ein eigenes Repository (`MaO.wiki.git`), daher erscheinen Änderungen im Ordner nicht automatisch auf der Wiki-Website.
 
-Das Projekt enthält ein Veröffentlichungsskript:
+Der GitHub-Actions-Workflow `.github/workflows/publish-wiki.yml` veröffentlicht Änderungen im Ordner `wiki/` automatisch nach jedem entsprechenden Push auf `develop`. Er verwendet das eingebaute `GITHUB_TOKEN` mit `contents: write` und das Skript `scripts/publish_wiki.py`. **Zusätzliche, ausschließlich im Wiki angelegte Seiten werden nicht gelöscht.**
+
+**Ersteinrichtung:** In den Repository-Einstellungen muss „Wikis“ aktiviert sein. Beim ersten Mal muss in der GitHub-Wiki-Oberfläche unter <https://github.com/hhgym/MaO/wiki> eine Startseite angelegt werden, damit GitHub das separate Wiki-Repository initialisiert. Danach kann ein fehlgeschlagener Veröffentlichungs-Workflow in GitHub Actions erneut ausgeführt werden.
+
+Alternativ kann die Veröffentlichung lokal mit Git-Schreibrechten erfolgen:
 
 ```bash
-python scripts/publish_wiki.py --remote https://HOST/OWNER/REPO.wiki.git --dry-run
-python scripts/publish_wiki.py --remote https://HOST/OWNER/REPO.wiki.git
+python scripts/publish_wiki.py --remote https://github.com/hhgym/MaO.wiki.git --dry-run
+python scripts/publish_wiki.py --remote https://github.com/hhgym/MaO.wiki.git
 ```
 
-Ersetze die Beispiel-URL durch die tatsächlich angezeigte Git-Clone-URL des Wikis. Das Skript klont das externe Wiki in einen temporären Ordner, aktualisiert nur gleichnamige Seiten, führt `git add`, `git commit` und `git push` aus und verändert das Hauptrepository nicht. Es löscht keine zusätzlichen Wiki-Seiten.
-
-Vorher das Wiki auf der jeweiligen Plattform aktivieren und gegebenenfalls die Startseite einmal initialisieren. Git-Schreibrechte und Benutzeridentität (`git config user.name` und `git config user.email`) müssen vorhanden sein.
+Die Quelldateien im Hauptrepository bleiben die maßgebliche Dokumentation. Änderungen sollten deshalb dort erfolgen.
 
 ## Git-Flow-Repository
 
-Das Hauptrepository enthält CI- und Release-Workflows, `CHANGELOG.md` und die versionierten Wiki-Quelldateien. Detaillierte Anleitung: [Git Flow](Git-Flow). Aktualisierungsbefehl und Kanäle: [Updates](Updates). Ein externes Repository muss noch eingerichtet werden.
+Das Hauptrepository enthält CI- und Release-Workflows, `CHANGELOG.md` und die versionierten Wiki-Quelldateien. Detaillierte Anleitung: [Git Flow](Git-Flow). Aktualisierungsbefehl und Kanäle: [Updates](Updates).
 
 ## Geplante Erweiterungen
 

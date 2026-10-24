@@ -32,4 +32,4 @@ Der Export bereinigt nur manifestgeführte Dateien, deren Erzeuger zum aktuell g
 
 ## Wiki wird nach Commit nicht aktualisiert
 
-Die Markdown-Seiten im Hauptrepository sind **nicht** automatisch identisch mit dem Git-Wiki. Führe die Veröffentlichung über `scripts/publish_wiki.py` aus; dazu muss das separate Wiki-Repository existieren und beschreibbar sein.
+Der Workflow `.github/workflows/publish-wiki.yml` synchronisiert Änderungen unter `wiki/` nach entsprechenden Pushes auf `develop`. Prüfe den Status in **Actions → Wiki veröffentlichen**. Bei der erstmaligen Einrichtung muss im GitHub-Wiki eine Seite (z. B. `Home`) angelegt sein, damit das separate `.wiki.git`-Repository existiert. Eine lokale Veröffentlichung über `scripts/publish_wiki.py` bleibt möglich.

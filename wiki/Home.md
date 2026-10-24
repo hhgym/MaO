@@ -1,32 +1,58 @@
 # MaO-CLI – Dokumentation
 
-MaO-CLI automatisiert die Erstellung von CSV-Listen, LaTeX-Makros und PDF-Dokumenten aus der MySQL-Datenbank zur Mathematik-Olympiade.
+**MaO-CLI** erzeugt aus Datenbankdaten zur Mathematik-Olympiade CSV-Listen, LaTeX-Makros und PDF-Dokumente. Zusätzlich unterstützt das Programm den sicheren Import von Gravity-Forms-Teilnehmermeldungen und die Vorbereitung des Jahrgangswechsels.
 
-**Stand:** `0.4.0.dev0` (Entwicklung vor Version 2, keine Kompatibilitätszusage)
-
-Der Einstieg erfolgt nach der Installation mit `mao`. Alternativ kann aus dem Projektordner `python -m mao_cli` verwendet werden.
+**Stand:** Entwicklungszweig `develop`, Quellversion `0.6.0.dev0`. Die Funktionen können sich vor Version 2.0 noch ändern.
 
 ## Schnellstart
 
-```bash
-python -m pip install -e .
-mao profiles
-mao validate --workspace "D:/MaO/2026-27"
-mao plan --workspace "D:/MaO/2026-27" --profile vollpaket --no-latex
-mao run --workspace "D:/MaO/2026-27" --profile vollpaket --no-latex
+MaO wird als Python-Paket installiert. Die persönliche Konfiguration und die Arbeitsverzeichnisse liegen getrennt vom Programm:
+
+```powershell
+python -m pip install .
+mao config init
+mao config show
+mao workspace list
+mao validate
 ```
 
-Für den normalen Lauf muss eine gültige `db.config` im Arbeitsordner liegen. Die gedruckten Pläne basieren auf echten Leseabfragen, ändern aber keine CSV- oder PDF-Dateien.
+Die Konfiguration muss anschließend um die privaten, tatsächlichen Datenbank- und Tabelleneinstellungen ergänzt werden. Produktive Zugangsdaten und Schülerinnen-/Schülerdaten gehören nicht ins Git-Repository.
 
-## Seiten
+## Daten exportieren
 
-- [Befehle](Befehle) – vollständige Befehle, Parameter, Beispiele, Exit-Codes
-- [Konfiguration](Konfiguration) – SQL, YAML, INI, lokale Overrides, Sicherheit
-- [Profile](Profile) – Beispielprofile und Ausführungslogik
-- [Arbeitsverzeichnisse](Arbeitsverzeichnisse) – Trennung von Anwendung und Daten
-- [Fehlerbehebung](Fehlerbehebung) – typische Fehlermeldungen und Lösungen
-- [Entwicklung](Entwicklung) – Installation, Tests und Wiki-Veröffentlichung
-- [Git-Flow](Git-Flow) – Branches, CI, Releases und Versionspflege
-- [Updates](Updates) – stabile Updates, RCs und Develop-Kanal
+```powershell
+mao plan --profile vollpaket --no-latex
+mao run --profile vollpaket --no-latex
+```
 
-Änderungen pro Version werden in **`CHANGELOG.md` im Stammverzeichnis des Hauptrepositories** geführt.
+## Teilnehmermeldungen importieren
+
+```powershell
+mao import-gf --dry-run
+# Erst nach erfolgreicher Prüfung und nur bei leerer Organisationstabelle:
+mao import-gf --apply
+```
+
+Die Zugangsdaten (`gf.config`) und die SQL-Zuordnungen (`gf-import.yaml`) bleiben lokal und werden nicht veröffentlicht.
+
+## Aktualisieren
+
+```powershell
+mao update check --channel develop
+mao update download --channel develop --output ./downloads
+mao update install --channel develop --yes
+```
+
+## Dokumentationsseiten
+
+- [Befehle](Befehle) – CLI-Befehle und Parameter
+- [Konfiguration](Konfiguration) – SQL, Profile, Gravity Forms und private Einstellungen
+- [Profile](Profile) – Profile und Exportsteuerung
+- [Arbeitsverzeichnisse](Arbeitsverzeichnisse) – schuljahresbezogene Arbeitsordner
+- [Jahrgangswechsel](Jahrgangswechsel) – schreibgeschützte Vorprüfung
+- [Updates](Updates) – Stable-, RC- und Develop-Kanal
+- [Fehlerbehebung](Fehlerbehebung) – Fehlermeldungen und Lösungen
+- [Entwicklung](Entwicklung) – Tests, Wiki-Veröffentlichung und Entwicklung
+- [Git-Flow](Git-Flow) – Branches, CI und Releases
+
+Die Versionsänderungen stehen im [CHANGELOG.md](https://github.com/hhgym/MaO/blob/develop/CHANGELOG.md) des Hauptrepositories.

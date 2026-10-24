@@ -76,17 +76,16 @@ consumer_secret=HIER_EINTRAGEN
 - `queries.students`: Schülerstammdaten mit `matrikelnummer`, `vorname`, `nachname`, `geschlecht`, `klasse` des aktuellen Schuljahres.
 - `queries.mandatory`: aktuelle **Mathematik-Lerngruppen** mit `klasse` (Alias für `klassenname`), `lehrkraft_id` und `lerngruppe_schuljahr_id`. Die View enthält auch andere Lerngruppen; die SELECT-Abfrage muss auf Mathematik eingeschränkt werden. Pro Pflichtklasse genau eine eindeutige Lehrkraft.
 - `queries.teachers`: gültige `id`-Werte der Lehrkräfte; Formularfeld `3` enthält bereits diese ID und wird nur geprüft.
-- `queries.courses`: die beiden Spalten `lerngruppe_schuljahr_id`, `kurs_id` als explizite Abbildung von GF-Feld `5` auf den tatsächlichen Fremdschlüssel in der Organisationstabelle.
+- `queries.courses`: die Spalten `lerngruppe_schuljahr_id`, `lehrkraft_id`, `lerngruppen_einsatz_id` aus der erweiterten Lerngruppen-View. Das Paar aus den GF-Feldern `5` und `3` muss genau einen Einsatz ergeben.
 
-**Achtung: unterschiedliche IDs.** Feld `5` enthält
-`lerngruppe_schuljahr_id`; der zuvor benannte Fremdschlüssel verweist auf
-eine **andere** Tabelle (Einsatz-ID einer anderen, privaten Tabelle). Die IDs sind ohne
-explizite Join-Zuordnung nicht austauschbar. Die aktuelle Lerngruppen-View
-enthält `lerngruppe_schuljahr_id` und `lehrkraft_id`, aber nicht
-nachgewiesenermaßen die benötigte Einsatz-ID. Entweder wird der FK bewusst
-auf die Schuljahr-Lerngruppe geändert oder die private SELECT-Abfrage stellt
-die eindeutige Beziehung zum Einsatz her. Bis dahin schlägt der Import bei
-nicht zuordenbaren Werten fehl, statt falsche IDs zu speichern.
+**Achtung: unterschiedliche IDs.** Gravity Forms liefert in Feld `5` die
+`lerngruppe_schuljahr_id` und in Feld `3` die `lehrkraft_id`. Die bereits
+vorhandene Spalte `MaO_Orga_2.kurs_id` verweist jedoch weiterhin auf
+`orga_lerngruppen_einsatz.id`. Die erweiterte aktuelle Lerngruppen-View
+liefert dafür `lerngruppen_einsatz_id`; diese wird aus **beiden GF-IDs**
+eindeutig ermittelt. Stimmen die Zuordnungen nicht oder gibt es mehrere
+Einsätze, wird der Import abgebrochen. Datenbankschema und bisherige Views
+bleiben unverändert.
 
 Standard-Pflichtklassen: `5-1`, `5-2`, `6-1`, `6-2`, `7-3`. Die `7-4`
 steht unter `optional_mandatory_classes`: Sie wird nur übernommen, wenn sie
