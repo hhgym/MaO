@@ -81,7 +81,8 @@ def test_empty_report_import_and_mandatory_participation():
     assert stats['empty_reports'] == 1
     assert stats['mandatory_added'] == 1
     assert stats['inactive_entries'] == 1
-    assert rows[0]['kurs_id'] == 100
+    assert rows[0]['kurs_id'] is None
+    assert rows[1]['kurs_id'] is None  # auch der gemeldete Jahrgang 8
 
 
 def test_empty_report_conflict_is_blocked():
