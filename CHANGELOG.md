@@ -7,9 +7,10 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 ## [0.6.0.dev0] – in Entwicklung
 
 ### Updateverwaltung
+- Develop-Updates für öffentliches Repository: anonyme GitHub-Abfragen, öffentliches rollierendes Develop-Release, commitgebundene Wheel-/SHA-256-Prüfung (keine lokale GitHub-Anmeldung).
 - Develop-Kanal nutzt direkt den GitHub-Branch-HEAD und ein erfolgreich getestetes Actions-Artefakt statt `git rev-parse` und Git-Checkout.
 - `mao update check|download|install --channel develop` mit Commit-Versionierung der Wheels, SHA-256-Prüfung und verwalteter Installation samt Rollback.
-- Für private Develop-Artefakte `Actions: read` zusätzlich zu GitHub-Zugriff erforderlich.
+- Der öffentliche Download erfordert keine GitHub-Anmeldung; CI-Artefakte bleiben intern für die Workflow-Auswertung erhalten.
 
 
 ### Gravity Forms (Erstbefüllung)

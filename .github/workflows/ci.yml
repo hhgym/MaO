@@ -34,6 +34,8 @@ jobs:
           MAO_CONFIG: ${{ runner.temp }}/mao-config
         run: python -m mao_cli validate
   develop-build:
+    permissions:
+      contents: write  # Öffentliches Develop-Release veröffentlichen
     needs: tests
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
@@ -70,3 +72,25 @@ jobs:
           name: mao-develop-${{ github.sha }}
           path: dist/
           retention-days: 30
+      - name: Develop-Wheel öffentlich als GitHub-Release-Datei bereitstellen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="develop-build"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" dist/*.whl dist/*.sha256 \
+              --prerelease --latest=false --target "$COMMIT_SHA" \
+              --title "MaO Develop-Builds" \
+              --notes "Automatisch gebaute Entwicklungsversionen. Jedes Wheel trägt die Commit-ID. Nicht als stabile Version verwenden."
+          else
+            for f in dist/*.whl dist/*.sha256; do
+              filename="${f##*/}"
+              if ! gh release view "$tag" --json assets --jq '.assets[].name' | grep -Fxq -- "$filename"; then
+                gh release upload "$tag" "$f"
+              fi
+            done
+          fi
