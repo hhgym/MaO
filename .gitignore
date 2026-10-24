@@ -34,3 +34,8 @@ dist/
 *.p12
 *.pfx
 .env.*
+
+# Lokale, nicht versionierte Editable-Update-Sicherungen
+.mao-updates/
+.mao-stage-*/
+.mao-rollback-*/
