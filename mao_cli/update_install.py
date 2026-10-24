@@ -96,12 +96,23 @@ def _update_lock(home: Path):
 def _verify_environment(env: Path, version: str) -> None:
     executable = python_in(env)
     try:
-        result = subprocess.run([str(executable), "-m", "mao_cli", "--version"],
+        # -I ignoriert ein vom aufrufenden Quell-ZIP geerbtes PYTHONPATH und
+        # User-Site-Packages. Geprüft wird ausschließlich das Paket in der
+        # neu angelegten virtuellen Umgebung.
+        result = subprocess.run([str(executable), "-I", "-m", "mao_cli", "--version"],
                                 capture_output=True, text=True, timeout=45, cwd=env)
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise InstallError(f"Neue Installation kann nicht gestartet werden: {type(exc).__name__}") from exc
     if result.returncode or result.stdout.strip() != f"mao {version}":
-        raise InstallError(f"Neue Installation hat CLI-Selbstprüfung nicht bestanden (erwartet {version})")
+        # Kein unbeschränktes stdout/stderr in die Fehlermeldung aufnehmen.
+        # Typische Ursache: geerbtes PYTHONPATH, fehlende Abhängigkeit oder
+        # abweichende Paketversion. Der bisherige Zustand bleibt unverändert.
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
+        actual = stdout or (stderr.splitlines()[-1] if stderr else "(keine Ausgabe)")
+        actual = actual.replace("\r", " ").replace("\n", " ")[:240]
+        raise InstallError(f"CLI-Selbstprüfung fehlgeschlagen: erwartet mao {version}; "
+                           f"Exitcode {result.returncode}; tatsächlich {actual!r}")
 
 
 def _install_wheel(env: Path, wheel: Path, version: str) -> None:

@@ -88,9 +88,11 @@ def test_develop_public_release_missing_checksum_fails_closed(monkeypatch):
 
 
 def test_develop_check_without_local_git(monkeypatch,tmp_path):
-    build = u.DevelopBuild('hhgym/MaO','a'*40,43,'test.whl','https://github.com/x.whl','https://github.com/x.sha256')
+    build = u.DevelopBuild('hhgym/MaO','a'*40,43,'mao_cli-0.6.0.dev0+g'+'a'*12+'-py3-none-any.whl','https://github.com/x.whl','https://github.com/x.sha256')
     monkeypatch.setattr(u,'find_develop',lambda repository:build)
     monkeypatch.setattr(u,'_installed_version',lambda home:'0.6.0.dev0')
+    monkeypatch.setattr(u,'stage_develop',lambda b, d:(d/'test.whl','0.6.0.dev0+g'+'a'*12))
+    monkeypatch.setattr(u,'_packaged_source_matches',lambda path:False)
     monkeypatch.setattr(u,'git_checkout_root',lambda:pytest.fail('Git darf nicht aufgerufen werden'),raising=False)
     assert 'Neuer getesteter' in u.update_action('check','develop',None,home=tmp_path)
     assert '43' in u.update_action('check','develop',None,home=tmp_path)
@@ -99,7 +101,7 @@ def test_develop_check_without_local_git(monkeypatch,tmp_path):
 
 
 def test_develop_already_current(monkeypatch,tmp_path):
-    build = u.DevelopBuild('hhgym/MaO','a'*40,43,'test.whl','https://github.com/x.whl','https://github.com/x.sha256')
+    build = u.DevelopBuild('hhgym/MaO','a'*40,43,'mao_cli-0.6.0.dev0+g'+'a'*12+'-py3-none-any.whl','https://github.com/x.whl','https://github.com/x.sha256')
     monkeypatch.setattr(u,'find_develop',lambda repository:build)
     monkeypatch.setattr(u,'_installed_version',lambda home:'0.6.0.dev0+gaaaaaaaaaaaa')
     assert 'aktuell' in u.update_action('check','develop',None,home=tmp_path)
