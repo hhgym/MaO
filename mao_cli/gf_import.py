@@ -32,6 +32,7 @@ class ImportSettings:
     page_size: int
     timeout: int
     mandatory_classes: tuple[str, ...]
+    optional_mandatory_classes: tuple[str, ...]
     fields: Mapping[str, str]
     queries: Mapping[str, str]
 
@@ -43,7 +44,7 @@ def load_import_settings(path: Path) -> ImportSettings:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
         raise ConfigurationError(f"GF-Importkonfiguration unlesbar: {exc}") from exc
-    if not isinstance(raw, dict) or set(raw) - {"form_id", "page_size", "timeout", "fields", "queries", "mandatory_classes"}:
+    if not isinstance(raw, dict) or set(raw) - {"form_id", "page_size", "timeout", "fields", "queries", "mandatory_classes", "optional_mandatory_classes"}:
         raise ConfigurationError("gf-import.yaml: ungültige oder unbekannte Schlüssel")
     fields = raw.get("fields")
     queries = raw.get("queries")
@@ -53,13 +54,19 @@ def load_import_settings(path: Path) -> ImportSettings:
         raise ConfigurationError("gf-import.yaml: Gravity-Forms-Feldnummern müssen Zeichenketten sein")
     if not isinstance(queries, dict) or not {"students", "teachers", "courses"}.issubset(queries) or set(queries) - {"students", "teachers", "courses", "mandatory"}:
         raise ConfigurationError("gf-import.yaml: queries benötigt students, teachers, courses; optional mandatory")
-    mand = raw.get("mandatory_classes")
-    if not isinstance(mand, list) or not all(isinstance(x, str) and re.fullmatch(r"[0-9*-]+", x) for x in mand):
-        raise ConfigurationError("gf-import.yaml: mandatory_classes muss eine Liste von Klassenmustern sein")
-    if mand and not queries.get("mandatory"):
-        raise ConfigurationError("gf-import.yaml: Pflichtteilnahmen benötigen queries.mandatory")
+    mand = raw.get("mandatory_classes", [])
+    opt_mand = raw.get("optional_mandatory_classes", [])
+    for key, value in (("mandatory_classes", mand), ("optional_mandatory_classes", opt_mand)):
+        if not isinstance(value, list) or not all(isinstance(x, str) and re.fullmatch(r"[0-9]{1,2}-[0-9]{1,2}", x) for x in value):
+            raise ConfigurationError(f"gf-import.yaml: {key} benötigt explizite Klassenbezeichnungen")
+        if len(value) != len(set(value)):
+            raise ConfigurationError(f"gf-import.yaml: doppelte Klasse in {key}")
+    if set(mand) & set(opt_mand):
+        raise ConfigurationError("gf-import.yaml: Pflicht- und optionale Klassen überlappen")
+    if (mand or opt_mand) and not queries.get("mandatory"):
+        raise ConfigurationError("gf-import.yaml: Pflichtteilnahmen benötigen queries.mandatory (aktuelle Mathematik-Lerngruppen)")
     for key, value in queries.items():
-        if not value and key == "mandatory" and not mand:
+        if not value and key == "mandatory" and not (mand or opt_mand):
             continue
         if not isinstance(value, str) or not value.strip() or "DEMO_" in value:
             raise ConfigurationError(f"gf-import.yaml: lokale SELECT-Abfrage '{key}' muss angepasst sein")
@@ -71,7 +78,7 @@ def load_import_settings(path: Path) -> ImportSettings:
             raise ConfigurationError(f"gf-import.yaml: {key} außerhalb zulässiger Grenzen")
         return n
     return ImportSettings(positive("form_id", 16, 100000), positive("page_size", 200, 500),
-                          positive("timeout", 60, 300), tuple(mand), fields, queries)
+                          positive("timeout", 60, 300), tuple(mand), tuple(opt_mand), fields, queries)
 
 
 def load_gf_credentials(path: Path) -> dict[str, str]:
@@ -179,35 +186,68 @@ def _cache(rows: list[dict], required: set[str], source: str) -> list[dict]:
     return rows
 
 
-def _mapping(rows: list[dict], source: str) -> dict[str, int]:
-    out: dict[str, int] = {}
-    for item in _cache(rows, {"id", "token"}, source):
-        token = str(item["token"] or "").strip().casefold()
-        if not token:
-            continue
-        if token in out and out[token] != int(item["id"]):
-            raise ImportErrorGF(f"Mehrdeutige {source}-Zuordnung für {token!r}")
-        out[token] = int(item["id"])
-    return out
-
-
-def _resolve(value: Any, mapping: dict[str, int], source: str) -> int | None:
-    token = str(value or "").strip().casefold()
-    if not token:
+def _valid_id(value: Any, source: str, *, optional: bool = False) -> int | None:
+    """Nur positive, dezimale ID-Werte akzeptieren; niemals Labels als IDs deuten."""
+    if (value is None or (isinstance(value, str) and not value.strip())) and optional:
         return None
-    if token not in mapping:
-        raise ImportErrorGF(f"Keine eindeutige {source}-ID für {value!r}; SQL-Lookup in gf-import.yaml prüfen")
-    return mapping[token]
+    if type(value) is bool or not re.fullmatch(r"[1-9][0-9]*", str(value).strip()):
+        raise ImportErrorGF(f"{source}: erwartet positive numerische ID, erhalten {value!r}")
+    return int(str(value).strip())
+
+
+def _teacher_ids(rows: list[dict]) -> set[int]:
+    return {_valid_id(row["id"], "Lehrkraft-ID") for row in _cache(rows, {"id"}, "teachers")}
+
+
+def _course_links(rows: list[dict]) -> dict[tuple[int, int], int]:
+    """(GF-Lerngruppe-Schuljahr-ID, GF-Lehrkraft-ID) -> Einsatz-ID.
+
+    Ein Einsatz ist nicht durch die Lerngruppe allein definiert. Die
+    Lerngruppen-View liefert die tatsächlich zugehörige Einsatz-ID.
+    """
+    result: dict[tuple[int, int], int] = {}
+    required = {"lerngruppe_schuljahr_id", "lehrkraft_id", "lerngruppen_einsatz_id"}
+    for row in _cache(rows, required, "courses"):
+        group_id = _valid_id(row["lerngruppe_schuljahr_id"], "lerngruppe_schuljahr_id")
+        teacher_id = _valid_id(row["lehrkraft_id"], "Lehrkraft-ID (Lerngruppe)")
+        # NULL markiert in der View einen nicht gefundenen/mehrdeutigen
+        # Einsatz; darf nicht als Fremdschluessel gespeichert werden.
+        target = _valid_id(row["lerngruppen_einsatz_id"], "lerngruppen_einsatz_id")
+        key = (group_id, teacher_id)
+        if key in result and result[key] != target:
+            raise ImportErrorGF(f"Mehrdeutige Einsatzzuordnung für Lerngruppe {group_id} und Lehrkraft {teacher_id}")
+        result[key] = target
+    return result
+
+
+def _resolve_teacher(value: Any, teacher_ids: set[int], source: str) -> int | None:
+    teacher_id = _valid_id(value, source, optional=True)
+    if teacher_id is not None and teacher_id not in teacher_ids:
+        raise ImportErrorGF(f"{source}: ID {teacher_id} existiert nicht in der Lehrkräfte-Quelle")
+    return teacher_id
+
+
+def _resolve_course(value: Any, teacher_id: int | None,
+                    course_links: dict[tuple[int, int], int]) -> int | None:
+    group_id = _valid_id(value, "GF-Feld 5 / lerngruppe_schuljahr_id", optional=True)
+    if group_id is None:
+        return None
+    if teacher_id is None:
+        raise ImportErrorGF(f"Für Lerngruppe {group_id} fehlt die Lehrkraft-ID aus GF-Feld 3")
+    key = (group_id, teacher_id)
+    if key not in course_links:
+        raise ImportErrorGF(f"Kein eindeutiger Einsatz für Lerngruppe {group_id}, Lehrkraft {teacher_id}")
+    return course_links[key]
 
 
 def build_participants(entries: Iterable[dict], students: list[dict], mandatory: list[dict],
-                       teachers: dict[str, int], courses: dict[str, int], options: ImportSettings) -> tuple[list[dict], dict[str, int]]:
+                       teachers: set[int], courses: dict[tuple[int, int], int], options: ImportSettings) -> tuple[list[dict], dict[str, int]]:
     _cache(students, {"matrikelnummer", "vorname", "nachname", "geschlecht", "klasse"}, "students")
     student_map: dict[int, dict] = {}
     for item in students:
         if item.get("matrikelnummer") is None:
             continue
-        matrikel = int(item["matrikelnummer"])
+        matrikel = _valid_id(item["matrikelnummer"], "Matrikelnummer")
         if matrikel in student_map:
             raise ImportErrorGF(f"Doppelte Matrikelnummer {matrikel} im Schülerverzeichnis")
         student_map[matrikel] = item
@@ -233,43 +273,83 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
             stufe = grade(klass)
             if stufe is None:
                 raise ImportErrorGF(f"Keine Klassenstufe für Matrikelnummer {matrikel}")
+            teacher_id = _resolve_teacher(entry.get(field["lehrkraft"]), teachers, "GF-Feld 3 / lehrkraft_id")
             seen[matrikel] = {
                 "matrikelnummer": matrikel, "vorname": s["vorname"], "nachname": s["nachname"],
                 "geschlecht": gender(s["geschlecht"]), "klasse": klass, "stufe": stufe,
-                "lehrkraft_id": _resolve(entry.get(field["lehrkraft"]), teachers, "Lehrkraft"),
-                "kurs_id": _resolve(entry.get(field["kurs"]), courses, "Kurs") if stufe in (11, 12) else None,
+                "lehrkraft_id": teacher_id,
+                "kurs_id": _resolve_course(entry.get(field["kurs"]), teacher_id, courses),
             }
     mandatory_count = 0
-    if options.mandatory_classes:
-        for s in _cache(mandatory, {"matrikelnummer", "vorname", "nachname", "geschlecht", "klasse", "lehrkraft_token"}, "mandatory"):
-            klass = str(s["klasse"] or "").strip()
-            if not any(fnmatch.fnmatchcase(klass, pattern) for pattern in options.mandatory_classes):
+    mandatory_classes_present: set[str] = set()
+    optional_classes_present: set[str] = set()
+    if options.mandatory_classes or options.optional_mandatory_classes:
+        # `mandatory` liefert ausschließlich *aktuelle Mathe-Lerngruppen* aus
+        # einer privaten SQL-Abfrage gegen die View des aktiven Schuljahres.
+        # Bei mehreren Lehrkräften pro Klasse nie zufällig eine auswählen.
+        by_class: dict[str, tuple[int, int]] = {}
+        for row in _cache(mandatory, {"klasse", "lehrkraft_id", "lerngruppe_schuljahr_id"}, "mandatory"):
+            klass = str(row["klasse"] or "").strip()
+            if klass not in set(options.mandatory_classes) | set(options.optional_mandatory_classes):
                 continue
-            matrikel = int(s["matrikelnummer"])
-            if matrikel in seen:
-                continue
-            if matrikel not in student_map:
-                raise ImportErrorGF(f"Pflichtteilnehmer {matrikel} fehlt im Schülerverzeichnis")
-            stufe = grade(klass)
-            if stufe is None:
-                raise ImportErrorGF(f"Keine Klassenstufe für Pflichtteilnehmer {matrikel}")
-            seen[matrikel] = {
-                "matrikelnummer": matrikel, "vorname": s["vorname"], "nachname": s["nachname"],
-                "geschlecht": gender(s["geschlecht"]), "klasse": klass, "stufe": stufe,
-                "lehrkraft_id": _resolve(s.get("lehrkraft_token"), teachers, "Lehrkraft"),
-                "kurs_id": None,
-            }
-            mandatory_count += 1
+            teacher = _resolve_teacher(row["lehrkraft_id"], teachers, f"Pflichtklasse {klass}: lehrkraft_id")
+            if teacher is None:
+                raise ImportErrorGF(f"Pflichtklasse {klass} hat keine Mathe-Lehrkraft-ID")
+            course = _resolve_course(row["lerngruppe_schuljahr_id"], teacher, courses)
+            if course is None:
+                raise ImportErrorGF(f"Pflichtklasse {klass} hat keine zugeordnete Kurs-FK-ID")
+            if klass in by_class and by_class[klass] != (teacher, course):
+                raise ImportErrorGF(f"Mehrdeutige Mathe-Lerngruppe/Lehrkraft für Pflichtklasse {klass}")
+            by_class[klass] = (teacher, course)
+        mandatory_classes_present = set(options.mandatory_classes) & set(by_class)
+        optional_classes_present = set(options.optional_mandatory_classes) & set(by_class)
+        missing_required = set(options.mandatory_classes) - mandatory_classes_present
+        if missing_required:
+            raise ImportErrorGF("Erforderliche Pflichtklasse(n) nicht in aktuellen Lerngruppen: " + ", ".join(sorted(missing_required)))
+        # Falls in den aktuellen Schülerstammdaten bereits eine optionale
+        # Klasse existiert, muss auch ihre Mathematik-Lerngruppe eindeutig
+        # zugeordnet sein. Fehlende Fachgruppen nicht still übergehen.
+        optional_with_students = {str(s.get("klasse") or "").strip()
+                                  for s in student_map.values()} & set(options.optional_mandatory_classes)
+        missing_optional_groups = optional_with_students - optional_classes_present
+        if missing_optional_groups:
+            raise ImportErrorGF("Optionale Klasse vorhanden, aber keine eindeutige Mathe-Lerngruppe: "
+                                + ", ".join(sorted(missing_optional_groups)))
+        # Eine optionale 7-4 wird nur dann ergänzt, wenn sie wirklich in
+        # aktuellen Lerngruppen existiert; ansonsten gibt es keinen Fehler.
+        for klass in sorted(mandatory_classes_present | optional_classes_present):
+            matches = [s for s in student_map.values() if str(s.get("klasse") or "").strip() == klass]
+            if not matches:
+                raise ImportErrorGF(f"Keine Schülerdaten für vorhandene Pflichtklasse {klass}")
+            for s in matches:
+                matrikel = _valid_id(s["matrikelnummer"], "Matrikelnummer")
+                if matrikel in seen:
+                    # Die Daten einer expliziten GF-Meldung haben Vorrang; für
+                    # fehlende IDs nutzen wir die geprüfte Pflichtlerngruppe.
+                    if seen[matrikel]["klasse"] == klass:
+                        if seen[matrikel]["lehrkraft_id"] is None:
+                            seen[matrikel]["lehrkraft_id"] = by_class[klass][0]
+                        if seen[matrikel]["kurs_id"] is None:
+                            seen[matrikel]["kurs_id"] = by_class[klass][1]
+                    continue
+                stufe = grade(klass)
+                seen[matrikel] = {
+                    "matrikelnummer": matrikel, "vorname": s["vorname"], "nachname": s["nachname"],
+                    "geschlecht": gender(s["geschlecht"]), "klasse": klass, "stufe": stufe,
+                    "lehrkraft_id": by_class[klass][0], "kurs_id": by_class[klass][1],
+                }
+                mandatory_count += 1
     def sort_key(x: dict):
         st = x["stufe"]
-        # Oberstufe zuerst, wie im bisherigen Skript.
         return (0 if st in (11, 12) else 1, st, x["kurs_id"] or -1,
                 x["klasse"].casefold(), str(x["nachname"] or "").casefold(),
                 str(x["vorname"] or "").casefold(), x["matrikelnummer"])
     result = sorted(seen.values(), key=sort_key)
     for i, row in enumerate(result, 1):
         row["tnr"] = i
-    return result, {"gf_entries": count_gf, "inactive_entries": skipped, "mandatory_added": mandatory_count}
+    return result, {"gf_entries": count_gf, "inactive_entries": skipped, "mandatory_added": mandatory_count,
+                    "mandatory_classes_present": len(mandatory_classes_present),
+                    "optional_classes_present": len(optional_classes_present)}
 
 
 WRITE_COLUMNS = ("tnr", "matrikelnummer", "vorname", "nachname", "geschlecht", "klasse", "stufe", "lehrkraft_id", "kurs_id")
@@ -286,12 +366,12 @@ def import_participants(db: Any, config_dir: Path, target_table: str, *, dry_run
     try:
         # SELECT-Queries stehen in einer privaten Datei; kein untrusted SQL aus GF.
         students = _rows(cursor, config.queries["students"])
-        mandatory = [] if no_mandatory or not config.mandatory_classes else _rows(cursor, config.queries["mandatory"])
-        teachers = _mapping(_rows(cursor, config.queries["teachers"]), "Lehrkräfte")
-        courses = _mapping(_rows(cursor, config.queries["courses"]), "Kurse")
+        mandatory = [] if no_mandatory or not (config.mandatory_classes or config.optional_mandatory_classes) else _rows(cursor, config.queries["mandatory"])
+        teachers = _teacher_ids(_rows(cursor, config.queries["teachers"]))
+        courses = _course_links(_rows(cursor, config.queries["courses"]))
         mapped, stats = build_participants(gf_entries(credentials, config.form_id, config.page_size, config.timeout),
                                             students, mandatory, teachers, courses,
-                                            config if not no_mandatory else ImportSettings(config.form_id, config.page_size, config.timeout, (), config.fields, config.queries))
+                                            config if not no_mandatory else ImportSettings(config.form_id, config.page_size, config.timeout, (), (), config.fields, config.queries))
         if not mapped:
             raise ImportErrorGF("Keine Teilnehmenden ermittelt – Import aus Sicherheitsgründen abgebrochen")
         if len(mapped) != len(set(x["matrikelnummer"] for x in mapped)):
