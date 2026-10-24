@@ -234,23 +234,19 @@ def _teacher_ids(rows: list[dict]) -> set[int]:
 
 
 def _course_links(rows: list[dict]) -> dict[tuple[int, int], int]:
-    """(GF-Lerngruppe-Schuljahr-ID, GF-Lehrkraft-ID) -> Einsatz-ID.
+    """(GF-Lerngruppe-Schuljahr-ID, GF-Lehrkraft-ID) -> unveränderte Gruppen-ID.
 
-    Ein Einsatz ist nicht durch die Lerngruppe allein definiert. Die
-    Lerngruppen-View liefert die tatsächlich zugehörige Einsatz-ID.
+    kurs_id referenziert orga_lerngruppe_schuljahr.id, niemals
+    orga_lerngruppen_einsatz.id; die Lehrkraft-Zuordnung wird geprüft.
     """
     result: dict[tuple[int, int], int] = {}
-    required = {"lerngruppe_schuljahr_id", "lehrkraft_id", "lerngruppen_einsatz_id"}
+    required = {"lerngruppe_schuljahr_id", "lehrkraft_id"}
     for row in _cache(rows, required, "courses"):
         group_id = _valid_id(row["lerngruppe_schuljahr_id"], "lerngruppe_schuljahr_id")
         teacher_id = _valid_id(row["lehrkraft_id"], "Lehrkraft-ID (Lerngruppe)")
-        # NULL markiert in der View einen nicht gefundenen/mehrdeutigen
-        # Einsatz; darf nicht als Fremdschluessel gespeichert werden.
-        target = _valid_id(row["lerngruppen_einsatz_id"], "lerngruppen_einsatz_id")
-        key = (group_id, teacher_id)
-        if key in result and result[key] != target:
-            raise ImportErrorGF(f"Mehrdeutige Einsatzzuordnung für Lerngruppe {group_id} und Lehrkraft {teacher_id}")
-        result[key] = target
+        # Mehrere Einsätze derselben Lerngruppe sind zulässig; die Ziel-ID
+        # bleibt die ursprüngliche Lerngruppe-Schuljahr-ID.
+        result[(group_id, teacher_id)] = group_id
     return result
 
 
@@ -270,7 +266,7 @@ def _resolve_course(value: Any, teacher_id: int | None,
         raise ImportErrorGF(f"Für Lerngruppe {group_id} fehlt die Lehrkraft-ID aus GF-Feld 3")
     key = (group_id, teacher_id)
     if key not in course_links:
-        raise ImportErrorGF(f"Kein eindeutiger Einsatz für Lerngruppe {group_id}, Lehrkraft {teacher_id}")
+        raise ImportErrorGF(f"Keine gültige Lerngruppen-/Lehrkraftzuordnung für Lerngruppe {group_id}, Lehrkraft {teacher_id}")
     return course_links[key]
 
 
@@ -318,7 +314,8 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
                 "matrikelnummer": matrikel, "vorname": s["vorname"], "nachname": s["nachname"],
                 "geschlecht": gender(s["geschlecht"]), "klasse": klass, "stufe": stufe,
                 "lehrkraft_id": teacher_id,
-                "kurs_id": _resolve_course(entry.get(field["kurs"]), teacher_id, courses),
+                "kurs_id": (_resolve_course(entry.get(field["kurs"]), teacher_id, courses)
+                            if stufe in (11, 12) else None),
                 "_source": "gf",
             }
     mandatory_count = 0
@@ -338,7 +335,7 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
                 raise ImportErrorGF(f"Pflichtklasse {klass} hat keine Mathe-Lehrkraft-ID")
             course = _resolve_course(row["lerngruppe_schuljahr_id"], teacher, courses)
             if course is None:
-                raise ImportErrorGF(f"Pflichtklasse {klass} hat keine zugeordnete Kurs-FK-ID")
+                raise ImportErrorGF(f"Pflichtklasse {klass} hat keine gültige Mathematik-Lerngruppe")
             if klass in by_class and by_class[klass] != (teacher, course):
                 raise ImportErrorGF(f"Mehrdeutige Mathe-Lerngruppe/Lehrkraft für Pflichtklasse {klass}")
             by_class[klass] = (teacher, course)
@@ -370,14 +367,12 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
                     if seen[matrikel]["klasse"] == klass:
                         if seen[matrikel]["lehrkraft_id"] is None:
                             seen[matrikel]["lehrkraft_id"] = by_class[klass][0]
-                        if seen[matrikel]["kurs_id"] is None:
-                            seen[matrikel]["kurs_id"] = by_class[klass][1]
                     continue
                 stufe = grade(klass)
                 seen[matrikel] = {
                     "matrikelnummer": matrikel, "vorname": s["vorname"], "nachname": s["nachname"],
                     "geschlecht": gender(s["geschlecht"]), "klasse": klass, "stufe": stufe,
-                    "lehrkraft_id": by_class[klass][0], "kurs_id": by_class[klass][1],
+                    "lehrkraft_id": by_class[klass][0], "kurs_id": None,
                     "_source": "mandatory",
                 }
                 mandatory_count += 1
@@ -441,7 +436,7 @@ def _class_summary(rows: list[dict], entries: list[dict] | None = None,
         item["participants"] += 1
         item["mandatory" if row.get("_source") == "mandatory" else "gf"] += 1
         item["missing_teacher"] += int(row["lehrkraft_id"] is None)
-        item["missing_course"] += int(row["kurs_id"] is None)
+        item["missing_course"] += int(row.get("stufe") in (11, 12) and row["kurs_id"] is None)
     if entries is not None and fields is not None:
         for entry in entries:
             if entry.get("status") not in (None, "active"):
@@ -540,7 +535,7 @@ def import_participants(db: Any, config_dir: Path, target_table: str, *, dry_run
         if report is not None:
             report["summary"] = {**stats, "participants": len(mapped), "missing_teacher": missing_teacher,
                                  "missing_course_oberstufe": missing_course,
-                                 "missing_course_total": sum(x["kurs_id"] is None for x in mapped),
+                                 "missing_course_total": missing_course,
                                  "target_table": target_table}
         inserted = persist_import(db, target_table, mapped, dry_run=dry_run)
         if report is not None:
