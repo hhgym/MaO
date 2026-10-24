@@ -6,6 +6,8 @@ Alle lokalen SQL-Quellen und OAuth-Zugangsdaten stehen in MAO_CONFIG, nie im Pak
 from __future__ import annotations
 
 import configparser
+import csv
+import json
 import fnmatch
 import logging
 import re
@@ -129,11 +131,19 @@ def gf_entries(config: Mapping[str, str], form_id: int, page_size: int, timeout:
     total = None
     try:
         while True:
-            response = session.get(url, params={"paging[current_page]": page, "paging[page_size]": page_size},
-                                   timeout=timeout, allow_redirects=False)
-            response.raise_for_status()
-            data = response.json()
-            if not isinstance(data, dict):
+            try:
+                response = session.get(url, params={"paging[current_page]": page, "paging[page_size]": page_size},
+                                       timeout=timeout, allow_redirects=False)
+                response.raise_for_status()
+                data = response.json()
+            except Exception as exc:
+                from requests.exceptions import RequestException
+                if isinstance(exc, (RequestException, ValueError)):
+                    status = getattr(getattr(exc, "response", None), "status_code", None)
+                    detail = f"HTTP {status}" if status is not None else type(exc).__name__
+                    raise ImportErrorGF(f"GF-API-Zugriff fehlgeschlagen ({detail}); API-Adresse und Berechtigungen prüfen") from None
+                raise
+            if not isinstance(data, dict) or not ("entries" in data or "list" in data):
                 raise ImportErrorGF("GF-API lieferte keine gültige Ergebnisstruktur")
             if total is None and data.get("total_count") is not None:
                 total = int(data["total_count"])
@@ -289,6 +299,7 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
                 "geschlecht": gender(s["geschlecht"]), "klasse": klass, "stufe": stufe,
                 "lehrkraft_id": teacher_id,
                 "kurs_id": _resolve_course(entry.get(field["kurs"]), teacher_id, courses),
+                "_source": "gf",
             }
     mandatory_count = 0
     mandatory_classes_present: set[str] = set()
@@ -347,6 +358,7 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
                     "matrikelnummer": matrikel, "vorname": s["vorname"], "nachname": s["nachname"],
                     "geschlecht": gender(s["geschlecht"]), "klasse": klass, "stufe": stufe,
                     "lehrkraft_id": by_class[klass][0], "kurs_id": by_class[klass][1],
+                    "_source": "mandatory",
                 }
                 mandatory_count += 1
     def sort_key(x: dict):
@@ -365,8 +377,90 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
 WRITE_COLUMNS = ("tnr", "matrikelnummer", "vorname", "nachname", "geschlecht", "klasse", "stufe", "lehrkraft_id", "kurs_id")
 
 
-def import_participants(db: Any, config_dir: Path, target_table: str, *, dry_run: bool, no_mandatory: bool = False) -> dict[str, int]:
-    """Erstbefüllung: alle Prüfungen VOR einem INSERT, nur leere Zieltabelle."""
+def _entry_id_issues(entries: list[dict], students: list[dict], field: str) -> list[str]:
+    """Alle unbekannten/doppelten Matrikelnummern vor dem Import sammeln."""
+    known = {int(s["matrikelnummer"]) for s in students if s.get("matrikelnummer") is not None
+             and str(s["matrikelnummer"]).strip().isdigit()}
+    seen: dict[int, str] = {}
+    issues: list[str] = []
+    for entry in entries:
+        if entry.get("status") not in (None, "active"):
+            continue
+        ident = str(entry.get("id", "ohne ID"))[:64]
+        try:
+            selected = selected_students(entry, field)
+        except ImportErrorGF as exc:
+            issues.append(f"GF-Meldung {ident}: {exc}")
+            continue
+        if not selected:
+            issues.append(f"GF-Meldung {ident}: keine Teilnehmerauswahl")
+        for number in selected:
+            if number not in known:
+                issues.append(f"GF-Meldung {ident}: unbekannte Matrikelnummer {number}")
+            if number in seen:
+                issues.append(f"Matrikelnummer {number} wurde mehrfach angemeldet (GF {seen[number]} und {ident})")
+            else:
+                seen[number] = ident
+    return issues
+
+
+def _class_summary(rows: list[dict]) -> list[dict[str, Any]]:
+    """Zählt Klassen und Quellen ohne personenbezogene Angaben im Bericht."""
+    classes: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        klass = row["klasse"]
+        item = classes.setdefault(klass, {"klasse": klass, "gf": 0, "mandatory": 0,
+                                          "participants": 0, "missing_teacher": 0, "missing_course": 0})
+        item["participants"] += 1
+        item["mandatory" if row.get("_source") == "mandatory" else "gf"] += 1
+        item["missing_teacher"] += int(row["lehrkraft_id"] is None)
+        item["missing_course"] += int(row["kurs_id"] is None)
+    return [classes[key] for key in sorted(classes, key=lambda name: (grade(name) or 99, name))]
+
+
+def write_import_report(workspace: Path, config_dir: Path, filename: Path,
+                        report: Mapping[str, Any]) -> Path:
+    """Neuen Bericht ausschließlich im Workspace schreiben; keine Überschreibungen."""
+    if filename.suffix.lower() not in (".json", ".csv"):
+        raise ConfigurationError("--report benötigt einen Dateinamen mit .json oder .csv")
+    base = workspace.resolve()
+    target = (base / filename).resolve()
+    config = config_dir.resolve()
+    if (target == base or base not in target.parents or
+            target == config or config in target.parents):
+        raise ConfigurationError("--report muss eine Datei innerhalb des Workspaces sein, außerhalb der Konfiguration")
+    if any(part in (".mao-cli",) for part in target.relative_to(base).parts[:-1]):
+        raise ConfigurationError("--report darf keine internen MaO-Systemdateien ersetzen")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with target.open("x", encoding="utf-8", newline="") as file:
+            if target.suffix.lower() == ".json":
+                json.dump(report, file, ensure_ascii=False, indent=2, sort_keys=True)
+                file.write("\n")
+            else:
+                cols = ("klasse", "gf", "mandatory", "participants", "missing_teacher", "missing_course", "status", "issue")
+                writer = csv.DictWriter(file, fieldnames=cols, extrasaction="ignore")
+                writer.writeheader()
+                def safe_csv(value: Any) -> Any:
+                    return "'" + value if isinstance(value, str) and value.lstrip().startswith(("=", "+", "-", "@")) else value
+                for item in report.get("classes", []):
+                    writer.writerow({key: safe_csv(val) for key, val in {**item, "status": report.get("status", "")}.items()})
+                summary = report.get("summary", {})
+                writer.writerow({"klasse": "GESAMT", "gf": summary.get("gf_entries", ""),
+                                 "mandatory": summary.get("mandatory_added", ""),
+                                 "participants": summary.get("participants", ""),
+                                 "missing_teacher": summary.get("missing_teacher", ""),
+                                 "missing_course": summary.get("missing_course_total", ""),
+                                 "status": report.get("status", ""),
+                                 "issue": safe_csv(" | ".join(map(str, report.get("issues", []))))})
+    except FileExistsError as exc:
+        raise ConfigurationError(f"Bericht existiert bereits und wird nicht überschrieben: {target}") from exc
+    return target
+
+
+def import_participants(db: Any, config_dir: Path, target_table: str, *, dry_run: bool,
+                        no_mandatory: bool = False, report: dict[str, Any] | None = None) -> dict[str, int]:
+    """Alle Datenquellen prüfen, dann berichtsfähig planen, erst zuletzt schreiben."""
     config = load_import_settings(config_dir / "gf-import.yaml")
     credentials = load_gf_credentials(config_dir / "gf.config")
     cnx = db.conn
@@ -374,26 +468,44 @@ def import_participants(db: Any, config_dir: Path, target_table: str, *, dry_run
         raise ImportErrorGF("Keine Datenbankverbindung")
     cursor = cnx.cursor()
     try:
-        # SELECT-Queries stehen in einer privaten Datei; kein untrusted SQL aus GF.
         students = _rows(cursor, config.queries["students"])
         mandatory = [] if no_mandatory or not (config.mandatory_classes or config.optional_mandatory_classes) else _rows(cursor, config.queries["mandatory"])
         teachers = _teacher_ids(_rows(cursor, config.queries["teachers"]))
         courses = _course_links(_rows(cursor, config.queries["courses"]))
-        mapped, stats = build_participants(gf_entries(credentials, config.form_id, config.page_size, config.timeout),
-                                            students, mandatory, teachers, courses,
+        # GF-Daten vollständig abrufen und erst dann eine Entscheidung treffen.
+        entries = list(gf_entries(credentials, config.form_id, config.page_size, config.timeout))
+        active_entries = [e for e in entries if e.get("status") in (None, "active")]
+        if report is not None:
+            report["sources"] = {"gf_entries_total": len(entries), "gf_entries_active": len(active_entries),
+                                 "students": len(students), "teachers": len(teachers), "assignments": len(courses)}
+        issues = _entry_id_issues(entries, students, config.fields["teilnehmende"])
+        if issues:
+            if report is not None:
+                report.setdefault("issues", []).extend(issues)
+            raise ImportErrorGF(f"{len(issues)} fehlerhafte Teilnehmerzuordnung(en); Einzelheiten im Prüfbericht: " + issues[0])
+        mapped, stats = build_participants(entries, students, mandatory, teachers, courses,
                                             config if not no_mandatory else ImportSettings(config.form_id, config.page_size, config.timeout, (), (), config.fields, config.queries))
+        if report is not None:
+            report["classes"] = _class_summary(mapped)
         if not mapped:
             raise ImportErrorGF("Keine Teilnehmenden ermittelt – Import aus Sicherheitsgründen abgebrochen")
         if len(mapped) != len(set(x["matrikelnummer"] for x in mapped)):
             raise ImportErrorGF("Doppelte Matrikelnummern")
-        # Zieltabellenname ist privat in tables.ini, über geprüftes Mapping der CLI.
         missing_teacher = sum(x["lehrkraft_id"] is None for x in mapped)
         missing_course = sum(x["stufe"] in (11, 12) and x["kurs_id"] is None for x in mapped)
         if missing_teacher:
             LOGGER.warning("Teilnehmende ohne zugeordnete Lehrkraft: %d", missing_teacher)
         if missing_course:
             LOGGER.warning("Oberstufenteilnehmende ohne Kurszuordnung: %d", missing_course)
+        if report is not None:
+            report["summary"] = {**stats, "participants": len(mapped), "missing_teacher": missing_teacher,
+                                 "missing_course_oberstufe": missing_course,
+                                 "missing_course_total": sum(x["kurs_id"] is None for x in mapped),
+                                 "target_table": target_table}
         inserted = persist_import(db, target_table, mapped, dry_run=dry_run)
+        if report is not None:
+            report["status"] = "ready" if dry_run else "applied"
+            report["summary"]["inserted"] = inserted
         return {**stats, "participants": len(mapped), "inserted": inserted,
                 "missing_teacher": missing_teacher, "missing_course": missing_course}
     finally:

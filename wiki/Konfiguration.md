@@ -111,3 +111,33 @@ Die erweiterte View des aktuellen Schuljahres stellt diese bereit.
 Das Skript ordnet anhand **beider** GF-IDs genau eine Einsatz-ID zu.
 Gleiche Zahlenwerte aus unterschiedlichen Tabellen dürfen nicht als
 identische Primärschlüssel interpretiert werden.
+
+
+## Online-Validierung und GF-Prüfbericht
+
+Der bestehende Befehl `mao validate` bleibt offline. Der zusätzliche Schalter
+`--online` aktiviert **nur lesende** Zugriffe auf MySQL und die
+Gravity-Forms-REST-API:
+
+```powershell
+mao validate --online
+mao import-gf --dry-run --report reports/gf-pruefung.json
+# Alternativ tabellarisch: --report reports/gf-pruefung.csv
+```
+
+Online validiert MaO die Organisationstabelle (`tnr`, `matrikelnummer`,
+`lehrkraft_id`, `kurs_id` usw.), alle im Profil aktiven SQL-Datasets,
+die SELECT-Abfragen des GF-Imports mit ihren erforderlichen Spalten,
+Schüler-/Lehrkraft-IDs, eindeutige Lerngruppeneinsätze, die Pflichtklassen
+und die erste Antwort der GF-API. Eine befüllte Organisationstabelle wird
+als nicht erstimportbereit ausgewiesen; die Validierung selbst bleibt lesend.
+
+Der Dry-Run lädt sämtliche Meldungen, erkennt unter anderem doppelte oder
+unbekannte Matrikelnummern und erstellt die Klassenzahlen inklusive
+GF-/Pflicht-Anteilen. JSON enthält strukturierte Statistiken und Diagnosen,
+CSV die Klassenstatistik sowie eine Abschlusszeile mit Status/Fehlern.
+Berichte werden nur **neu** im registrierten Workspace angelegt, nicht im
+privaten Konfigurationsordner. Bei einem Fehler bleibt der Bericht als
+`blocked` gekennzeichnet; bei erfolgreicher Planung als `ready`.
+Für den echten Erstimport `mao import-gf --apply` ohne `--report` ausführen.
+Beide Befehle archivieren oder löschen keinerlei bestehende Datensätze.

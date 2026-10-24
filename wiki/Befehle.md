@@ -30,13 +30,13 @@ Die zentralen Schalter `--config-dir`, `--year`, `--workspace` können vor oder 
 | Befehl | Zweck | Datenbank nötig? | Schreibzugriffe? |
 |---|---|---|---|
 | `mao profiles` | Profile anzeigen | Nein | Nein (außer optionales Logfile) |
-| `mao validate` | YAML und INI prüfen | Nein | Nein (außer optionales Logfile) |
+| `mao validate` | Offline YAML/INI/Profiles prüfen; mit `--online` zusätzlich Datenbank und GF-API | Nur mit `--online` | Nein (außer optionales Logfile) |
 | `mao plan` | Exportdateien und Aktionen voraussehen | Ja | Nur optional die angegebene Markdown-Plan-Datei und ein Logfile |
 | `mao run` | Exporte erzeugen, optional PDFs kompilieren | Ja | Ja |
 | `mao latex` | Nur LaTeX mit vorhandenen Dateien | Nein | Ja |
-| `mao update check` | Aktualisierung prüfen (stable, RC, develop) | Nein | Develop: Git-Fetch |
+| `mao update check` | Öffentliche GitHub-Updates prüfen (stable, RC, develop) | Nein | Nein |
 | `mao update download` | Releasewheel geprüft herunterladen | Nein | Downloadordner |
-| `mao update install` | Manuelles, bestätigtes Update | Nein | Programm-Pythonumgebung oder Git-Checkout |
+| `mao update install` | Bestätigtes Update mit verwalteter Python-Umgebung und Rollback | Nein | Verwaltete Python-Umgebung |
 | `mao --version` | Programmversion anzeigen | Nein | Nein |
 | `mao --help` | Hilfe anzeigen | Nein | Nein |
 
@@ -71,7 +71,20 @@ mao validate
 mao validate --workspace "D:/MaO/2026-27" --profile ergebnisse
 ```
 
-Ein fehlender SQL-View wird erst bei `plan` bzw. `run` sichtbar.
+Ein fehlender SQL-View wird beim Offline-Validieren nicht erkannt.
+
+```powershell
+mao validate                 # offline, Standard
+mao validate --online        # DB-Struktur, Pipeline-/GF-SELECTs, IDs, GF-API
+```
+
+`--online` prüft nur lesend: Zielspalten und Tabellenbelegung, SQL-Spalten,
+doppelte Matrikelnummern, referenzierte Lehrkräfte und eindeutige
+Lerngruppeneinsätze sowie die erste GF-API-Seite. Die Zieltabelle darf hierbei
+bereits Daten enthalten (Hinweis: erneuter Erstimport gesperrt). Eine Prüfung
+sämtlicher konkreter GF-Meldungen mit Klassenauswertung erfolgt anschließend
+mittels `mao import-gf --dry-run`. Die normale `validate`-Variante benötigt
+weiterhin weder Datenbank noch Internetzugang.
 
 ## `mao plan`
 
@@ -125,7 +138,7 @@ mao update install --channel stable --repository OWNER/REPO --yes
 mao update install --channel develop --yes
 ```
 
-Stable und RC benötigen veröffentlichte GitHub-Releases mit Python-Wheel und SHA-256-Prüfsumme. Develop erfordert einen sauberen Git-Checkout auf `develop`, Fast-Forward und erfolgreichen GitHub-CI-Lauf. Es gibt kein automatisches Update und noch kein automatisches Rollback. Details: [Updates](Updates).
+Stable und RC benötigen veröffentlichte GitHub-Releases mit Python-Wheel und SHA-256-Prüfsumme. Develop wird anonym über öffentliche GitHub-Releases bezogen, benötigt einen erfolgreichen CI-Build des aktuellen Branch-Commits und unterstützt Rollback. Details: [Updates](Updates).
 
 ## Beenden und Fehlercodes
 
@@ -141,7 +154,7 @@ Stable und RC benötigen veröffentlichte GitHub-Releases mit Python-Wheel und S
 
 ## Noch nicht verfügbare Befehle
 
-`init-jahrgang` und `gui` gehören zu geplanten späteren Schritten. Sie sind in dieser Version noch nicht implementiert.
+`gui` ist nicht implementiert. `init-jahrgang` existiert bislang ausschließlich als schreibgeschützte Vorprüfung.
 
 ## Updateverwaltung (ab v0.5)
 
@@ -150,10 +163,14 @@ Stable und RC benötigen veröffentlichte GitHub-Releases mit Python-Wheel und S
 ### Gravity-Forms-Import
 
 - `mao import-gf` oder `mao import-gf --dry-run` prüft das Meldeformular und
-  alle Zuordnungen **ohne INSERT**.
+  alle Zuordnungen **ohne INSERT**. Mit `--report reports/pruefung.json` bzw.
+  `.csv` wird im Workspace ein neuer Prüfbericht mit Klassensummen,
+  Pflichtteilnahmen, fehlenden Zuordnungen und gegebenenfalls Gründen für
+  einen Abbruch abgelegt. Bestehende Berichte werden nicht überschrieben.
 - `mao import-gf --apply` fügt die Teilnehmenden ausschließlich in eine
   nachweislich leere Organisationstabelle ein.
 - `mao import-gf --no-mandatory` unterdrückt ausnahmsweise Pflichtteilnahmen.
+- `--report` ist ausschließlich für den Dry-Run vorgesehen; mit `--apply` unzulässig.
 - `mao --config-dir "D:/MaO/Config" --year 2026-27 import-gf` verwendet die
   zentral hinterlegten Einstellungen des registrierten Schuljahres.
 
