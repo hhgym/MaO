@@ -43,7 +43,7 @@ def test_crlf_line_endings_are_not_treated_as_different_code(monkeypatch, tmp_pa
     pkg, wheel = _wheel(tmp_path)
     for candidate in pkg.rglob("*"):
         if candidate.is_file():
-            candidate.write_bytes(candidate.read_bytes().replace(b"\n", b"\r\n"))
+            candidate.write_bytes(candidate.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
     monkeypatch.setattr(u, "__file__", str(pkg / "updater.py"))
     assert u._packaged_source_matches(wheel)
 
