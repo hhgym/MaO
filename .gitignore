@@ -20,3 +20,15 @@ __pycache__/
 build/
 dist/
 .coverage*
+
+# Niemals zentrale Konfiguration oder SQL-Schemadumps versionieren
+/config/
+**/settings.yaml
+*.sql
+*.csv
+*.pdf
+*.bak
+*.key
+*.p12
+*.pfx
+.env.*

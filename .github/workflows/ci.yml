@@ -25,7 +25,13 @@ jobs:
         run: python -m pip install -e '.[dev]'
       - name: Regression tests
         run: python -m pytest -q
+      - name: Initialize temporary central configuration
+        env:
+          MAO_CONFIG: ${{ runner.temp }}/mao-config
+        run: python -m mao_cli config init
       - name: Validate packaged configuration
+        env:
+          MAO_CONFIG: ${{ runner.temp }}/mao-config
         run: python -m mao_cli validate
   develop-build:
     needs: tests

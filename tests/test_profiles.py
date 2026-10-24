@@ -109,10 +109,13 @@ def test_cli_workspace_profile_smoke(monkeypatch, tmp_path):
     monkeypatch.setattr(cli, 'can_reach', lambda *args, **kwargs: True)
     monkeypatch.setattr(cli, 'DB', FakeDB)
     monkeypatch.setattr(cli, 'current_MaO_number_db', lambda db, tables: 66)
+    directory = tmp_path / 'central'
+    cli.init_config(directory, cli.DEFAULTS)
+    monkeypatch.setenv('MAO_CONFIG', str(directory))
     workspace = tmp_path / 'year66'
     workspace.mkdir()
     (workspace / 'config').mkdir()
-    (workspace / 'config/tables.ini').write_text((cli.DEFAULTS / 'tables.ini').read_text(encoding='utf8').replace('DEMO_', 'TEST_'), encoding='utf8')
+    (tmp_path / 'central/tables.ini').write_text((cli.DEFAULTS / 'tables.ini').read_text(encoding='utf8').replace('DEMO_', 'TEST_'), encoding='utf8')
     assert cli.main(['plan','--workspace',str(workspace),'--profile','vorbereitung','--no-latex']) == 0
     assert not (workspace / 'Listen').exists()
     assert cli.main(['run','--workspace',str(workspace),'--profile','vorbereitung','--no-latex']) == 0

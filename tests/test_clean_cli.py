@@ -17,6 +17,16 @@ from mao_cli.exports import ExportPlan
 from scripts.publish_wiki import publish
 
 
+
+
+@pytest.fixture(autouse=True)
+def central_config(monkeypatch, tmp_path):
+    directory = tmp_path / 'central'
+    cli.init_config(directory, cli.DEFAULTS)
+    monkeypatch.setenv('MAO_CONFIG', str(directory))
+    return directory
+
+
 class FakeDB:
     def __init__(self, conf):
         pass
@@ -42,7 +52,7 @@ def stub_database(monkeypatch):
 
 def test_parser_has_commands_not_legacy_flags():
     assert set(cli.parse_args(['profiles']).__dict__) >= {'command', 'workspace'}
-    assert cli.parse_args(['run']).profile == 'vollpaket'
+    assert cli.parse_args(['run']).profile is None
     assert cli.parse_args(['plan']).command == 'plan'
     assert '2.0' not in __version__
     with pytest.raises(SystemExit) as ex:
@@ -52,10 +62,10 @@ def test_parser_has_commands_not_legacy_flags():
 
 def test_local_configs_have_explicit_precedence(tmp_path):
     (tmp_path / 'config').mkdir()
-    local = tmp_path / 'config/profiles.ini'
+    local = tmp_path / 'central/profiles.ini'
     local.write_text('[custom]\nexports=none\nlatex_jobs=none\n', encoding='utf8')
-    assert cli.resolve_config_file(tmp_path, 'profiles.ini') == local
-    assert cli.resolve_config_file(tmp_path, 'tables.ini') == cli.DEFAULTS / 'tables.ini'
+    assert cli.resolve_config_file(tmp_path / 'central', 'profiles.ini') == local
+    assert cli.resolve_config_file(tmp_path / 'central', 'tables.ini') == tmp_path / 'central/tables.ini'
     assert cli.main(['profiles', '--workspace', str(tmp_path)]) == 0
     assert cli.main(['validate', '--workspace', str(tmp_path), '--profile', 'custom']) == 0
     assert cli.main(['validate', '--workspace', str(tmp_path), '--profile', 'vollpaket']) == 2
@@ -64,8 +74,8 @@ def test_local_configs_have_explicit_precedence(tmp_path):
 def test_config_requires_ids_in_all_jobs(tmp_path):
     cfg = load_config(cli.DEFAULTS / 'pipeline.yaml')
     cfg['latex']['jobs'][0].pop('id')
-    local_cfg = tmp_path / 'config'
-    local_cfg.mkdir()
+    local_cfg = tmp_path / 'central'
+    local_cfg.mkdir(exist_ok=True)
     (local_cfg / 'pipeline.yaml').write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding='utf8')
     assert cli.main(['validate', '--workspace', str(tmp_path)]) == 2
 
@@ -89,7 +99,7 @@ def test_manifest_version2_tracks_owners(tmp_path):
 def test_plan_writes_only_explicit_markdown(monkeypatch, tmp_path):
     stub_database(monkeypatch)
     (tmp_path / 'config').mkdir(exist_ok=True)
-    (tmp_path / 'config/tables.ini').write_text((cli.DEFAULTS / 'tables.ini').read_text(encoding='utf8').replace('DEMO_', 'TEST_'), encoding='utf8')
+    (tmp_path / 'central/tables.ini').write_text((cli.DEFAULTS / 'tables.ini').read_text(encoding='utf8').replace('DEMO_', 'TEST_'), encoding='utf8')
     assert cli.main(['plan', '--workspace', str(tmp_path), '--profile', 'vorbereitung', '--no-latex', '--output', 'plan.md']) == 0
     assert (tmp_path / 'plan.md').exists()
     assert not (tmp_path / 'Listen').exists()
@@ -98,11 +108,11 @@ def test_plan_writes_only_explicit_markdown(monkeypatch, tmp_path):
 
 def test_plan_cannot_overwrite_output_or_config(monkeypatch, tmp_path):
     stub_database(monkeypatch)
-    cfgdir = tmp_path / 'config'
-    cfgdir.mkdir()
+    cfgdir = tmp_path / 'central'
+    cfgdir.mkdir(exist_ok=True)
     (cfgdir / 'tables.ini').write_text((cli.DEFAULTS / 'tables.ini').read_text(encoding='utf8').replace('DEMO_', 'TEST_'), encoding='utf8')
     (cfgdir / 'pipeline.yaml').write_bytes((cli.DEFAULTS / 'pipeline.yaml').read_bytes())
-    assert cli.main(['plan', '--workspace', str(tmp_path), '--profile', 'vorbereitung', '--output', 'config/pipeline.yaml']) == 2
+    assert cli.main(['plan', '--workspace', str(tmp_path), '--profile', 'vorbereitung', '--output', str(cfgdir / 'pipeline.yaml')]) == 2
 
 
 def test_missing_db_stops_run_but_not_validation(tmp_path):

@@ -90,5 +90,5 @@ def test_develop_needs_successful_ci(monkeypatch,tmp_path):
 
 def test_check_release_tag_matches_version():
     from scripts.check_release import main
-    assert main(['v0.5.0.dev0']) == 0
-    assert main(['v0.5.0']) == 2
+    assert main(['v0.6.0.dev0']) == 0
+    assert main(['v0.6.0']) == 2

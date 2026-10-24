@@ -10,6 +10,21 @@ mao <befehl> [optionen]
 
 Alternative ohne installierten Konsolenbefehl aus dem Projektordner: `python -m mao_cli <befehl> [optionen]`.
 
+## Neue Jahrgangs- und Konfigurationsbefehle (v0.6)
+
+```powershell
+mao --config-dir "D:/MaO/Config" config init
+mao --config-dir "D:/MaO/Config" config show
+mao --config-dir "D:/MaO/Config" workspace add 2026-27 --root "D:/Schuljahre/2026-27/MaO"
+mao workspace list
+mao workspace select 2026-27
+mao workspace wrapper 2026-27
+mao validate --year 2026-27
+mao init-jahrgang --year 2026-27 --offline
+```
+
+Die zentralen Schalter `--config-dir`, `--year`, `--workspace` können vor oder nach dem Unterbefehl stehen. Konfigurationsdateien liegen im Ordner `MAO_CONFIG`, Workspaces enthalten ausschließlich Exporte und Dokumente. **`init-jahrgang` ist read-only; keine Daten werden verändert.**
+
 ## Übersicht
 
 | Befehl | Zweck | Datenbank nötig? | Schreibzugriffe? |
@@ -29,12 +44,14 @@ Alternative ohne installierten Konsolenbefehl aus dem Projektordner: `python -m 
 
 | Option | Bedeutung |
 |---|---|
-| `--workspace ORDNER` | Arbeitsverzeichnis mit `db.config`, `Listen/` und ggf. `config/`. Standard: aktuelles Shell-Verzeichnis |
-| `--profile NAME` | Ausführungsprofil; Standard `vollpaket`. Unterstützt bei `run`, `plan`, `latex`, `validate` |
+| `--config-dir ORDNER` | Zentrales Konfigurationsverzeichnis (alternativ `MAO_CONFIG`) |
+| `--year YYYY-YY` | Registrierter Jahrgang, standardmäßig `current_year` |
+| `--workspace ORDNER` | Explizites Arbeitsverzeichnis; Standard: registrierter aktueller Jahrgang in `settings.yaml` |
+| `--profile NAME` | Ausführungsprofil; Standard aus `settings.yaml` (initial `vollpaket`). Unterstützt bei `run`, `plan`, `latex`, `validate` |
 | `--verbose` | Detailliertes Logging |
 | `--log-file DATEI` | Zusätzliche Logdatei; relative Namen beziehen sich auf den Arbeitsordner |
 
-**Wichtig:** Optionen gehören *hinter* den jeweiligen Befehl: `mao run --workspace ...`, nicht `mao --workspace ... run`.
+**Wichtig:** Globale Optionen (`--config-dir`, `--year`, `--workspace`) dürfen auch vor dem Befehl stehen. Befehlsbezogene Optionen wie `--profile` gehören hinter den Befehl.
 
 ## `mao profiles`
 

@@ -40,7 +40,7 @@ def test_token_priority_and_no_leak(monkeypatch):
 
 
 def test_sha_mismatch_blocks_install(monkeypatch, tmp_path):
-    release = u.Release(Version('0.5.0rc1'), 'v0.5.0-rc.1', 'https://api.github.com/1',
+    release = u.Release(Version('0.6.0rc1'), 'v0.6.0-rc.1', 'https://api.github.com/1',
                         'https://api.github.com/2', 'mao_cli-0.5.0rc1-py3-none-any.whl')
     monkeypatch.setattr(u, 'find_release', lambda *a: release)
     monkeypatch.setattr(u, '_download', lambda url, limit=40_000_000: b'bad-wheel' if url.endswith('1') else b'0'*64)

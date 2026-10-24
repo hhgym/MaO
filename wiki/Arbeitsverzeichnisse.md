@@ -1,32 +1,37 @@
-# Arbeitsverzeichnisse
+# Arbeitsverzeichnisse und Jahrgangs-Wrapper
 
-Programm und Arbeitsdaten werden getrennt gehalten. Das Programm liegt in einem Git-Repository, aber Schülerdaten, Zugangsdaten, Exportdateien und PDFs gehören nicht in dieses Repository.
-
-Beispiel:
+Das Programm wird einmal installiert; Konfiguration und Dateien eines Schuljahres liegen davon getrennt.
 
 ```text
-MaO-CLI/                         # Git-Repository (Programm)
-  mao_cli/
-  pyproject.toml
-  CHANGELOG.md
-  wiki/
+D:/MaO/Config/
+  settings.yaml
+  pipeline.yaml
+  profiles.ini
+  tables.ini          # echte SQL-Namen, privat
+  db.config           # Zugangsdaten, privat
 
-D:/MaO/2026-27/                  # Arbeitsordner (nicht in Git)
-  db.config
-  config/                        # optional: eigene Anpassungen
-    profiles.ini
+D:/Schuljahre/2026-27/MaO/
+  mao-hier.cmd
+  mao-hier.sh
   Listen/
-  .mao-cli/
-    exports-manifest.json
+  .mao-cli/exports-manifest.json
+  ...                # PDF-/TeX-Ausgaben
+
+E:/Archiv/2025-26/MaO/
+  mao-hier.cmd
+  Listen/
 ```
 
-Verwendung:
+Die `root`-Pfade werden einzeln in `settings.yaml` erfasst. Unterschiedliche Laufwerke sind ausdrücklich erlaubt.
 
-```bash
-mao validate --workspace "D:/MaO/2026-27"
-mao plan --workspace "D:/MaO/2026-27" --profile vollpaket
+```powershell
+mao --config-dir "D:/MaO/Config" workspace add 2026-27 --root "D:/Schuljahre/2026-27/MaO"
+mao --config-dir "D:/MaO/Config" workspace add 2025-26 --root "E:/Archiv/2025-26/MaO"
+mao --config-dir "D:/MaO/Config" workspace select 2026-27
 ```
 
-Ohne `--workspace` gilt das aktuelle Arbeitsverzeichnis, von dem der Befehl gestartet wird. Relative Pfade bei `--output` und `--log-file` werden auf den gewählten Arbeitsordner bezogen.
+Das Hinzufügen erzeugt standardmäßig einen CMD- und einen Shell-Wrapper. Bereits existierende Wrapper werden **nicht** überschrieben. Mit `--no-wrapper` wird nur registriert; `mao workspace wrapper 2026-27` erzeugt später fehlende Wrapper.
 
-**Wichtig:** Andere Arbeitsverzeichnisse ändern nicht automatisch die SQL-Datenbank oder den MaO-Jahrgang. Die `db.config` entscheidet, welche Datenbank abgefragt wird. Die Konfiguration `tables.ini` definiert die verwendeten Tabellen und Views. `--mao` ändert nur die Dokumentnummer.
+Im Jahrgangsordner können die Befehle mit `mao-hier.cmd validate`, `mao-hier.cmd plan`, `mao-hier.cmd run --profile turniertag` aufgerufen werden. Die CLI liest die zentralen Einstellungen und verwendet den registrierten Pfad.
+
+**Wichtig:** Ein älterer Workspace bedeutet nicht automatisch historische SQL-Daten. Die SQL-Exportbefehle verweigern deshalb den Zugriff auf archivierte registrierte Jahre, solange keine sichere jahrgangsabhängige Datenquelle eingerichtet ist. `validate` und `latex` sind davon nicht betroffen.

@@ -4,6 +4,17 @@
 
 Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebundenen Entwicklungsphase**. Ab Version 2.0 sollen Breaking Changes explizit versioniert und für Updates entsprechend behandelt werden.
 
+## [0.6.0.dev0] – in Entwicklung
+
+### Zentrale Konfigurationsverwaltung und Jahrgänge
+- `MAO_CONFIG` und `--config-dir` statt Konfiguration pro Workspace.
+- `settings.yaml` mit explizitem, eindeutigem Arbeitsverzeichnis je Schuljahr und Standardprofil.
+- Neue Befehle `mao config init|show`, `mao workspace add|list|select|wrapper`.
+- Windows- und Shell-Wrapper im registrierten Workspace, ohne Zugangsdaten.
+- Sicherheitssperre: aktuelle SQL-Exporte werden nicht in archivierte registrierte Workspaces geschrieben.
+- Neue read-only Vorprüfung `mao init-jahrgang` auf Grundlage der vorhandenen Jahrgangs-/Archivstruktur.
+- Öffentliche `tables.ini` weiterhin ausschließlich mit `DEMO_`-Bezeichnungen; private SQL-Strukturdateien werden nicht versioniert.
+
 ## [Unreleased]
 
 ### Vorbereitung auf die öffentliche Veröffentlichung
@@ -11,7 +22,7 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 - Die Jahrgangsermittlung verwendet die lokalen Bezeichnungen `jahrgaenge_table` und `schuljahre_table` statt fest eingetragener Tabellennamen.
 - `mao plan` und `mao run` verweigern einen Datenbanklauf mit Demo-Namen; `mao validate` weist darauf hin.
 - Namen aus YAML-Beispielen, Ausgabepfaden, Dokumentation und Test-Referenzen entfernt.
-- Die `.gitignore` schützt lokale Tabellenzuordnungen. Der bereinigte Quellstand wurde mit neuer Git-Historie bereitgestellt.
+- Die `.gitignore` schützt lokale Tabellenzuordnungen; vor einer Veröffentlichung muss auch die bestehende Git-Historie bereinigt werden.
 
 ## [0.5.0.dev0] – 2026-10-23
 

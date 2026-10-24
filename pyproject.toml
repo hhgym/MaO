@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mao-cli"
-version = "0.5.0.dev0"
+version = "0.6.0.dev0"
 description = "CLI zur Organisation der Mathematik-Olympiade (SQL, CSV, LaTeX)"
 readme = "README.md"
 requires-python = ">=3.10"

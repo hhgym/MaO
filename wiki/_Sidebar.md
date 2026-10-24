@@ -9,3 +9,4 @@
 - [Entwicklung](Entwicklung)
 - [Git Flow](Git-Flow)
 - [Updates](Updates)
+- [Jahrgangswechsel](Jahrgangswechsel)
