@@ -267,7 +267,8 @@ def _resolve_course(value: Any, teacher_id: int | None,
     key = (group_id, teacher_id)
     if key not in course_links:
         raise ImportErrorGF(f"Keine gültige Lerngruppen-/Lehrkraftzuordnung für Lerngruppe {group_id}, Lehrkraft {teacher_id}")
-    return course_links[key]
+    # Das GF-Feld enthält bereits die FK auf orga_lerngruppe_schuljahr.id.
+    return group_id
 
 
 def build_participants(entries: Iterable[dict], students: list[dict], mandatory: list[dict],
