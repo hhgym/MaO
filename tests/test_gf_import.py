@@ -1,5 +1,4 @@
 """Offline-Prüfungen des Gravity-Forms-Erstimports; keine realen Tabellen oder Schlüssel."""
-from pathlib import Path
 from types import SimpleNamespace
 import pytest
 
@@ -27,7 +26,8 @@ def test_entry_checkbox_and_mandatory(opts):
     assert items[0]["kurs_id"] == 100 and items[0]["lehrkraft_id"] == 7
     assert items[1]["kurs_id"] is None and items[1]["stufe"] == 5
     assert stat == {"gf_entries": 1, "inactive_entries": 1, "empty_reports": 0, "mandatory_added": 1,
-                    "mandatory_classes_present": 1, "optional_classes_present": 0}
+                    "mandatory_classes_present": 1, "optional_classes_present": 0,
+                    "class_mismatch": 0, "unknown_gender": 0}
 
 
 def test_duplicate_matrikel_fails(opts):
@@ -296,3 +296,140 @@ def test_init_adds_missing_table_names_to_existing_config_without_overwrite(tmp_
     assert "{{table.teachers_table}}" in (tmp_path / "gf-import.yaml").read_text(encoding="utf-8")
     init_config(tmp_path, cli.DEFAULTS)
     assert (tmp_path / "tables.ini").read_text(encoding="utf-8") == text
+
+
+class FKCursor(FakeCursor):
+    """Liefert zusätzlich Fremdschlüssel aus information_schema."""
+    def __init__(self, fk_rows, present=0):
+        super().__init__(present)
+        self.fk_rows = fk_rows
+    def fetchall(self):
+        if "KEY_COLUMN_USAGE" in self.last:
+            return self.fk_rows
+        return super().fetchall()
+
+
+def test_persist_blocks_unexpected_foreign_key_before_writing():
+    participants = [{x: 1 for x in g.WRITE_COLUMNS}]
+    cnx = FakeConn()
+    # Treiber liefern information_schema-Werte teils als bytes.
+    cnx.cursor_obj = FKCursor([("kurs_id", b"assignment_table", "id"), ("lehrkraft_id", "TEACHERS", "id")])
+    report = {}
+    with pytest.raises(g.ImportErrorGF, match="kurs_id verweist auf assignment_table.id, erwartet GROUP_YEAR"):
+        g.persist_import(SimpleNamespace(conn=cnx), "SAMPLE_TABLE", participants, dry_run=False,
+                         foreign_keys={"kurs_id": "GROUP_YEAR", "lehrkraft_id": "teachers"}, report=report)
+    assert not any("INSERT" in sql for sql, _ in cnx.cursor_obj.executed)
+    assert any("RELEASE_LOCK" in sql for sql, _ in cnx.cursor_obj.executed)
+    assert cnx.commits == 0
+    assert report["schema"]["foreign_keys"] == {"kurs_id": "assignment_table.id", "lehrkraft_id": "TEACHERS.id"}
+
+
+def test_persist_accepts_matching_foreign_key_case_insensitive():
+    cnx = FakeConn()
+    cnx.cursor_obj = FKCursor([("kurs_id", "group_year", "id")])
+    report = {}
+    assert g.persist_import(SimpleNamespace(conn=cnx), "SAMPLE_TABLE", [{x: 1 for x in g.WRITE_COLUMNS}],
+                            dry_run=True, foreign_keys={"kurs_id": "GROUP_YEAR"}, report=report) == 0
+    notes = report["schema"]["notes"]
+    assert any("kurs_id → group_year.id (wie erwartet)" in line for line in notes)
+    assert any("lehrkraft_id → keiner" in line for line in notes)
+
+
+def test_review_foreign_keys_lines_and_problems():
+    lines, problems = g.review_foreign_keys({"kurs_id": None, "lehrkraft_id": "T.id"},
+                                            {"kurs_id": "GROUP_YEAR", "lehrkraft_id": "T"})
+    assert problems == []
+    assert lines[0].startswith("WARNUNG: kurs_id hat keinen Fremdschlüssel")
+    assert "wie erwartet" in lines[1]
+
+
+def test_foreign_key_expectations_from_import_config(tmp_path):
+    (tmp_path / "tables.ini").write_text(
+        "[table]\nlerngruppe_schuljahr_table = GROUP_YEAR\nteachers_table = DEMO_TEACHERS\n", encoding="utf-8")
+    base = ('fields: {klasse: "1", kurs: "5", lehrkraft: "3", teilnehmende: "7"}\n'
+            'queries: {students: "SELECT * FROM S", teachers: "SELECT * FROM T", courses: "SELECT * FROM C"}\n')
+    config = tmp_path / "gf-import.yaml"
+    config.write_text(base + 'foreign_keys:\n  kurs_id: "{{table.lerngruppe_schuljahr_table}}"\n'
+                             '  lehrkraft_id: "{{table.teachers_table}}"\n', encoding="utf-8")
+    # DEMO-Namen gelten als nicht eingerichtet und werden nur angezeigt, nicht erzwungen.
+    assert dict(g.load_import_settings(config).foreign_keys) == {"kurs_id": "GROUP_YEAR"}
+    config.write_text(base, encoding="utf-8")
+    assert dict(g.load_import_settings(config).foreign_keys) == {}
+    for bad in ('foreign_keys: {raum_id: X}\n', 'foreign_keys: {kurs_id: "A B"}\n', 'foreign_keys: [kurs_id]\n'):
+        config.write_text(base + bad, encoding="utf-8")
+        with pytest.raises(Exception, match="foreign_keys"):
+            g.load_import_settings(config)
+
+
+def test_class_mismatch_and_unknown_gender_are_reported_not_blocking(opts):
+    options = g.ImportSettings(opts.form_id, opts.page_size, opts.timeout, (), (), opts.fields, opts.queries)
+    students = [
+        {"matrikelnummer": 1, "vorname": "A", "nachname": "A", "geschlecht": "w", "klasse": "5-2"},
+        {"matrikelnummer": 2, "vorname": "B", "nachname": "B", "geschlecht": "?", "klasse": "5-1"},
+        {"matrikelnummer": 3, "vorname": "C", "nachname": "C", "geschlecht": "", "klasse": "5-1"},
+    ]
+    entries = [{"1": "5-1", "3": "7", "7.1": "1", "7.2": "2", "7.3": "3"}]
+    warnings = []
+    rows, stats = g.build_participants(entries, students, [], {7}, {}, options, warnings=warnings)
+    by_student = {r["matrikelnummer"]: r for r in rows}
+    # Bisheriges Verhalten bleibt: die GF-Klasse wird übernommen, aber gemeldet.
+    assert by_student[1]["klasse"] == "5-1"
+    assert by_student[2]["geschlecht"] is None and by_student[3]["geschlecht"] is None
+    assert stats["class_mismatch"] == 1 and stats["unknown_gender"] == 1
+    assert any("Matrikelnummer 1" in w and "5-2" in w for w in warnings)
+    assert any("Matrikelnummer 2" in w and "Geschlecht" in w for w in warnings)
+    assert not any("Matrikelnummer 3" in w for w in warnings)  # leere Angabe ist kein Fehler
+    # Ohne Warnliste bleibt die Funktion abwärtskompatibel.
+    assert g.build_participants(entries, students, [], {7}, {}, options)[1]["class_mismatch"] == 1
+
+
+class _Response:
+    def __init__(self, payload):
+        self.payload = payload
+    def raise_for_status(self):
+        pass
+    def json(self):
+        return self.payload
+
+
+def _fake_gf_api(monkeypatch, pages):
+    """Simuliert die paginierte GF-API, ohne requests_oauthlib oder Netzwerk."""
+    import sys
+    calls = []
+    class Session:
+        def __init__(self, **_kwargs):
+            pass
+        def mount(self, *_args):
+            pass
+        def get(self, _url, params, **_kwargs):
+            calls.append(params["paging[current_page]"])
+            return _Response(pages[params["paging[current_page]"] - 1])
+        def close(self):
+            pass
+    monkeypatch.setitem(sys.modules, "requests_oauthlib", SimpleNamespace(OAuth1Session=Session))
+    return calls
+
+
+CREDENTIALS = {"api_base": "https://example.org/gf/v2", "consumer_key": "k", "consumer_secret": "s"}
+
+
+def test_gf_entries_complete_download(monkeypatch):
+    calls = _fake_gf_api(monkeypatch, [{"total_count": 3, "entries": [{"id": "1"}, {"id": "2"}]},
+                                       {"total_count": 3, "entries": [{"id": "3"}]}])
+    assert [e["id"] for e in g.gf_entries(CREDENTIALS, 16, 2, 5)] == ["1", "2", "3"]
+    assert calls == [1, 2]
+
+
+def test_gf_entries_rejects_incomplete_download(monkeypatch):
+    _fake_gf_api(monkeypatch, [{"total_count": 4, "entries": [{"id": "1"}, {"id": "2"}]},
+                               {"total_count": 4, "entries": [{"id": "4"}]}])
+    with pytest.raises(g.ImportErrorGF, match="Unvollständiger GF-Abruf: 3 von 4"):
+        list(g.gf_entries(CREDENTIALS, 16, 2, 5))
+
+
+def test_gf_entries_rejects_entries_delivered_twice(monkeypatch):
+    # Neue Meldung während des Abrufs: Eintrag 2 rutscht auf die nächste Seite.
+    _fake_gf_api(monkeypatch, [{"total_count": 4, "entries": [{"id": "1"}, {"id": "2"}]},
+                               {"total_count": 4, "entries": [{"id": "2"}, {"id": "3"}]}])
+    with pytest.raises(g.ImportErrorGF, match="GF-Eintrag 2 wurde doppelt geliefert"):
+        list(g.gf_entries(CREDENTIALS, 16, 2, 5))

@@ -1,8 +1,6 @@
 """Regressionstests für aus GitHub-Branch-ZIP installierte Entwicklungsstände."""
 from __future__ import annotations
 
-import subprocess
-import sys
 import zipfile
 from pathlib import Path
 from types import SimpleNamespace

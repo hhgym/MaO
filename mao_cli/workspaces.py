@@ -228,6 +228,23 @@ class WorkspaceSelection:
     mao_number: int | None
 
 
+def _registered_year_for(settings: dict[str, Any], target: Path) -> str | None:
+    """Jahrgang, dessen registrierter Ordner ``target`` ist oder enthält.
+
+    Ohne diese Zuordnung würde ein per ``--workspace`` angegebener Ordner eines
+    archivierten Jahrgangs als unregistriert gelten und die Archivsperre umgehen.
+    """
+    wanted = os.path.normcase(str(target))
+    best: tuple[int, str] | None = None
+    for name, item in settings["workspaces"].items():
+        root = os.path.normcase(str(Path(item["root"]).resolve()))
+        if wanted == root or wanted.startswith(root.rstrip(os.sep) + os.sep):
+            # Bei verschachtelten Ordnern gewinnt der genaueste (längste) Treffer.
+            if best is None or len(root) > best[0]:
+                best = (len(root), name)
+    return best[1] if best else None
+
+
 def resolve_workspace(settings: dict[str, Any], *, year: str | None = None,
                       workspace: Path | None = None, allow_unregistered: bool = False) -> WorkspaceSelection:
     selected = year or settings["current_year"]
@@ -241,8 +258,14 @@ def resolve_workspace(settings: dict[str, Any], *, year: str | None = None,
         # Wird year explizit angegeben, darf kein anderer Pfad benutzt werden.
         if year is not None and entry and target != Path(entry["root"]).resolve():
             raise ConfigurationError("--year und --workspace verweisen auf verschiedene Ordner")
-        return WorkspaceSelection(target, selected if year is not None else None,
-                                  entry.get("mao") if year is not None and entry else None)
+        if year is None:
+            # Ein registrierter Ordner behält seinen Jahrgang, damit die
+            # Sperre für archivierte Jahrgänge auch bei --workspace greift.
+            owner = _registered_year_for(settings, target)
+            if owner is not None:
+                return WorkspaceSelection(target, owner, settings["workspaces"][owner].get("mao"))
+            return WorkspaceSelection(target, None, None)
+        return WorkspaceSelection(target, selected, entry.get("mao") if entry else None)
     if entry:
         return WorkspaceSelection(Path(entry["root"]), selected, entry.get("mao"))
     if allow_unregistered:

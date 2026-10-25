@@ -1,6 +1,4 @@
 """Regressionen für student_table, lokale Config-Auflösung und GF-Leermeldungen."""
-from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -34,7 +32,7 @@ def test_init_uses_students_table_and_migrates_legacy_key(tmp_path):
     assert 'students_view =' not in content
     assert '{{table.students_table}}' in (c / 'gf-import.yaml').read_text(encoding='utf8')
     old = content.replace('students_table = DEMO_CURRENT_STUDENTS',
-                          '# legacy source\nstudents_view = ORGA_SCHUELER')
+                          '# legacy source\nstudents_view = LEGACY_STUDENTS')
     (c / 'tables.ini').write_text(old, encoding='utf8')
     # Realistische bestehende gf-import.yaml mit altem Tabellen-Token.
     gf_file = c / 'gf-import.yaml'
@@ -43,7 +41,7 @@ def test_init_uses_students_table_and_migrates_legacy_key(tmp_path):
     created = w.init_config(c, cli.DEFAULTS)
     assert created == []
     new = (c / 'tables.ini').read_text(encoding='utf8')
-    assert 'students_table = ORGA_SCHUELER' in new
+    assert 'students_table = LEGACY_STUDENTS' in new
     assert 'students_view =' not in new
     assert w.init_config(c, cli.DEFAULTS) == []
     # Der alte GF-Token wird zur Laufzeit in den neuen Namen überführt.
@@ -53,7 +51,7 @@ def test_init_uses_students_table_and_migrates_legacy_key(tmp_path):
                       'current_groups_view = LERNGRUPPEN')
     (c / 'tables.ini').write_text(new, encoding='utf8')
     loaded = g.load_import_settings(gf_file)
-    assert 'FROM ORGA_SCHUELER' in loaded.queries['students']
+    assert 'FROM LEGACY_STUDENTS' in loaded.queries['students']
 
 
 def test_empty_checkbox_direct_and_subfield():

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import logging
 import sys
 import time
@@ -431,16 +430,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         actions = planner.actions()
         job_names = [] if args.no_latex else [job["name"] for job in cfg["latex"].get("jobs", [])
                                                    if job.get("enabled", True)]
-        report = render_plan(actions, job_names, mao, source="SQL aus pipeline.yaml")
+        plan_text = render_plan(actions, job_names, mao, source="SQL aus pipeline.yaml")
         if args.command == "plan":
             LOGGER.info("PLAN | %d Dateiaktionen, %d LaTeX-Jobs", len(actions), len(job_names))
-            print("\n" + report)
+            print("\n" + plan_text)
             if args.output:
-                target = _checked_plan_path(workspace, args.output,
+                plan_file = _checked_plan_path(workspace, args.output,
                                              protected | {planner._absolute(name) for name in planner.outputs}
                                              | {planner._absolute(name) for name in planner.previous})
-                write_text(target, report)
-                LOGGER.info("Plan gespeichert: %s", target)
+                write_text(plan_file, plan_text)
+                LOGGER.info("Plan gespeichert: %s", plan_file)
             return 0
 
         changes = planner.commit()

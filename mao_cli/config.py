@@ -227,7 +227,12 @@ def resolve_table_placeholders(cfg: Dict[str, Any], tables: dict[str, str]) -> D
     return changed
 
 
-def load_profiles(path: Path) -> dict[str, dict[str, list[str]]]:
+def _profile_list(ini: configparser.ConfigParser, section: str, key: str) -> list[str]:
+    raw: str = ini.get(section, key, fallback="enabled")
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def load_profiles(path: Path) -> dict[str, dict[str, Any]]:
     """Profile mit eindeutigen Export- und LaTeX-Job-IDs."""
     ini = configparser.ConfigParser(interpolation=None)
     try:
@@ -235,15 +240,14 @@ def load_profiles(path: Path) -> dict[str, dict[str, list[str]]]:
             ini.read_file(file)
     except (configparser.Error, UnicodeError) as exc:
         raise ConfigurationError(f"Profile '{path}': {exc}") from exc
-    result: dict[str, dict[str, list[str]]] = {}
+    result: dict[str, dict[str, Any]] = {}
     for section in ini.sections():
         unknown = set(ini.options(section)) - {"exports", "latex_jobs", "description"}
         if unknown:
             raise ConfigurationError(f"Profil '{section}': Unbekannte Optionen {sorted(unknown)}. "
                                      "Nur exports, latex_jobs und description sind erlaubt.")
-        def parse(key):
-            return [part.strip() for part in ini.get(section, key, fallback="enabled").split(",") if part.strip()]
-        result[section] = {"exports": parse("exports"), "latex_jobs": parse("latex_jobs"),
+        result[section] = {"exports": _profile_list(ini, section, "exports"),
+                           "latex_jobs": _profile_list(ini, section, "latex_jobs"),
                            "description": ini.get(section, "description", fallback="")}
     return result
 

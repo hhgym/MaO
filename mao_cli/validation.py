@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .gf_import import (
-    ImportErrorGF, WRITE_COLUMNS, _cache, _course_links, _rows, _teacher_ids,
-    _valid_id, gf_entries, load_gf_credentials, load_import_settings,
+    IDENT, ImportErrorGF, WRITE_COLUMNS, _cache, _course_links, _rows, _teacher_ids,
+    _valid_id, foreign_key_targets, gf_entries, load_gf_credentials, load_import_settings,
+    review_foreign_keys,
 )
 
 
@@ -37,7 +38,6 @@ def validate_online(db: Any, config_dir: Path, tables: Mapping[str, str],
     target = tables.get("orga_table", "")
     if not target or target.startswith("DEMO_"):
         raise ImportErrorGF("tables.ini: orga_table muss einen echten Tabellennamen enthalten")
-    from .gf_import import IDENT
     if not IDENT.fullmatch(target):
         raise ImportErrorGF("Ungültiger Zieltabellenname in tables.ini")
     cur = db.conn.cursor()
@@ -51,6 +51,10 @@ def validate_online(db: Any, config_dir: Path, tables: Mapping[str, str],
         count = int(cur.fetchone()[0])
         result.append(f"Zieltabelle {target}: {count} Datensätze"
                       + (" (nicht leer – Erstimport gesperrt)" if count else " (bereit für Erstimport)"))
+        fk_lines, fk_problems = review_foreign_keys(foreign_key_targets(cur, target), options.foreign_keys)
+        result.extend(fk_lines)
+        if fk_problems:
+            raise ImportErrorGF("; ".join(fk_problems))
 
         for ds in cfg.get("datasets", []):
             if ds.get("enabled", True):

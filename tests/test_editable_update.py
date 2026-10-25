@@ -1,12 +1,8 @@
 """Offline-Tests für updates direkt in einem pip-install-e-Quellordner."""
 from __future__ import annotations
 
-import io
 import json
-import os
-import sys
 import zipfile
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest

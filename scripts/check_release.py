@@ -2,7 +2,6 @@
 """Manuelle Preflight-Prüfung für Release-Tags und Python-Metadaten."""
 from __future__ import annotations
 import argparse
-import subprocess
 import sys
 try:
     import tomllib

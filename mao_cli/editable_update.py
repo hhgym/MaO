@@ -5,7 +5,6 @@ wird verändert. Wheel-Installationen behalten ihre getrennte Updateverwaltung.
 """
 from __future__ import annotations
 
-import base64
 import hashlib
 import importlib.metadata
 import json
@@ -22,12 +21,11 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
-try:
+if sys.version_info >= (3, 11):
     import tomllib
-except ImportError:  # Python 3.10
+else:  # Python 3.10
     import tomli as tomllib
 
-from . import __version__
 from .update_install import InstallError, _update_lock
 
 

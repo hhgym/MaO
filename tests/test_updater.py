@@ -1,7 +1,7 @@
 """Offline-Tests für GitHub-Releases, Kanäle, Sicherheitsprüfungen und CLI."""
 from __future__ import annotations
 import hashlib
-from pathlib import Path
+import subprocess
 
 import pytest
 from packaging.version import Version
@@ -115,7 +115,8 @@ def test_cli_update_check_bypasses_pipeline(monkeypatch):
 
 def test_install_without_yes_will_not_call_pip(monkeypatch):
     monkeypatch.setattr(u, 'find_release', lambda *args: u.Release(Version('2.0.0'),'v2.0.0','a','b','a.whl'))
-    monkeypatch.setattr(u.subprocess,'run',lambda *args,**kwargs: pytest.fail('pip must not run'))
+    # Global patchen: kein Modul darf ohne --yes einen Prozess (pip) starten.
+    monkeypatch.setattr(subprocess,'run',lambda *args,**kwargs: pytest.fail('pip must not run'))
     with pytest.raises(u.UpdateError, match='--yes'):
         u.update_action('install','rc','hhgym/mao-cli')
 

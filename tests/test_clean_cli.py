@@ -3,16 +3,14 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
-from pathlib import Path
 
 import pytest
 import yaml
 
 from mao_cli import __version__
 from mao_cli import cli
-from mao_cli.config import ConfigurationError, load_config, load_profiles
+from mao_cli.config import ConfigurationError, load_config
 from mao_cli.exports import ExportPlan
 from scripts.publish_wiki import publish
 

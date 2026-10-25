@@ -7,13 +7,13 @@ from __future__ import annotations
 
 import configparser
 import csv
+import dataclasses
 import json
-import fnmatch
 import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any, Iterable, Literal, Mapping, overload
 from urllib.parse import urlsplit
 
 import yaml
@@ -22,6 +22,8 @@ from .config import ConfigurationError, load_tables, resolve_sql_table_tokens
 
 LOGGER = logging.getLogger(__name__)
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Spalten der Organisationstabelle, deren Fremdschlüssel vor dem Import geprüft werden.
+FK_COLUMNS = ("kurs_id", "lehrkraft_id")
 
 
 class ImportErrorGF(ValueError):
@@ -37,6 +39,8 @@ class ImportSettings:
     optional_mandatory_classes: tuple[str, ...]
     fields: Mapping[str, str]
     queries: Mapping[str, str]
+    # Spalte -> Tabelle, auf die ihr Fremdschlüssel zeigen muss (optional).
+    foreign_keys: Mapping[str, str] = dataclasses.field(default_factory=dict)
 
 
 def load_import_settings(path: Path) -> ImportSettings:
@@ -46,7 +50,8 @@ def load_import_settings(path: Path) -> ImportSettings:
         raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
         raise ConfigurationError(f"GF-Importkonfiguration unlesbar: {exc}") from exc
-    if not isinstance(raw, dict) or set(raw) - {"form_id", "page_size", "timeout", "fields", "queries", "mandatory_classes", "optional_mandatory_classes"}:
+    if not isinstance(raw, dict) or set(raw) - {"form_id", "page_size", "timeout", "fields", "queries", "mandatory_classes",
+                                                "optional_mandatory_classes", "foreign_keys"}:
         raise ConfigurationError("gf-import.yaml: ungültige oder unbekannte Schlüssel")
     fields = raw.get("fields")
     queries = raw.get("queries")
@@ -67,9 +72,14 @@ def load_import_settings(path: Path) -> ImportSettings:
         raise ConfigurationError("gf-import.yaml: Pflicht- und optionale Klassen überlappen")
     if (mand or opt_mand) and not queries.get("mandatory"):
         raise ConfigurationError("gf-import.yaml: Pflichtteilnahmen benötigen queries.mandatory (aktuelle Mathematik-Lerngruppen)")
+    fk_raw = raw.get("foreign_keys") or {}
+    if (not isinstance(fk_raw, dict) or set(fk_raw) - set(FK_COLUMNS)
+            or not all(isinstance(value, str) and value.strip() for value in fk_raw.values())):
+        raise ConfigurationError("gf-import.yaml: foreign_keys erlaubt nur kurs_id und lehrkraft_id mit je einem Tabellennamen")
     # Die SQL-Quellen referenzieren dieselbe zentrale tables.ini wie die Pipeline.
     # Namen aus Gravity Forms werden hier niemals als SQL-Identifier eingesetzt.
-    needs_tables = any(isinstance(value, str) and "{{" in value for value in queries.values())
+    needs_tables = any(isinstance(value, str) and "{{" in value
+                       for value in (*queries.values(), *fk_raw.values()))
     tables = load_tables(path.parent / "tables.ini") if needs_tables else {}
     if "students_table" not in tables and "students_view" in tables:
         tables["students_table"] = tables["students_view"]
@@ -87,13 +97,22 @@ def load_import_settings(path: Path) -> ImportSettings:
         if not re.match(r"^\s*SELECT\b", value, re.I) or ";" in value or re.search(r"\b(INTO\s+OUTFILE|FOR\s+UPDATE|LOCK\s+IN\s+SHARE\s+MODE)\b", value, re.I):
             raise ConfigurationError("gf-import.yaml: nur einfache lesende SELECT-Abfragen sind erlaubt")
         resolved_queries[key] = value
-    def positive(key: str, default: int, maximum: int):
+    foreign_keys: dict[str, str] = {}
+    for column, value in fk_raw.items():
+        table = resolve_sql_table_tokens(value.strip(), tables, label=f"gf-import.yaml/foreign_keys.{column}")
+        if not IDENT.fullmatch(table):
+            raise ConfigurationError(f"gf-import.yaml: foreign_keys.{column} muss genau einen Tabellennamen enthalten")
+        # Noch nicht eingerichtete DEMO-Namen bedeuten: Ziel nur anzeigen, nicht erzwingen.
+        if not table.startswith("DEMO_"):
+            foreign_keys[column] = table
+    def positive(key: str, default: int, maximum: int) -> int:
         n = raw.get(key, default)
         if type(n) is not int or not 1 <= n <= maximum:
             raise ConfigurationError(f"gf-import.yaml: {key} außerhalb zulässiger Grenzen")
         return n
     return ImportSettings(positive("form_id", 16, 100000), positive("page_size", 200, 500),
-                          positive("timeout", 60, 300), tuple(mand), tuple(opt_mand), fields, resolved_queries)
+                          positive("timeout", 60, 300), tuple(mand), tuple(opt_mand), fields, resolved_queries,
+                          foreign_keys)
 
 
 def load_gf_credentials(path: Path) -> dict[str, str]:
@@ -132,6 +151,8 @@ def gf_entries(config: Mapping[str, str], form_id: int, page_size: int, timeout:
     url = f"{config['api_base']}/forms/{form_id}/entries"
     page = 1
     total = None
+    received = 0
+    seen_ids: set[str] = set()
     try:
         while True:
             try:
@@ -153,12 +174,26 @@ def gf_entries(config: Mapping[str, str], form_id: int, page_size: int, timeout:
             items = data.get("entries", data.get("list", []))
             if not isinstance(items, list) or any(not isinstance(x, dict) for x in items):
                 raise ImportErrorGF("Ungültige GF-Entries")
-            yield from items
+            for item in items:
+                # Ändern sich Meldungen während des seitenweisen Abrufs, verschieben
+                # sich die Seiten: Einträge kämen doppelt oder fehlten.
+                entry_id = item.get("id")
+                if entry_id is not None:
+                    if str(entry_id) in seen_ids:
+                        raise ImportErrorGF(f"GF-Eintrag {str(entry_id)[:64]} wurde doppelt geliefert; "
+                                            "Meldungen haben sich während des Abrufs geändert, bitte erneut ausführen")
+                    seen_ids.add(str(entry_id))
+                received += 1
+                yield item
             if len(items) < page_size or (total is not None and page * page_size >= total):
                 break
             page += 1
             if page > 1000:
                 raise ImportErrorGF("Import abgebrochen: mehr als 1000 Seiten")
+        if total is not None and received != total:
+            raise ImportErrorGF(f"Unvollständiger GF-Abruf: {received} von {total} Einträgen erhalten; "
+                                "bitte erneut ausführen. Tritt das wiederholt auf, page_size in "
+                                "gf-import.yaml verkleinern (die API liefert evtl. weniger pro Seite)")
     finally:
         session.close()
 
@@ -220,6 +255,10 @@ def _cache(rows: list[dict], required: set[str], source: str) -> list[dict]:
     return rows
 
 
+@overload
+def _valid_id(value: Any, source: str, *, optional: Literal[False] = False) -> int: ...
+@overload
+def _valid_id(value: Any, source: str, *, optional: bool) -> int | None: ...
 def _valid_id(value: Any, source: str, *, optional: bool = False) -> int | None:
     """Nur positive, dezimale ID-Werte akzeptieren; niemals Labels als IDs deuten."""
     if (value is None or (isinstance(value, str) and not value.strip())) and optional:
@@ -236,8 +275,9 @@ def _teacher_ids(rows: list[dict]) -> set[int]:
 def _course_links(rows: list[dict]) -> dict[tuple[int, int], int]:
     """(GF-Lerngruppe-Schuljahr-ID, GF-Lehrkraft-ID) -> unveränderte Gruppen-ID.
 
-    kurs_id referenziert orga_lerngruppe_schuljahr.id, niemals
-    orga_lerngruppen_einsatz.id; die Lehrkraft-Zuordnung wird geprüft.
+    kurs_id erhält die unveränderte lerngruppe_schuljahr_id aus GF-Feld 5,
+    nie die ID eines einzelnen Lehrkrafteinsatzes; geprüft wird nur, dass die
+    Kombination aus Lerngruppe und Lehrkraft existiert.
     """
     result: dict[tuple[int, int], int] = {}
     required = {"lerngruppe_schuljahr_id", "lehrkraft_id"}
@@ -267,12 +307,25 @@ def _resolve_course(value: Any, teacher_id: int | None,
     key = (group_id, teacher_id)
     if key not in course_links:
         raise ImportErrorGF(f"Keine gültige Lerngruppen-/Lehrkraftzuordnung für Lerngruppe {group_id}, Lehrkraft {teacher_id}")
-    # Das GF-Feld enthält bereits die FK auf orga_lerngruppe_schuljahr.id.
+    # GF-Feld 5 enthält bereits die lerngruppe_schuljahr_id, die kurs_id speichert.
     return group_id
 
 
+def _checked_gender(student: Mapping[str, Any], matrikel: int, warnings: list[str]) -> str | None:
+    """Normalisiertes Geschlecht; nicht zuordenbare Angaben werden gemeldet statt still NULL."""
+    raw = str(student.get("geschlecht") or "").strip()
+    value = gender(raw)
+    if raw and value is None:
+        warnings.append(f"Matrikelnummer {matrikel}: Geschlecht '{raw[:20]}' nicht zuordenbar, wird leer gespeichert")
+    return value
+
+
 def build_participants(entries: Iterable[dict], students: list[dict], mandatory: list[dict],
-                       teachers: set[int], courses: dict[tuple[int, int], int], options: ImportSettings) -> tuple[list[dict], dict[str, int]]:
+                       teachers: set[int], courses: dict[tuple[int, int], int], options: ImportSettings,
+                       warnings: list[str] | None = None) -> tuple[list[dict], dict[str, int]]:
+    """Teilnehmende planen. Nicht blockierende Auffälligkeiten landen in ``warnings``."""
+    class_notes: list[str] = []
+    gender_notes: list[str] = []
     _cache(students, {"matrikelnummer", "vorname", "nachname", "geschlecht", "klasse"}, "students")
     student_map: dict[int, dict] = {}
     for item in students:
@@ -306,14 +359,21 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
             if matrikel in seen:
                 raise ImportErrorGF(f"Matrikelnummer {matrikel} wurde mehrfach angemeldet")
             s = student_map[matrikel]
-            klass = str(entry.get(field["klasse"]) or s["klasse"] or "").strip()
+            gf_class = str(entry.get(field["klasse"]) or "").strip()
+            master_class = str(s["klasse"] or "").strip()
+            # Die GF-Angabe hat wie bisher Vorrang; eine Abweichung von den
+            # Stammdaten wird aber gemeldet, statt still übernommen zu werden.
+            klass = gf_class or master_class
+            if gf_class and master_class and gf_class.casefold() != master_class.casefold():
+                class_notes.append(f"Matrikelnummer {matrikel}: Klasse laut Gravity Forms {gf_class[:20]}, "
+                             f"laut Stammdaten {master_class[:20]}; übernommen wird {gf_class[:20]}")
             stufe = grade(klass)
             if stufe is None:
                 raise ImportErrorGF(f"Keine Klassenstufe für Matrikelnummer {matrikel}")
             teacher_id = _resolve_teacher(entry.get(field["lehrkraft"]), teachers, "GF-Feld 3 / lehrkraft_id")
             seen[matrikel] = {
                 "matrikelnummer": matrikel, "vorname": s["vorname"], "nachname": s["nachname"],
-                "geschlecht": gender(s["geschlecht"]), "klasse": klass, "stufe": stufe,
+                "geschlecht": _checked_gender(s, matrikel, gender_notes), "klasse": klass, "stufe": stufe,
                 "lehrkraft_id": teacher_id,
                 "kurs_id": (_resolve_course(entry.get(field["kurs"]), teacher_id, courses)
                             if stufe in (11, 12) else None),
@@ -372,7 +432,7 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
                 stufe = grade(klass)
                 seen[matrikel] = {
                     "matrikelnummer": matrikel, "vorname": s["vorname"], "nachname": s["nachname"],
-                    "geschlecht": gender(s["geschlecht"]), "klasse": klass, "stufe": stufe,
+                    "geschlecht": _checked_gender(s, matrikel, gender_notes), "klasse": klass, "stufe": stufe,
                     "lehrkraft_id": by_class[klass][0], "kurs_id": None,
                     "_source": "mandatory",
                 }
@@ -385,10 +445,14 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
     result = sorted(seen.values(), key=sort_key)
     for i, row in enumerate(result, 1):
         row["tnr"] = i
+    if warnings is not None:
+        warnings.extend(class_notes + gender_notes)
     return result, {"gf_entries": count_gf, "inactive_entries": skipped, "empty_reports": empty_count,
                     "mandatory_added": mandatory_count,
                     "mandatory_classes_present": len(mandatory_classes_present),
-                    "optional_classes_present": len(optional_classes_present)}
+                    "optional_classes_present": len(optional_classes_present),
+                    "class_mismatch": len(class_notes),
+                    "unknown_gender": len(gender_notes)}
 
 
 WRITE_COLUMNS = ("tnr", "matrikelnummer", "vorname", "nachname", "geschlecht", "klasse", "stufe", "lehrkraft_id", "kurs_id")
@@ -472,7 +536,8 @@ def write_import_report(workspace: Path, config_dir: Path, filename: Path,
                 json.dump(report, file, ensure_ascii=False, indent=2, sort_keys=True)
                 file.write("\n")
             else:
-                cols = ("klasse", "gf", "mandatory", "participants", "missing_teacher", "missing_course", "empty_reports", "status", "issue")
+                cols = ("klasse", "gf", "mandatory", "participants", "missing_teacher", "missing_course", "empty_reports",
+                        "status", "issue", "warnings")
                 writer = csv.DictWriter(file, fieldnames=cols, extrasaction="ignore")
                 writer.writeheader()
                 def safe_csv(value: Any) -> Any:
@@ -487,10 +552,58 @@ def write_import_report(workspace: Path, config_dir: Path, filename: Path,
                                  "missing_teacher": summary.get("missing_teacher", ""),
                                  "missing_course": summary.get("missing_course_total", ""),
                                  "status": report.get("status", ""),
-                                 "issue": safe_csv(" | ".join(map(str, report.get("issues", []))))})
+                                 "issue": safe_csv(" | ".join(map(str, report.get("issues", [])))),
+                                 "warnings": safe_csv(" | ".join(map(str, report.get("warnings", []))))})
     except FileExistsError as exc:
         raise ConfigurationError(f"Bericht existiert bereits und wird nicht überschrieben: {target}") from exc
     return target
+
+
+def _text(value: Any) -> str:
+    """information_schema-Werte kommen je nach Treiber als str oder bytes."""
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).decode("utf-8")
+    return str(value)
+
+
+def foreign_key_targets(cursor: Any, table: str,
+                        columns: Iterable[str] = FK_COLUMNS) -> dict[str, str | None]:
+    """Liest nur lesend, worauf die Fremdschlüssel der Spalten verweisen ("tabelle.spalte")."""
+    cursor.execute(
+        "SELECT COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME "
+        "FROM information_schema.KEY_COLUMN_USAGE "
+        "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = %s AND REFERENCED_TABLE_NAME IS NOT NULL",
+        (table,),
+    )
+    found: dict[str, str] = {}
+    for column, ref_table, ref_column in cursor.fetchall():
+        found.setdefault(_text(column), f"{_text(ref_table)}.{_text(ref_column)}")
+    return {column: found.get(column) for column in columns}
+
+
+def review_foreign_keys(targets: Mapping[str, str | None],
+                        expected: Mapping[str, str]) -> tuple[list[str], list[str]]:
+    """Vergleicht FK-Ziele mit gf-import.yaml/foreign_keys.
+
+    Liefert (Diagnosezeilen, blockierende Abweichungen). Tabellennamen werden
+    ohne Groß-/Kleinschreibung verglichen, weil MySQL sie unter Windows
+    kleingeschrieben in information_schema ablegt.
+    """
+    lines: list[str] = []
+    problems: list[str] = []
+    for column, target in targets.items():
+        wanted = expected.get(column)
+        if wanted is None:
+            lines.append(f"Fremdschlüssel {column} → {target or 'keiner'} "
+                         "(nicht geprüft: keine Erwartung in gf-import.yaml/foreign_keys)")
+        elif target is None:
+            lines.append(f"WARNUNG: {column} hat keinen Fremdschlüssel; erwartet {wanted}, "
+                         "die Datenbank prüft die Werte also nicht")
+        elif target.split(".", 1)[0].casefold() != wanted.casefold():
+            problems.append(f"Fremdschlüssel {column} verweist auf {target}, erwartet {wanted}")
+        else:
+            lines.append(f"Fremdschlüssel {column} → {target} (wie erwartet)")
+    return lines, problems
 
 
 def import_participants(db: Any, config_dir: Path, target_table: str, *, dry_run: bool,
@@ -519,10 +632,22 @@ def import_participants(db: Any, config_dir: Path, target_table: str, *, dry_run
             if report is not None:
                 report.setdefault("issues", []).extend(issues)
             raise ImportErrorGF(f"{len(issues)} fehlerhafte Teilnehmerzuordnung(en); Einzelheiten im Prüfbericht: " + issues[0])
-        mapped, stats = build_participants(entries, students, mandatory, teachers, courses,
-                                            config if not no_mandatory else ImportSettings(config.form_id, config.page_size, config.timeout, (), (), config.fields, config.queries))
+        options = (dataclasses.replace(config, mandatory_classes=(), optional_mandatory_classes=())
+                   if no_mandatory else config)
+        warnings: list[str] = []
+        mapped, stats = build_participants(entries, students, mandatory, teachers, courses, options,
+                                           warnings=warnings)
+        if stats["class_mismatch"]:
+            LOGGER.warning("Klasse laut Gravity Forms weicht von den Stammdaten ab: %d", stats["class_mismatch"])
+        if stats["unknown_gender"]:
+            LOGGER.warning("Geschlecht nicht zuordenbar: %d", stats["unknown_gender"])
+        for note in warnings[:20]:
+            LOGGER.warning("  %s", note)
+        if len(warnings) > 20:
+            LOGGER.warning("  … %d weitere Hinweise (vollständig mit --report)", len(warnings) - 20)
         if report is not None:
             report["classes"] = _class_summary(mapped, entries, config.fields)
+            report["warnings"] = warnings
         if not mapped:
             raise ImportErrorGF("Keine Teilnehmenden ermittelt – Import aus Sicherheitsgründen abgebrochen")
         if len(mapped) != len(set(x["matrikelnummer"] for x in mapped)):
@@ -538,7 +663,8 @@ def import_participants(db: Any, config_dir: Path, target_table: str, *, dry_run
                                  "missing_course_oberstufe": missing_course,
                                  "missing_course_total": missing_course,
                                  "target_table": target_table}
-        inserted = persist_import(db, target_table, mapped, dry_run=dry_run)
+        inserted = persist_import(db, target_table, mapped, dry_run=dry_run,
+                                  foreign_keys=config.foreign_keys, report=report)
         if report is not None:
             report["status"] = "ready" if dry_run else "applied"
             report["summary"]["inserted"] = inserted
@@ -548,7 +674,9 @@ def import_participants(db: Any, config_dir: Path, target_table: str, *, dry_run
         cursor.close()
 
 
-def persist_import(db: Any, target_table: str, participants: list[dict], *, dry_run: bool) -> int:
+def persist_import(db: Any, target_table: str, participants: list[dict], *, dry_run: bool,
+                   foreign_keys: Mapping[str, str] | None = None,
+                   report: dict[str, Any] | None = None) -> int:
     if not IDENT.fullmatch(target_table) or target_table.startswith("DEMO_"):
         raise ImportErrorGF("Ungültiger privater Zieltabellenname")
     cnx = db.conn
@@ -567,6 +695,15 @@ def persist_import(db: Any, target_table: str, participants: list[dict], *, dry_
         columns = {row[0] for row in cur.fetchall()}
         if not set(WRITE_COLUMNS).issubset(columns):
             raise ImportErrorGF(f"Zieltabelle benötigt neue Spalten: {sorted(set(WRITE_COLUMNS) - columns)}")
+        # Auch im Dry-Run prüfen, damit falsche FK-Ziele vor --apply auffallen.
+        targets = foreign_key_targets(cur, target_table)
+        fk_lines, fk_problems = review_foreign_keys(targets, foreign_keys or {})
+        for line in fk_lines:
+            LOGGER.info("Schema | %s", line)
+        if report is not None:
+            report["schema"] = {"foreign_keys": targets, "notes": fk_lines}
+        if fk_problems:
+            raise ImportErrorGF("; ".join(fk_problems))
         cur.execute(f"SELECT COUNT(*) FROM `{target_table}`")
         existing = int(cur.fetchone()[0])
         if existing:

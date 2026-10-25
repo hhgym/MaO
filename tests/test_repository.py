@@ -1,6 +1,5 @@
 """Repository-, Build- und Versionskonventionen ohne GitHub-Zugang."""
 from pathlib import Path
-import sys
 try:
     import tomllib
 except ModuleNotFoundError:
