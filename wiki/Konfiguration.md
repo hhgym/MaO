@@ -72,18 +72,18 @@ consumer_secret=HIER_EINTRAGEN
 `optional_mandatory_classes` und vier lokale SQL-SELECT-Abfragen fest:
 
 - `queries.students`: `{{table.students_table}}` aus `tables.ini`, Schülerstammdaten mit `matrikelnummer`, `vorname`, `nachname`, `geschlecht`, `klasse` des aktuellen Schuljahres.
-- `queries.mandatory`: `{{table.current_groups_view}}` aus `tables.ini`, aktuelle Lerngruppen (derzeit ausschließlich Mathematik) mit `klasse` (Alias für `klassenname`), `lehrkraft_id` und `lerngruppe_schuljahr_id`. Ein Fachfilter ist gegenwärtig nicht notwendig. Bei Einführung weiterer Fächer kann über `orga_lerngruppen_einsatz.fach_id = 1` auf Mathematik eingeschränkt werden. Pro Pflichtklasse genau eine eindeutige Lehrkraft.
+- `queries.mandatory`: `{{table.current_groups_view}}` aus `tables.ini`, aktuelle Lerngruppen (derzeit ausschließlich Mathematik) mit `klasse` (Alias für `klassenname`), `lehrkraft_id` und `lerngruppe_schuljahr_id`. Ein Fachfilter ist gegenwärtig nicht notwendig. Bei Einführung weiterer Fächer muss die private Abfrage zusätzlich auf Mathematik filtern. Pro Pflichtklasse genau eine eindeutige Lehrkraft.
 - `queries.teachers`: `{{table.teachers_table}}` aus `tables.ini`, gültige `id`-Werte der Lehrkräfte; Formularfeld `3` enthält bereits diese ID und wird nur geprüft.
-- `queries.courses`: `{{table.current_groups_view}}` aus `tables.ini`, die Spalten `lerngruppe_schuljahr_id`, `lehrkraft_id`, `lerngruppen_einsatz_id` aus der erweiterten Lerngruppen-View. Das Paar aus den GF-Feldern `5` und `3` muss genau einen Einsatz ergeben.
+- `queries.courses`: `{{table.current_groups_view}}` aus `tables.ini`, die Spalten `lerngruppe_schuljahr_id` und `lehrkraft_id`. Das Paar aus den GF-Feldern `5` und `3` muss darin vorkommen.
 
-**Achtung: unterschiedliche IDs.** Gravity Forms liefert in Feld `5` die
-`lerngruppe_schuljahr_id` und in Feld `3` die `lehrkraft_id`. Die bereits
-vorhandene Spalte `MaO_Orga_2.kurs_id` verweist jedoch weiterhin auf
-`orga_lerngruppen_einsatz.id`. Die erweiterte aktuelle Lerngruppen-View
-liefert dafür `lerngruppen_einsatz_id`; diese wird aus **beiden GF-IDs**
-eindeutig ermittelt. Stimmen die Zuordnungen nicht oder gibt es mehrere
-Einsätze, wird der Import abgebrochen. Datenbankschema und bisherige Views
-bleiben unverändert.
+**Feste ID-Zuordnung.** Gravity Forms liefert in Feld `5` die
+`lerngruppe_schuljahr_id` und in Feld `3` die `lehrkraft_id`. Für Teilnehmende
+der Stufen 11 und 12 schreibt der Import die `lerngruppe_schuljahr_id`
+unverändert in `kurs_id` der Organisationstabelle; in den Stufen 5–10 bleibt
+`kurs_id` leer (`NULL`), auch bei Pflichtteilnahmen. Vorher wird geprüft, dass
+die Kombination aus Lerngruppe und Lehrkraft in `queries.courses` vorkommt;
+sonst bricht der Import ab. Eine Einsatz-ID wird nicht ermittelt. Der
+Spaltenname `kurs_id` bleibt vorerst unverändert.
 
 Standard-Pflichtklassen: `5-1`, `5-2`, `6-1`, `6-2`, `7-3`. Die `7-4`
 steht unter `optional_mandatory_classes`: Sie wird nur übernommen, wenn sie
@@ -99,18 +99,25 @@ Die API wird paginiert per OAuth 1.0/HMAC-SHA1 über HTTPS abgefragt. Für den
 Schreibmodus wird ausschließlich der aktuelle Workspace akzeptiert; auf
 bestehende Ergebnisdaten wird nicht schreibend zugegriffen.
 
-### Lerngruppen-/Einsatzkennungen beim GF-Import
+### Fremdschlüssel der Organisationstabelle prüfen
 
-`kurs_id` in der Organisationstabelle bleibt aus Kompatibilitätsgründen mit bestehenden
-Views und Fremdschlüsseln erhalten und referenziert die ID aus
-der Einsatz-Tabelle. Das GF-Feld 5 liefert dagegen
-`lerngruppe_schuljahr_id`, Feld 3 die `lehrkraft_id`. Die private SQL-Quelle
-`queries.courses` muss daher **drei Spalten** liefern:
-`lerngruppe_schuljahr_id`, `lehrkraft_id` und `lerngruppen_einsatz_id`.
-Die erweiterte View des aktuellen Schuljahres stellt diese bereit.
-Das Skript ordnet anhand **beider** GF-IDs genau eine Einsatz-ID zu.
-Gleiche Zahlenwerte aus unterschiedlichen Tabellen dürfen nicht als
-identische Primärschlüssel interpretiert werden.
+`mao validate --online` und jeder Lauf von `mao import-gf` lesen aus
+`information_schema`, worauf die Fremdschlüssel von `kurs_id` und
+`lehrkraft_id` verweisen, und zeigen das Ergebnis an. Optional legt
+`foreign_keys` in `gf-import.yaml` fest, welche Tabellen erwartet werden:
+
+```yaml
+foreign_keys:
+  kurs_id: "{{table.lerngruppe_schuljahr_table}}"
+  lehrkraft_id: "{{table.teachers_table}}"
+```
+
+Den Schlüssel `lerngruppe_schuljahr_table` dazu in der privaten `tables.ini`
+ergänzen (die Tabelle, deren `id` in GF-Feld 5 steht). Verweist ein
+Fremdschlüssel auf eine andere Tabelle, brechen Online-Prüfung und Import ab,
+bevor etwas geschrieben wird. Fehlt der Fremdschlüssel ganz, gibt es nur eine
+Warnung. Groß- und Kleinschreibung der Tabellennamen spielt keine Rolle; noch
+auf `DEMO_` stehende Namen gelten als nicht eingerichtet.
 
 
 ## Online-Validierung und GF-Prüfbericht
@@ -128,7 +135,8 @@ mao import-gf --dry-run --report reports/gf-pruefung.json
 Online validiert MaO die Organisationstabelle (`tnr`, `matrikelnummer`,
 `lehrkraft_id`, `kurs_id` usw.), alle im Profil aktiven SQL-Datasets,
 die SELECT-Abfragen des GF-Imports mit ihren erforderlichen Spalten,
-Schüler-/Lehrkraft-IDs, eindeutige Lerngruppeneinsätze, die Pflichtklassen
+Schüler-/Lehrkraft-IDs, die Kombinationen aus Lerngruppe und Lehrkraft,
+die Ziele der Fremdschlüssel, die Pflichtklassen
 und die erste Antwort der GF-API. Eine befüllte Organisationstabelle wird
 als nicht erstimportbereit ausgewiesen; die Validierung selbst bleibt lesend.
 
@@ -136,6 +144,12 @@ Der Dry-Run lädt sämtliche Meldungen, erkennt unter anderem doppelte oder
 unbekannte Matrikelnummern und erstellt die Klassenzahlen inklusive
 GF-/Pflicht-Anteilen. JSON enthält strukturierte Statistiken und Diagnosen,
 CSV die Klassenstatistik sowie eine Abschlusszeile mit Status/Fehlern.
+Abweichungen zwischen GF-Klasse und Stammdaten-Klasse sowie nicht zuordenbare
+Geschlechtsangaben blockieren nicht, stehen aber als `warnings` im Bericht und
+im Log; übernommen wird weiterhin die GF-Klasse. Der Abruf bricht ab, wenn die
+API weniger oder mehr Einträge liefert als angekündigt oder einen Eintrag
+doppelt liefert. Dann haben sich Meldungen während des Abrufs geändert, und der
+Lauf wird einfach wiederholt.
 Berichte werden nur **neu** im registrierten Workspace angelegt, nicht im
 privaten Konfigurationsordner. Bei einem Fehler bleibt der Bericht als
 `blocked` gekennzeichnet; bei erfolgreicher Planung als `ready`.

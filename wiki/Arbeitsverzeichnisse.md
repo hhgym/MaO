@@ -34,4 +34,4 @@ Das Hinzufügen erzeugt standardmäßig einen CMD- und einen Shell-Wrapper. Bere
 
 Im Jahrgangsordner können die Befehle mit `mao-hier.cmd validate`, `mao-hier.cmd plan`, `mao-hier.cmd run --profile turniertag` aufgerufen werden. Die CLI liest die zentralen Einstellungen und verwendet den registrierten Pfad.
 
-**Wichtig:** Ein älterer Workspace bedeutet nicht automatisch historische SQL-Daten. Die SQL-Exportbefehle verweigern deshalb den Zugriff auf archivierte registrierte Jahre, solange keine sichere jahrgangsabhängige Datenquelle eingerichtet ist. `validate` und `latex` sind davon nicht betroffen.
+**Wichtig:** Ein älterer Workspace bedeutet nicht automatisch historische SQL-Daten. Die SQL-Exportbefehle verweigern deshalb den Zugriff auf archivierte registrierte Jahre, solange keine sichere jahrgangsabhängige Datenquelle eingerichtet ist. `validate` und `latex` sind davon nicht betroffen. Die Sperre gilt auch, wenn der Ordner eines archivierten Jahrgangs (oder ein Unterordner davon) per `--workspace` angegeben wird: Ein registrierter Ordner behält immer seinen Jahrgang.

@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import io
-import logging
 from pathlib import Path
 from typing import Any, List, Optional
 import pandas as pd
@@ -91,7 +90,7 @@ def _apply_sort(df: pd.DataFrame, sort_by: List[Any]) -> pd.DataFrame:
 
     # list of dicts -> per-column order
     if all(isinstance(x, dict) for x in sort_by):
-        cols: list[str] = []
+        columns: list[str] = []
         asc: list[bool] = []
         for item in sort_by:
             col = str(item.get("column", "")).strip()
@@ -100,11 +99,11 @@ def _apply_sort(df: pd.DataFrame, sort_by: List[Any]) -> pd.DataFrame:
             order = str(item.get("order", "asc")).strip().lower()
             if order not in ("asc", "desc"):
                 raise ValueError(f"Unbekannte Sortierrichtung für '{col}': {order}")
-            cols.append(col)
+            columns.append(col)
             asc.append(order == "asc")
-        if not cols:
+        if not columns:
             return df
-        return df.sort_values(by=cols, ascending=asc, kind="mergesort")
+        return df.sort_values(by=columns, ascending=asc, kind="mergesort")
 
     raise ValueError("sort_by muss eine Liste von Spaltennamen oder eine Liste von {column, order} sein.")
 

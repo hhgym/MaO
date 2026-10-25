@@ -12,7 +12,7 @@ from mao_cli import cli
 from mao_cli import gf_import as gf
 from mao_cli import validation as v
 from mao_cli.config import ConfigurationError
-from mao_cli.workspaces import init_config, load_settings, save_settings
+from mao_cli.workspaces import init_config
 
 
 class Cursor:
@@ -178,7 +178,7 @@ def test_blocked_report_has_issue_in_csv_and_json(tmp_path):
 
 
 def test_import_build_report_without_database_writes(monkeypatch, config):
-    opts = gf.load_import_settings(config / 'gf-import.yaml')
+    gf.load_import_settings(config / 'gf-import.yaml')  # Vorlage muss gültig sein
     data = sources()
     def fake_rows(cursor, sql):
         return next((rows for key,rows in data.items() if key in sql), [])
@@ -192,6 +192,7 @@ def test_import_build_report_without_database_writes(monkeypatch, config):
     assert result['participants'] == 2 and result['mandatory_added'] == 1
     assert report['status'] == 'ready'
     assert report['classes'][0]['gf'] == 1 and report['classes'][0]['mandatory'] == 1
+    assert report['warnings'] == []
 
 
 def test_multiple_invalid_form_entries_are_collected():
@@ -232,3 +233,38 @@ def test_import_report_on_duplicate_matrikel_is_blocked_without_persist(monkeypa
         gf.import_participants(db, config, 'ORG_TARGET', dry_run=True, report=report)
     assert len(report['issues']) == 1
     assert report['status'] == 'blocked'
+
+
+class FKCursor(Cursor):
+    """Cursor mit Fremdschlüsseln der Zieltabelle in information_schema."""
+    def __init__(self, source, fk_rows, **kwargs):
+        super().__init__(source, **kwargs)
+        self.fk_rows = fk_rows
+
+    def execute(self, sql, params=None):
+        if 'KEY_COLUMN_USAGE' in sql:
+            assert params == ('ORG_TARGET',)
+            self.sql = sql
+            self.executed.append(sql)
+            self.current = list(self.fk_rows)
+            return
+        super().execute(sql, params)
+
+
+def test_validate_online_shows_foreign_key_targets(monkeypatch, config):
+    cursor = FKCursor(sources(), [('kurs_id', 'GROUP_YEAR', 'id')])
+    monkeypatch.setattr(v, 'gf_entries', lambda *_: iter([]))
+    results = v.validate_online(SimpleNamespace(conn=SimpleNamespace(cursor=lambda: cursor)), config,
+                                {'orga_table': 'ORG_TARGET'}, {'datasets': []})
+    assert any('kurs_id → GROUP_YEAR.id' in line and 'nicht geprüft' in line for line in results)
+    assert any('lehrkraft_id → keiner' in line for line in results)
+
+
+def test_validate_online_blocks_unexpected_foreign_key(monkeypatch, config):
+    path = config / 'gf-import.yaml'
+    path.write_text(path.read_text(encoding='utf-8') + 'foreign_keys: {kurs_id: GROUP_YEAR}\n', encoding='utf-8')
+    monkeypatch.setattr(v, 'gf_entries', lambda *_: pytest.fail('GF API must not be called on schema errors'))
+    cursor = FKCursor(sources(), [('kurs_id', 'ASSIGNMENTS', 'id')])
+    with pytest.raises(gf.ImportErrorGF, match='kurs_id verweist auf ASSIGNMENTS.id, erwartet GROUP_YEAR'):
+        v.validate_online(SimpleNamespace(conn=SimpleNamespace(cursor=lambda: cursor)), config,
+                          {'orga_table': 'ORG_TARGET'}, {'datasets': []})

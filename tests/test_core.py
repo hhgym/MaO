@@ -7,11 +7,10 @@ import pandas as pd
 import pytest
 
 from mao_cli.config import ConfigurationError, load_config, validate_config, resolve_table_placeholders, load_tables
-from mao_cli.db import DBConfig
 from mao_cli.transforms import _apply_cast, _apply_sort
 from mao_cli.exports import ExportPlan, run_exports, load_datasets, render_plan
 from mao_cli.latex import run_latex_jobs
-from mao_cli.common import atomic_write, write_text
+from mao_cli.common import atomic_write
 import mao_cli.latex as latex_module
 import mao_cli.exports as exports_mod
 

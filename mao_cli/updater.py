@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import subprocess
 import json
 import os
 import zipfile
@@ -399,6 +398,8 @@ def _update_develop(action: str, repository: str | None, *, yes: bool,
         return (f"Neuer getesteter Develop-Stand verfügbar: Commit {build.commit[:12]} "
                 f"(GitHub Actions {build.run_id}); derzeit MaO {installed}")
     if action == "download":
+        if dest is None:  # bereits oben geprüft; hier für die Typprüfung
+            raise UpdateError("Für Downloads ist --output erforderlich")
         path, version = stage_develop(build, dest)
         return f"Geprüftes Develop-Wheel {version} heruntergeladen: {path}"
     with tempfile.TemporaryDirectory(prefix="mao-develop-") as tmp:
@@ -456,9 +457,9 @@ def update_action(action: str, channel: str, repository: str | None, *, yes: boo
         return f"Update verfügbar: {installed} -> {latest.version} ({latest.tag}, {channel})"
     if action == "install" and not yes:
         raise UpdateError("Installation erfordert --yes")
-    if action == "download" and dest is None:
-        raise UpdateError("Für Downloads ist --output erforderlich")
     if action == "download":
+        if dest is None:
+            raise UpdateError("Für Downloads ist --output erforderlich")
         file = stage_release(latest, dest)
         return f"Geprüftes Release heruntergeladen: {file}"
     with tempfile.TemporaryDirectory(prefix="mao-wheel-") as temp:

@@ -9,6 +9,14 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Korrekturen vor dem ersten Release
+- Archivsperre gilt auch bei `--workspace`: Ein Ordner innerhalb eines registrierten Workspaces übernimmt dessen Jahrgang, sodass `run` und `plan` archivierte Jahrgänge nicht mehr mit aktuellen SQL-Daten überschreiben.
+- `mao validate --online` und `mao import-gf` zeigen, worauf die Fremdschlüssel von `kurs_id` und `lehrkraft_id` verweisen; das optionale `foreign_keys` in `gf-import.yaml` erzwingt das erwartete Ziel vor jedem Schreibzugriff.
+- GF-Import meldet Abweichungen zwischen GF-Klasse und Stammdaten sowie nicht zuordenbare Geschlechtsangaben als Warnung (Log und `warnings` im Prüfbericht), ohne das bisherige Ergebnis zu ändern.
+- GF-Abruf bricht ab, wenn die Zahl der Einträge nicht zu `total_count` passt oder ein Eintrag doppelt geliefert wird.
+- Dokumentation zur `kurs_id`-Zuordnung an den tatsächlichen Stand angeglichen; reale Tabellennamen aus Vorlagen, Kommentaren und Wiki entfernt.
+- CI prüft zusätzlich mit ruff und mypy.
+
 ### Validierung und Importberichte
 - `mao validate --online` ergänzt die bestehende Offline-Prüfung um lesende MySQL-Schema-, SQL-Quellen-, ID- und Gravity-Forms-API-Checks; kein weiterer Hauptbefehl.
 - `mao import-gf --dry-run --report <pfad>.json|.csv` erzeugt private Prüfberichte mit Klassen-, Pflichtteilnahme- und Zuordnungsstatistik sowie Abbruchdiagnosen. Ohne `--report` weiterhin keine Berichtsdateien; `--apply` unverändert transaktional und ohne Bericht.
@@ -25,7 +33,7 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 
 ### Gravity Forms (Erstbefüllung)
-- Einsatz-ID per `(lerngruppe_schuljahr_id, lehrkraft_id)` aus der erweiterten Lerngruppen-View auflösen; `kurs_id` und FK unverändert.
+- `kurs_id` erhält in Stufe 11/12 die unveränderte `lerngruppe_schuljahr_id` aus GF-Feld 5, nachdem die Kombination mit der Lehrkraft geprüft wurde; in Stufe 5–10 bleibt `kurs_id` `NULL`.
 - Separater `mao import-gf` mit zentraler privater `gf.config`/`gf-import.yaml` und explizitem `--apply`.
 - OAuth1-API, Checkboxmeldungen, Pflichtteilnahmen, Teilnehmernummern und FK-ID-Auflösung.
 - GF-Feld 3 direkt als Lehrkraft-ID; Feld 5 als Lerngruppe-Schuljahr-ID mit geprüfter Beziehung zur Kurs-FK-ID.

@@ -1,7 +1,6 @@
 """Zentrale Konfiguration, Jahrgangszuordnung und risikoarme Schema-Vorprüfung."""
 from __future__ import annotations
 
-from pathlib import Path
 import pytest
 import pandas as pd
 
@@ -104,6 +103,32 @@ def test_archived_workspace_blocks_database_export(tmp_path,monkeypatch):
     assert cli.main(['run','--year','2025-26'])==2
     assert cli.main(['plan','--year','2025-26'])==2
     assert cli.main(['validate','--year','2025-26'])==0
+
+
+def test_archived_workspace_lock_also_applies_to_explicit_workspace(tmp_path,monkeypatch,capsys):
+    """Regression: --workspace auf den Ordner eines archivierten Jahrgangs umging die Sperre."""
+    config=tmp_path/'central';init_config(config,cli.DEFAULTS)
+    settings=load_settings(config)
+    settings['current_year']='2026-27'
+    settings['workspaces']={
+        '2026-27':{'root':str(tmp_path/'current'),'status':'current','mao':66},
+        '2025-26':{'root':str(tmp_path/'past'),'status':'archived','mao':65},
+    }
+    save_settings(config,settings)
+    monkeypatch.setenv('MAO_CONFIG',str(config))
+    for target in (tmp_path/'past', tmp_path/'past'/'Listen'):
+        capsys.readouterr()
+        assert cli.main(['plan','--workspace',str(target)])==2
+        assert 'gesperrt' in capsys.readouterr().out
+        assert cli.main(['run','--workspace',str(target)])==2
+        assert 'gesperrt' in capsys.readouterr().out
+    # Ein registrierter Ordner liefert Jahrgang und MaO-Nummer, ein fremder Ordner nicht.
+    loaded=load_settings(config)
+    past=resolve_workspace(loaded,workspace=tmp_path/'past')
+    assert (past.year,past.mao_number)==('2025-26',65)
+    assert resolve_workspace(loaded,workspace=tmp_path/'current'/'sub').year=='2026-27'
+    other=resolve_workspace(loaded,workspace=tmp_path/'pastime')
+    assert (other.year,other.mao_number)==(None,None)
 
 
 def test_preflight_requires_distinct_real_tables():

@@ -5,13 +5,15 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
 import pandas as pd
 import re
-from .common import (LOGGER, step, log_info, atomic_write, safe_filename,
-                     sanitize_key_for_template, _as_list, write_text)
+from .common import (LOGGER, step, log_info, atomic_write, sanitize_key_for_template, _as_list, write_text)
 from .config import ConfigurationError, safe_output_path
 from .transforms import _apply_cast, _apply_filters, _apply_rename, _apply_sort, _apply_columns, csv_bytes
+
+if TYPE_CHECKING:  # nur für Typprüfung; zur Laufzeit kein Datenbanktreiber nötig
+    from .db import DB
 
 
 _DIGIT_WORDS = {

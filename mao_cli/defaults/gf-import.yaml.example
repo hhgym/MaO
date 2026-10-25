@@ -1,8 +1,8 @@
 # Wird von mao config init direkt als gf-import.yaml angelegt.
 # Alle tatsächlichen Tabellen- und Viewnamen stehen zentral in tables.ini.
-# Formular 3 speichert lehrkraft_id; Formular 5 speichert lerngruppe_schuljahr_id.
-# MaO_Orga_2.kurs_id bekommt nur in Stufe 11/12 die unveränderte
-# orga_lerngruppe_schuljahr.id; in Stufe 5–10 bleibt kurs_id NULL.
+# GF-Feld 3 speichert lehrkraft_id; GF-Feld 5 speichert lerngruppe_schuljahr_id.
+# kurs_id der Organisationstabelle erhält nur in Stufe 11/12 diese unveränderte
+# lerngruppe_schuljahr_id; in Stufe 5–10 bleibt kurs_id NULL.
 form_id: 16
 page_size: 200
 timeout: 60
@@ -28,3 +28,11 @@ queries:
   # Erforderliche Spalten: lerngruppe_schuljahr_id, lehrkraft_id.
   # Kombinationen aus Lerngruppe und Lehrkraft prüfen; keine Einsatz-ID abbilden.
   courses: 'SELECT lerngruppe_schuljahr_id, lehrkraft_id FROM {{table.current_groups_view}} WHERE lerngruppe_schuljahr_id IS NOT NULL AND lehrkraft_id IS NOT NULL'
+# Optional: Tabellen, auf die die Fremdschlüssel der Organisationstabelle zeigen
+# müssen. "mao validate --online" zeigt die tatsächlichen Ziele immer an; ist
+# hier eine Erwartung eingetragen, brechen Online-Prüfung und Import bei einer
+# Abweichung ab. Den Schlüssel lerngruppe_schuljahr_table dazu in tables.ini
+# ergänzen (Tabelle, deren id in GF-Feld 5 steht).
+# foreign_keys:
+#   kurs_id: "{{table.lerngruppe_schuljahr_table}}"
+#   lehrkraft_id: "{{table.teachers_table}}"

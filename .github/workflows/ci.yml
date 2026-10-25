@@ -33,10 +33,26 @@ jobs:
         env:
           MAO_CONFIG: ${{ runner.temp }}/mao-config
         run: python -m mao_cli validate
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      # Bewusst nicht in [project.optional-dependencies]: Dort würde jede Änderung
+      # den Editable-Updater bestehender Installationen anhalten.
+      - name: Dependencies
+        run: python -m pip install -e . "ruff>=0.6" "mypy>=1.10"
+      - name: Ruff
+        run: python -m ruff check mao_cli tests scripts
+      - name: Mypy
+        run: python -m mypy mao_cli
   develop-build:
     permissions:
       contents: write  # Öffentliches Develop-Release veröffentlichen
-    needs: tests
+    needs: [tests, lint]
     if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     runs-on: ubuntu-latest
     steps:

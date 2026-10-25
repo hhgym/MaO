@@ -66,7 +66,7 @@ defaults:
 
 `workspace add` registriert den Ordner und erstellt die Wrapper. Ein Aufruf aus dem Workspace erfolgt z. B. mit `mao-hier.cmd run --profile turniertag`. Die Wrapper enthalten keine Zugangsdaten, sondern nur `--config-dir`, `--year` und die weitergereichten Argumente.
 
-Optionen `--config-dir`, `--year` und `--workspace` können **vor oder nach dem Unterbefehl** stehen. Ein explizites `--workspace` hat Vorrang; zusammen mit einem ausdrücklich angegebenen `--year` muss der Ordner jedoch mit dem registrierten Pfad übereinstimmen. Ohne explizite Auswahl gilt `current_year`.
+Optionen `--config-dir`, `--year` und `--workspace` können **vor oder nach dem Unterbefehl** stehen. Ein explizites `--workspace` hat Vorrang; zusammen mit einem ausdrücklich angegebenen `--year` muss der Ordner jedoch mit dem registrierten Pfad übereinstimmen. Liegt ein per `--workspace` angegebener Ordner in einem registrierten Workspace, gilt dessen Jahrgang, einschließlich der Sperre für archivierte Jahrgänge. Ohne explizite Auswahl gilt `current_year`.
 
 ## Private SQL-Konfiguration
 
@@ -156,15 +156,16 @@ Import in eine bereits gefüllte Tabelle wird abgewiesen.
 
 **Feste ID-Zuordnung:** GF-Feld `3` enthält bereits `lehrkraft_id` und wird
 nur anhand der aktuellen Lehrkräfte überprüft. GF-Feld `5` enthält
-`lerngruppe_schuljahr_id`, nicht zwingend den Wert von
-der ID eines konkreten Lehrkrafteinsatzes. **Der bestehende Spaltenname
-`kurs_id` und seine Fremdschlüsseldefinition bleiben unverändert.** Die private
-`queries.courses` liest aus der erweiterten Lerngruppen-View die drei
-Spalten `lerngruppe_schuljahr_id`, `lehrkraft_id`, `lerngruppen_einsatz_id`.
-Ein konkreter Einsatz wird ausschließlich über die Kombination der beiden
-GF-IDs ausgewählt; `lerngruppe_schuljahr_id` selbst wird niemals in
-`kurs_id` der Organisationstabelle geschrieben. Nicht eindeutige oder fehlende Einsätze
-blockieren den Import. Diese Prüfung gilt für alle Klassenstufen.
+`lerngruppe_schuljahr_id`. Für die Stufen 11 und 12 übernimmt der Import diesen
+Wert unverändert in `kurs_id` der Organisationstabelle; in den Stufen 5–10 bleibt
+`kurs_id` `NULL`, auch bei Pflichtteilnahmen. Eine Einsatz-ID wird nicht ermittelt.
+Die private `queries.courses` liefert die Spalten `lerngruppe_schuljahr_id` und
+`lehrkraft_id`; die Kombination der beiden GF-IDs muss darin vorkommen, sonst wird
+der Import blockiert. Diese Prüfung gilt für Oberstufen-Meldungen und für die
+Lerngruppen der Pflichtklassen. Worauf die Fremdschlüssel von `kurs_id` und
+`lehrkraft_id` tatsächlich verweisen, zeigen `mao validate --online` und jeder
+Import an; mit `foreign_keys` in `gf-import.yaml` wird das erwartete Ziel
+verbindlich geprüft (siehe [Konfiguration](wiki/Konfiguration.md)).
 
 Die Pflichtklassen `5-1`, `5-2`, `6-1`, `6-2` und `7-3` stehen in
 `mandatory_classes`; `7-4` ist optional. Die Abfrage `queries.mandatory`

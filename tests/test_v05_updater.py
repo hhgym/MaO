@@ -1,9 +1,4 @@
 """Sicherheits-, Rollback-, öffentliches Repo- und plattformübergreifende Update-Tests."""
-import hashlib
-import json
-import subprocess
-from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from packaging.version import Version

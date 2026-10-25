@@ -44,3 +44,19 @@ def test_no_real_table_identifiers_in_versioned_current_files():
         content = path.read_text(encoding="utf-8")
         for needle in needles:
             assert needle not in content, (path, needle)
+
+
+def test_packaged_sql_references_tables_only_via_tokens():
+    """Mitgelieferte SQL nennt Tabellen nur als {{table.*}}; reale Namen stehen in der privaten tables.ini."""
+    import re
+    import yaml
+    target = re.compile(r"\b(?:FROM|JOIN)\s+(?!\()(\S+)", re.IGNORECASE)
+    pipeline = yaml.safe_load((DEFAULTS / "pipeline.yaml").read_text(encoding="utf-8"))
+    gf = yaml.safe_load((DEFAULTS / "gf-import.yaml.example").read_text(encoding="utf-8"))
+    sources = {f"pipeline/{item['name']}": item["sql"] for item in pipeline["datasets"]}
+    sources.update({f"gf-import/{key}": sql for key, sql in gf["queries"].items()})
+    assert len(sources) > 10
+    for label, sql in sources.items():
+        names = target.findall(sql)
+        assert names, label
+        assert all(name.startswith("{{table.") for name in names), (label, names)
