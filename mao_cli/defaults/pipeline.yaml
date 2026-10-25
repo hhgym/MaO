@@ -203,7 +203,36 @@ datasets:
   - name: orga
     id: orga
     enabled: true
-    sql: "SELECT * FROM {{table.orga_table}}"
+    # Die Organisationstabelle speichert nur IDs; die JOINs liefern weiterhin
+    # die Klartext-Spalten lehrkraft (Kürzel), kurs, raum und preis.
+    sql: |
+      SELECT
+      m.tnr,
+      m.matrikelnummer,
+      m.nachname,
+      m.vorname,
+      m.geschlecht,
+      m.klasse,
+      m.stufe,
+      t.kuerzel AS lehrkraft,
+      COALESCE(lg.lerngruppe_kennung, '') AS kurs,
+      r.raumcode AS raum,
+      m.anwesenheit,
+      m.bemerkung,
+      m.aufgabe_1,
+      m.aufgabe_2,
+      m.aufgabe_3,
+      m.aufgabe_4,
+      m.punkte,
+      p.bezeichnung AS preis,
+      m.preisgeld,
+      m.delegierung
+      FROM {{table.orga_table}} m
+      LEFT JOIN {{table.teachers_table}} t ON t.id = m.lehrkraft_id
+      LEFT JOIN {{table.lerngruppe_schuljahr_table}} lgs ON lgs.id = m.kurs_id
+      LEFT JOIN {{table.lerngruppen_table}} lg ON lg.id = lgs.lerngruppe_id
+      LEFT JOIN {{table.rooms_table}} r ON r.id = m.raum_id
+      LEFT JOIN {{table.prizes_table}} p ON p.id = m.preis_id
     cast:
       aufgabe_1: Int64
       aufgabe_2: Int64
@@ -216,9 +245,34 @@ datasets:
     id: orga_preis
     enabled: true
     sql: |
-      SELECT *
-      FROM {{table.orga_table}}
-      WHERE preis IS NOT NULL
+      SELECT
+      m.tnr,
+      m.matrikelnummer,
+      m.nachname,
+      m.vorname,
+      m.geschlecht,
+      m.klasse,
+      m.stufe,
+      t.kuerzel AS lehrkraft,
+      COALESCE(lg.lerngruppe_kennung, '') AS kurs,
+      r.raumcode AS raum,
+      m.anwesenheit,
+      m.bemerkung,
+      m.aufgabe_1,
+      m.aufgabe_2,
+      m.aufgabe_3,
+      m.aufgabe_4,
+      m.punkte,
+      p.bezeichnung AS preis,
+      m.preisgeld,
+      m.delegierung
+      FROM {{table.orga_table}} m
+      LEFT JOIN {{table.teachers_table}} t ON t.id = m.lehrkraft_id
+      LEFT JOIN {{table.lerngruppe_schuljahr_table}} lgs ON lgs.id = m.kurs_id
+      LEFT JOIN {{table.lerngruppen_table}} lg ON lg.id = lgs.lerngruppe_id
+      LEFT JOIN {{table.rooms_table}} r ON r.id = m.raum_id
+      LEFT JOIN {{table.prizes_table}} p ON p.id = m.preis_id
+      WHERE m.preis_id IS NOT NULL
     cast:
       punkte: Int64
       preisgeld: Int64
@@ -252,9 +306,10 @@ datasets:
       m.aufgabe_3,
       m.aufgabe_4,
       m.punkte,
-      m.preis,
+      p.bezeichnung AS preis,
       m.delegierung
       FROM {{table.orga_table}} m
+      LEFT JOIN {{table.prizes_table}} p ON p.id = m.preis_id
       JOIN {{table.courses_table}} lg ON lg.lerngruppe = m.klasse
     cast:
       aufgabe_1: Int64
