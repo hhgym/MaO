@@ -34,6 +34,7 @@ class Cursor:
         assert sql.strip().upper().startswith(('SELECT ', 'SHOW COLUMNS'))
         self.sql = sql
         self.executed.append(sql)
+        self.unread = True  # jede Abfrage liefert ein Ergebnis, das abgeholt werden muss
         if 'SHOW COLUMNS' in sql:
             self.current = [(col,) for col in gf.WRITE_COLUMNS]
         elif 'COUNT(*)' in sql and 'FROM `ORG_TARGET`' in sql:
@@ -252,6 +253,7 @@ class FKCursor(Cursor):
             assert params == ('ORG_TARGET',)
             self.sql = sql
             self.executed.append(sql)
+            self.unread = True
             self.current = list(self.fk_rows)
             return
         super().execute(sql, params)

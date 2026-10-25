@@ -18,6 +18,7 @@ def _query_columns(cursor: Any, sql: str, required: set[str], label: str) -> Non
     """SQL und Spaltenstruktur prüfen, ohne Ergebnismengen zu laden."""
     cursor.execute(f"SELECT * FROM ({sql.strip()}) AS _mao_validate LIMIT 0")
     columns = set(cursor.column_names or ())
+    cursor.fetchall()  # leeres Ergebnis abholen, sonst sperrt der MySQL-Cursor die nächste Abfrage
     missing = required - columns
     if missing:
         raise ImportErrorGF(f"SQL-Quelle '{label}': fehlende Spalten: {', '.join(sorted(missing))}")

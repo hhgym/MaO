@@ -235,6 +235,7 @@ class FakeCursor:
             raise RuntimeError("Unread result found")
         self.last = sql
         self.executed.append((sql, params))
+        self.unread = sql.lstrip().upper().startswith(("SELECT", "SHOW"))
     def fetchall(self):
         self.unread = False
         if "SHOW COLUMNS" in self.last:
@@ -315,6 +316,7 @@ class FKCursor(FakeCursor):
         self.fk_rows = fk_rows
     def fetchall(self):
         if "KEY_COLUMN_USAGE" in self.last:
+            self.unread = False
             return self.fk_rows
         return super().fetchall()
 
