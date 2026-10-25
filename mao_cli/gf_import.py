@@ -688,7 +688,7 @@ def persist_import(db: Any, target_table: str, participants: list[dict], *, dry_
     try:
         if not dry_run:
             cur.execute("SELECT GET_LOCK(%s, 10)", (lock_name,))
-            if cur.fetchone()[0] != 1:
+            if cur.fetchall()[0][0] != 1:
                 raise ImportErrorGF("Konkurrierender Import oder Sperr-Timeout")
             lock_held = True
         cur.execute(f"SHOW COLUMNS FROM `{target_table}`")
@@ -705,7 +705,7 @@ def persist_import(db: Any, target_table: str, participants: list[dict], *, dry_
         if fk_problems:
             raise ImportErrorGF("; ".join(fk_problems))
         cur.execute(f"SELECT COUNT(*) FROM `{target_table}`")
-        existing = int(cur.fetchone()[0])
+        existing = int(cur.fetchall()[0][0])
         if existing:
             raise ImportErrorGF(f"{target_table} enthält bereits {existing} Zeilen; Import nur in leere Tabelle erlaubt")
         if dry_run:
@@ -716,13 +716,13 @@ def persist_import(db: Any, target_table: str, participants: list[dict], *, dry_
         cnx.start_transaction()
         try:
             cur.execute(f"SELECT COUNT(*) FROM `{target_table}`")
-            if int(cur.fetchone()[0]):
+            if int(cur.fetchall()[0][0]):
                 raise ImportErrorGF("Zieltabelle wurde zwischenzeitlich befüllt")
             sql = (f"INSERT INTO `{target_table}` ({', '.join('`' + col + '`' for col in WRITE_COLUMNS)}) "
                    f"VALUES ({', '.join(['%s'] * len(WRITE_COLUMNS))})")
             cur.executemany(sql, [tuple(row.get(key) for key in WRITE_COLUMNS) for row in participants])
             cur.execute(f"SELECT COUNT(*) FROM `{target_table}`")
-            if int(cur.fetchone()[0]) != len(participants):
+            if int(cur.fetchall()[0][0]) != len(participants):
                 raise ImportErrorGF("Import-Count-Check fehlgeschlagen")
             cnx.commit()
             return len(participants)
@@ -733,7 +733,7 @@ def persist_import(db: Any, target_table: str, participants: list[dict], *, dry_
         if lock_held:
             try:
                 cur.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
-                cur.fetchone()
+                cur.fetchall()
             except Exception:
                 LOGGER.warning("Konnte Importsperre nicht regulär freigeben (DB-Disconnect gibt sie frei)")
         cur.close()

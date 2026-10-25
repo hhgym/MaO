@@ -228,17 +228,27 @@ class FakeCursor:
         self.last = ""
         self.executed = []
         self.inserted = 0
+        self.unread = False
     def execute(self, sql, params=None):
+        # Wie der echte MySQL-Cursor: fetchone() ohne Rest-Abruf sperrt die nächste Abfrage.
+        if self.unread:
+            raise RuntimeError("Unread result found")
         self.last = sql
         self.executed.append((sql, params))
     def fetchall(self):
+        self.unread = False
         if "SHOW COLUMNS" in self.last:
             return [(x,) for x in g.WRITE_COLUMNS]
+        if "GET_LOCK" in self.last or "RELEASE_LOCK" in self.last:
+            return [(1,)]
+        if "COUNT(*)" in self.last:
+            return [(self.present + self.inserted,)]
         return []
     def fetchone(self):
-        if "GET_LOCK" in self.last or "RELEASE_LOCK" in self.last:
-            return (1,)
-        return (self.present + self.inserted,)
+        self.unread = True
+        rows = self.fetchall()
+        self.unread = True
+        return rows[0]
     def executemany(self, sql, params):
         self.inserted = len(params)
         self.executed.append((sql, params))

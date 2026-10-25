@@ -25,8 +25,12 @@ class Cursor:
         self.current = []
         self.column_names: tuple[str, ...] = ()
         self.sql = ''
+        self.unread = False
 
     def execute(self, sql, params=None):
+        # Wie der echte MySQL-Cursor: fetchone() ohne Rest-Abruf sperrt die nächste Abfrage.
+        if self.unread:
+            raise RuntimeError('Unread result found')
         assert sql.strip().upper().startswith(('SELECT ', 'SHOW COLUMNS'))
         self.sql = sql
         self.executed.append(sql)
@@ -47,9 +51,11 @@ class Cursor:
             self.column_names = tuple(self.bad_columns.get(key, column_names))
 
     def fetchall(self):
+        self.unread = False
         return self.current
 
     def fetchone(self):
+        self.unread = True
         return self.current[0]
 
     def close(self):
