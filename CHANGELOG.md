@@ -10,7 +10,7 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 ## [0.6.0.dev0] – in Entwicklung
 
 ### Korrekturen vor dem ersten Release
-- Mitgelieferte `pipeline.yaml` an die ID-basierte Organisationstabelle angepasst: Das Dataset `orga` löst `lehrkraft_id`, `kurs_id`, `raum_id` und `preis_id` per JOIN in die Klartext-Spalten `lehrkraft` (Kürzel), `kurs`, `raum` und `preis` auf, sodass Filter, Splits und Makros unverändert bleiben. `orga_preis` filtert auf `preis_id`. Neue Einträge in `tables.ini`: `prizes_table`, `lerngruppe_schuljahr_table`, `lerngruppen_table`.
+- Mitgelieferte `pipeline.yaml` an die ID-basierte Organisationstabelle angepasst: Die Datasets `orga`, `orga_preis` und `klassenleitungslisten` lesen aus einer View (`orga_view` in `tables.ini`), die `lehrkraft_id`, `kurs_id`, `raum_id` und `preis_id` zusätzlich als Klartext-Spalten `lehrkraft` (Kürzel), `kurs`, `raum` und `preis` bereitstellt. Filter, Splits und Makros bleiben unverändert; `orga_preis` filtert auf `preis_id`.
 - `mao validate --online` und `import-gf --apply` brachen mit „Unread result found“ ab, weil einzeilige Abfrageergebnisse nicht vollständig gelesen wurden; die Testcursor verhalten sich jetzt wie der echte MySQL-Cursor.
 - Archivsperre gilt auch bei `--workspace`: Ein Ordner innerhalb eines registrierten Workspaces übernimmt dessen Jahrgang, sodass `run` und `plan` archivierte Jahrgänge nicht mehr mit aktuellen SQL-Daten überschreiben.
 - `mao validate --online` und `mao import-gf` zeigen, worauf die Fremdschlüssel von `kurs_id` und `lehrkraft_id` verweisen; das optionale `foreign_keys` in `gf-import.yaml` erzwingt das erwartete Ziel vor jedem Schreibzugriff.
