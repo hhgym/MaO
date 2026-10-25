@@ -48,7 +48,7 @@ def validate_online(db: Any, config_dir: Path, tables: Mapping[str, str],
         if missing:
             raise ImportErrorGF(f"Zieltabelle {target}: fehlende Spalten: {', '.join(sorted(missing))}")
         cur.execute(f"SELECT COUNT(*) FROM `{target}`")
-        count = int(cur.fetchone()[0])
+        count = int(cur.fetchall()[0][0])  # vollständig lesen: MySQL-Cursor verbieten sonst die nächste Abfrage
         result.append(f"Zieltabelle {target}: {count} Datensätze"
                       + (" (nicht leer – Erstimport gesperrt)" if count else " (bereit für Erstimport)"))
         fk_lines, fk_problems = review_foreign_keys(foreign_key_targets(cur, target), options.foreign_keys)
