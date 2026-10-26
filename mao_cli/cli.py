@@ -21,7 +21,7 @@ from .db import DB, current_MaO_number_db, current_MaO_number_fallback, load_db_
 from .exports import ExportPlan, load_datasets, render_plan, run_exports
 from .latex import run_latex_jobs
 from .updater import update_action, UpdateError
-from .workspaces import (config_dir_for, load_settings, save_settings, init_config,
+from .workspaces import (resolve_config_dir, write_pointer, CONFIG_FOLDER, normalize_config_dir, load_settings, save_settings, init_config,
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
 from .gf_import import import_participants, ImportErrorGF, write_import_report
@@ -116,6 +116,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     for action in ("init", "show"):
         item = csub.add_parser(action)
         global_overrides(item)
+        if action == "init":
+            item.add_argument("folder", nargs="?", type=Path, metavar="MAO-ORDNER",
+                              help="Zentraler MaO-Ordner: legt <ORDNER>/config und <ORDNER>/tex an")
+    use = csub.add_parser("use", help="Zentralen MaO-Ordner auf diesem Rechner merken")
+    global_overrides(use)
+    use.add_argument("folder", type=Path, metavar="MAO-ORDNER")
 
     work = commands.add_parser("workspace", help="Jahrgangsverzeichnisse verwalten")
     global_overrides(work)
@@ -128,6 +134,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         if action == "add":
             item.add_argument("--root", type=Path, required=True)
             item.add_argument("--no-wrapper", action="store_true")
+            item.add_argument("--wrapper", action="store_true",
+                              help="mao-hier.* auch im zentralen MaO-Ordner anlegen (dort nicht nötig)")
 
     gf = commands.add_parser("import-gf", help="Gravity-Forms-Meldungen sicher in die aktuelle Organisationstabelle importieren")
     common(gf)
@@ -198,17 +206,24 @@ def load_pipeline(config_dir: Path, workspace: Path, profile: Optional[str]):
     return cfg, profiles, files, tables
 
 
-def management_action(args: argparse.Namespace, config_dir: Path) -> int:
+def management_action(args: argparse.Namespace, config_dir: Path, config_source: str = "") -> int:
     """Konfiguration und Workspaces verwalten, ohne DB/Export-Pipeline zu laden."""
     try:
         if args.command == "config":
-            if args.config_command == "init":
+            if args.config_command == "use":
+                pointer = write_pointer(args.folder)
+                print(f"MaO-Ordner für diesen Rechner gemerkt: {normalize_config_dir(args.folder).parent}\n({pointer})")
+            elif args.config_command == "init":
+                if args.folder is not None:
+                    config_dir = args.folder.expanduser().resolve() / CONFIG_FOLDER
                 for path in init_config(config_dir, DEFAULTS):
                     print(f"Erstellt: {path}")
                 print(f"Konfigurationsverzeichnis: {config_dir}")
+                if args.folder is not None:
+                    print(f"Auf jedem Rechner einmal: mao config use \"{args.folder.expanduser().resolve()}\"")
             else:
                 doc = load_settings(config_dir)
-                print(f"Konfiguration: {config_dir}\nAktuelles Schuljahr: {doc['current_year'] or '-'}")
+                print(f"Konfiguration: {config_dir} (gefunden über: {config_source})\nAktuelles Schuljahr: {doc['current_year'] or '-'}")
                 print(f"Registrierte Workspaces: {len(doc['workspaces'])}")
                 for name in (*FILES, "db.config", "settings.yaml"):
                     where = config_dir / name
@@ -229,7 +244,10 @@ def management_action(args: argparse.Namespace, config_dir: Path) -> int:
                 root = args.root.expanduser().resolve()
                 if any(root == Path(v["root"]) for v in doc["workspaces"].values()):
                     raise ConfigurationError(f"Workspace {root} ist bereits einem anderen Jahrgang zugeordnet")
-                if not args.no_wrapper and any((root / name).exists() for name in ("mao-hier.cmd", "mao-hier.sh")):
+                # Im zentralen MaO-Ordner erkennt MaO den Jahrgang am aktuellen Ordner;
+                # Wrapper mit festem Pfad würden sonst auf andere Rechner synchronisiert.
+                make_wrapper = not args.no_wrapper and (args.wrapper or config_dir.name != CONFIG_FOLDER)
+                if make_wrapper and any((root / name).exists() for name in ("mao-hier.cmd", "mao-hier.sh")):
                     raise ConfigurationError("Wrapper existiert bereits; --no-wrapper wählen oder Pfad ändern")
                 doc["workspaces"][year] = {"root": str(root), "status": "planned"}
                 if doc["current_year"] is None:
@@ -237,7 +255,7 @@ def management_action(args: argparse.Namespace, config_dir: Path) -> int:
                     doc["workspaces"][year]["status"] = "current"
                 save_settings(config_dir, doc)
                 print(f"Registriert: {year} → {root}")
-                if not args.no_wrapper:
+                if make_wrapper:
                     for path in write_wrapper(config_dir, year, root):
                         print(f"Wrapper: {path}")
             elif action == "select":
@@ -281,9 +299,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         except UpdateError as exc:
             print(f"Updatefehler: {exc}", file=sys.stderr)
             return 5
-    config_dir = config_dir_for(getattr(args, "config_dir", None))
+    config_dir, config_source = resolve_config_dir(getattr(args, "config_dir", None))
     if args.command in ("config", "workspace"):
-        return management_action(args, config_dir)
+        return management_action(args, config_dir, config_source)
     try:
         settings = load_settings(config_dir)
         selection = resolve_workspace(settings, year=getattr(args, "year", None),

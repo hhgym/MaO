@@ -9,6 +9,10 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Zentraler MaO-Ordner (Schritt 6, Teil 1)
+- `mao config init <MaO-Ordner>` legt `config/` und `tex/` an; `mao config use <MaO-Ordner>` merkt den Ordner pro Rechner. Der Konfigurationsordner wird außerdem vom aktuellen Ordner aufwärts gefunden; `--config-dir`/`MAO_CONFIG` dürfen den MaO-Ordner selbst nennen. `mao config show` nennt die Quelle.
+- Jahrgangsordner innerhalb des MaO-Ordners stehen in `settings.yaml` relativ und gelten damit auf jedem Rechner; in einem Jahrgangsordner gilt dieser Jahrgang automatisch. `workspace add` legt im zentralen Ordner keine `mao-hier.*` mehr an (`--wrapper` erzwingt sie).
+
 ### Korrekturen vor dem ersten Release
 - LaTeX-Jobs: neues `pdf_name` lässt LaTeX das PDF direkt unter dem Zielnamen (z. B. `MaO_{mao}_Korrekturlisten`) im Ordner des Jobs erzeugen, statt es zu kopieren; die mitgelieferte `pipeline.yaml` nutzt es. `copy_pdf` bleibt unterstützt. Hilfsdateien (`.aux`, `.log` …) werden nur auf Wunsch gelöscht (`--cleanup-latex` bei `run`/`latex` oder `cleanup_aux: true`), nie nach einem Fehler; alte PDFs werden nie automatisch entfernt.
 - LaTeX-Makrolisten: Werte, die in `entry_template`/`label_template` eingesetzt werden, werden für TeX maskiert (`% & # $ { } ^ ~ \`); Komma, Schrägstrich oder Zeilenumbruch in einem verwendeten Wert brechen mit klarer Meldung ab, statt die Liste still zu zerlegen. Fehlende Werte (NaN) erscheinen als leer statt als `nan`.

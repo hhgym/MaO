@@ -157,6 +157,31 @@ Für den echten Erstimport `mao import-gf --apply` ohne `--report` ausführen.
 Beide Befehle archivieren oder löschen keinerlei bestehende Datensätze.
 
 
+## Zentraler MaO-Ordner (mehrere Rechner)
+
+Empfohlener Aufbau, z. B. in der Nextcloud:
+
+```
+MaO/
+  config/          settings.yaml, pipeline.yaml, profiles.ini, tables.ini, db.config, gf.config, gf-import.yaml
+  tex/             LaTeX-Vorlagen
+  65_2025-26/      Jahrgangsordner (Exporte, PDFs)
+  66_2026-27/
+```
+
+Einmalig anlegen und auf jedem Rechner bekannt machen:
+
+```powershell
+mao config init "D:/Nextcloud/MaO"      # legt config/ und tex/ an
+mao config use  "D:/Nextcloud/MaO"      # pro Rechner einmal; merkt sich den Ordner lokal
+mao workspace add 2026-27 --root "D:/Nextcloud/MaO/66_2026-27"
+mao config show                         # zeigt auch, woher der Ordner stammt
+```
+
+Reihenfolge, in der MaO den Konfigurationsordner sucht: `--config-dir` → `MAO_CONFIG` → vom aktuellen Ordner aufwärts nach `config/settings.yaml` → Verweis aus `mao config use` → Quellordner (Editable) → Benutzerordner. `--config-dir` und `MAO_CONFIG` dürfen auch den MaO-Ordner selbst nennen.
+
+Jahrgangsordner innerhalb des MaO-Ordners werden in `settings.yaml` **relativ** gespeichert (`root: 66_2026-27`), so gilt dieselbe Datei auf jedem Rechner, egal wo die Nextcloud liegt. Wer in einem Jahrgangsordner (oder darunter) arbeitet, meint automatisch diesen Jahrgang; `--year` und `--workspace` haben Vorrang. Wrapper `mao-hier.*` sind im zentralen Ordner nicht mehr nötig und werden nur mit `workspace add --wrapper` angelegt. Der Verweis liegt rechnerlokal (Windows `%APPDATA%/MaO/mao-ordner.txt`, Linux `~/.config/mao/mao-ordner.txt`) und gehört nicht in die Nextcloud.
+
 ## Editable-Installation: lokaler Konfigurationsordner
 
 Bei `D:/MaO/mao_cli`, `D:/MaO/pyproject.toml` und `D:/MaO/config` erkennt MaO den vorhandenen Ordner `config` automatisch. `--config-dir` und `MAO_CONFIG` behalten Vorrang, für andere Installationstypen bleibt der Benutzer-Konfigurationsordner maßgeblich.
