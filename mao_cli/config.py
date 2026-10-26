@@ -108,6 +108,8 @@ def validate_config(cfg: Dict[str, Any], base_dir: Optional[Path] = None) -> Lis
                 errors.append(f"Export '{name}': splits[{j}] muss Mapping sein"); continue
             if not sp.get("enabled", True):
                 continue
+            if str(sp.get("on_missing_key", "skip")).strip().lower() not in ("skip", "error"):
+                errors.append(f"Export '{name}': splits[{j}].on_missing_key muss skip oder error sein")
             templ = sp.get("filename_template")
             if not sp.get("by") or not isinstance(templ, str) or "{key}" not in templ:
                 errors.append(f"Export '{name}': splits[{j}] benötigt by und filename_template mit {{key}}")
@@ -148,7 +150,7 @@ def validate_config(cfg: Dict[str, Any], base_dir: Optional[Path] = None) -> Lis
             errors.append("latex.jobs muss Liste sein")
         else:
             job_ids: set[str] = set()
-            for j, job in enumerate(latex["jobs"]):
+            for j, job in enumerate(latex.get("jobs", [])):
                 if not isinstance(job, dict):
                     errors.append(f"latex.jobs[{j}] muss Mapping sein")
                 else:

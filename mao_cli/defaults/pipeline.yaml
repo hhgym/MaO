@@ -115,6 +115,9 @@
 #         enabled: true
 #         by: <spalte>
 #         filename_template: "<pfad>-{key}.csv"
+#         on_missing_key: skip | error   (OPTIONAL, Standard skip)
+#           → Zeilen ohne Wert in <spalte> (NULL oder leer) kommen in keine
+#             Split-Datei. skip meldet die Anzahl im Protokoll, error bricht ab.
 #
 #         macro: (OPTIONAL)
 #           → überschreibt export.macro
@@ -153,7 +156,10 @@
 #       "{raum}/{db}"
 #       "{klasse}/{lehrkraft}/{db}"
 #
-#     "/" ist ausdrücklich erlaubt (für pgffor).
+#     "/" ist ausdrücklich erlaubt (für pgffor), aber nur im Template selbst:
+#     Spaltenwerte werden für TeX maskiert (% & # $ { } ^ ~ \); enthält ein
+#     verwendeter Wert Komma, "/" oder Zeilenumbruch, bricht der Export mit
+#     einer Fehlermeldung ab, statt eine falsche Liste zu schreiben.
 #
 #   label_template: "<Template>"   (LEGACY)
 #     → wird nur verwendet, wenn entry_template fehlt
