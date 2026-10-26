@@ -9,6 +9,11 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Installation mit uv (Schritt 6, Teil 4)
+- MaO wird mit `uv tool install git+https://github.com/hhgym/MaO@<Ref>` installiert und aktualisiert. `mao update [--channel stable|rc|develop] [--version X]` erkennt die Installationsart (uv-Tool, Editable, pip), ermittelt bei Bedarf den neuesten Tag und nennt den passenden Befehl, installiert aber nichts selbst. Die alten Unterbefehle `check|download|install|status|rollback` werden mit Hinweis akzeptiert.
+- **Entfernt:** verwaltete Umgebungen und Starter, Editable-Updater, ZIP-Abgleich (`update_install.py`, `editable_update.py`, alter `updater.py` samt Tests) sowie der CI-Job `develop-build` mit dem Release `develop-build`. Release-Wheels bleiben als Download am Release.
+- `ruff` und `mypy` stehen jetzt in `[project.optional-dependencies].dev`, `tomli` nur noch dort; Laufzeitabhängigkeit `tomli` entfällt. Umstieg: Wiki „Updates“.
+
 ### LaTeX-Vorlagen im MaO-Ordner (Schritt 6, Teil 3)
 - Job-Feld `tex: "@tex/<Ordner>/<Datei>.tex"` liest die Vorlage aus `<MaO>/tex`, während LaTeX im Job-Ordner läuft und dort das PDF erzeugt. `TEXINPUTS` enthält den Vorlagenordner, `tex/base` und `tex/` (Vorlage braucht nur `\input{template.tex}` und Dateinamen für Bilder). Neue Makros `\MaOdb`, `\MaOroot`, `\MaOtex`, `\MaOjahrgang` (mit `\detokenize` gesetzt, Leerzeichen im Pfad sind erlaubt). Neue Seite im Wiki „LaTeX-Vorlagen“; mitgelieferte `pipeline.yaml` nutzt `@tex/`. Ohne `@tex/` bleibt alles wie bisher.
 
