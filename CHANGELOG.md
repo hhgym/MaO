@@ -10,6 +10,9 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 ## [0.6.0.dev0] – in Entwicklung
 
 ### Korrekturen vor dem ersten Release
+- LaTeX-Makrolisten: Werte, die in `entry_template`/`label_template` eingesetzt werden, werden für TeX maskiert (`% & # $ { } ^ ~ \`); Komma, Schrägstrich oder Zeilenumbruch in einem verwendeten Wert brechen mit klarer Meldung ab, statt die Liste still zu zerlegen. Fehlende Werte (NaN) erscheinen als leer statt als `nan`.
+- Split-Exporte: Zeilen ohne Schlüssel (NULL oder leer) werden im Protokoll gezählt statt still ausgelassen; `on_missing_key: error` bricht stattdessen ab.
+- `latex.jobs` darf in der Konfiguration fehlen (bisher `KeyError` in der Prüfung).
 - Mitgelieferte `pipeline.yaml` an die ID-basierte Organisationstabelle angepasst: Die Datasets `orga`, `orga_preis` und `klassenleitungslisten` lesen aus einer View (`orga_view` in `tables.ini`), die `lehrkraft_id`, `kurs_id`, `raum_id` und `preis_id` zusätzlich als Klartext-Spalten `lehrkraft` (Kürzel), `kurs`, `raum` und `preis` bereitstellt. Filter, Splits und Makros bleiben unverändert; `orga_preis` filtert auf `preis_id`.
 - `mao validate --online` und `import-gf --apply` brachen mit „Unread result found“ ab, weil einzeilige Abfrageergebnisse nicht vollständig gelesen wurden; die Testcursor verhalten sich jetzt wie der echte MySQL-Cursor.
 - Archivsperre gilt auch bei `--workspace`: Ein Ordner innerhalb eines registrierten Workspaces übernimmt dessen Jahrgang, sodass `run` und `plan` archivierte Jahrgänge nicht mehr mit aktuellen SQL-Daten überschreiben.

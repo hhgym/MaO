@@ -63,6 +63,31 @@ def latex_db_identifier(s: str, prefix: str = "") -> str:
     return s
 
 
+_TEX_SPECIAL = {
+    "\\": r"\textbackslash{}", "{": r"\{", "}": r"\}", "$": r"\$", "&": r"\&",
+    "#": r"\#", "%": r"\%", "^": r"\^{}", "~": r"\~{}",
+}
+
+
+def latex_list_value(value: Any, *, column: str = "") -> str:
+    """Wert für den Einsatz in einer LaTeX-Makroliste (``\\newcommand{\\Liste}{a/b,c/d}``).
+
+    Zeichen, die TeX beim Übersetzen stören (``\\ { } $ & # % ^ ~``), werden
+    maskiert. Unterstrich bleibt bewusst unverändert, weil bestehende
+    Vorlagen Kursnamen wie ``LK_11_A`` bereits so verarbeiten. Komma, Schrägstrich
+    und Zeilenumbrüche würden die Liste stillschweigend zerlegen und werden
+    deshalb abgelehnt, statt falsche Listen zu schreiben.
+    """
+    if value is None or (not isinstance(value, str) and pd.isna(value)):
+        return ""
+    text = str(value)
+    for bad, label in ((",", "Komma"), ("/", "Schrägstrich"), ("\n", "Zeilenumbruch"), ("\r", "Zeilenumbruch")):
+        if bad in text:
+            where = f" in Spalte '{column}'" if column else ""
+            raise ValueError(f"Wert {text[:40]!r}{where} enthält {label} und passt nicht in eine LaTeX-Makroliste")
+    return "".join(_TEX_SPECIAL.get(ch, ch) for ch in text)
+
+
 def relpath_from(from_dir: Path, to_path: Path) -> str:
     rel = os.path.relpath(to_path.resolve(), from_dir.resolve())
     return Path(rel).as_posix()
@@ -364,8 +389,14 @@ def run_exports(datasets: Dict[str, pd.DataFrame], cfg: Dict[str, Any], base_dir
 
             # Helper for entry formatting
             def _entry_from_template(tmpl: str, row: Dict[str, Any]) -> str:
+                # "db" ist bereits normalisiert; alle übrigen Werte werden für TeX abgesichert.
+                # Geprüft werden nur die Spalten, die das Template tatsächlich verwendet.
+                class _Safe(dict):
+                    def __getitem__(self, k: str) -> str:
+                        v = dict.__getitem__(self, k)
+                        return v if k == "db" else latex_list_value(v, column=str(k))
                 try:
-                    return str(tmpl).format(**row)
+                    return str(tmpl).format_map(_Safe(row))
                 except KeyError as e:
                     raise KeyError(
                         f"entry_template/label_template verwendet unbekannte Spalte/Platzhalter: {e}. "
@@ -446,6 +477,17 @@ def run_exports(datasets: Dict[str, pd.DataFrame], cfg: Dict[str, Any], base_dir
 
                     loads: List[Tuple[str, Path]] = []
                     entries: List[str] = []
+
+                    # Zeilen ohne Schlüssel (NULL oder leer) landen in keiner Split-Datei.
+                    # Das wird gemeldet bzw. auf Wunsch (on_missing_key: error) abgebrochen.
+                    no_key = df[by].isna() | (df[by].astype(str).str.strip() == "")
+                    n_no_key = int(no_key.sum())
+                    if n_no_key:
+                        mode = str(sp.get("on_missing_key", "skip")).strip().lower()
+                        if mode == "error":
+                            raise ValueError(f"Export '{name}': {n_no_key} Zeile(n) ohne Wert in '{by}' für den Split '{sp.get('name', by)}'")
+                        log_info(f"Split {str(sp.get('name', by))}: {n_no_key} Zeile(n) ohne Wert in '{by}' "
+                                 "sind in keiner Split-Datei enthalten (on_missing_key: error bricht stattdessen ab)", indent=1)
 
                     n_files = 0
                     for key, grp0 in df.groupby(by, sort=False):
