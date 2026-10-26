@@ -305,7 +305,7 @@ datasets:
       m.preis,
       m.delegierung
       FROM {{table.orga_view}} m
-      JOIN {{table.courses_table}} lg ON lg.lerngruppe = m.klasse
+      JOIN {{table.courses_table}} lg ON lg.lerngruppe = m.klasse AND lg.typ = 'klasse'
     cast:
       aufgabe_1: Int64
       aufgabe_2: Int64
