@@ -18,22 +18,86 @@ YEAR_RE = re.compile(r"^\d{4}-\d{2}$")
 SETTINGS = "settings.yaml"
 
 
-def config_dir_for(cli_value: Path | None = None) -> Path:
-    """Priorität: CLI, MAO_CONFIG, benutzerspezifische Konfiguration."""
-    if cli_value is not None:
-        return cli_value.expanduser().resolve()
-    env = os.environ.get("MAO_CONFIG")
-    if env:
-        return Path(env).expanduser().resolve()
-    # Editable Installation: der Quellordner enthaelt pyproject.toml und
-    # den privaten Konfigurationsordner direkt neben mao_cli/.
-    project = Path(__file__).resolve().parent.parent
-    source_config = project / "config"
-    if (project / "pyproject.toml").is_file() and source_config.is_dir():
-        return source_config.resolve()
+CONFIG_FOLDER = "config"      # <MaO-Ordner>/config: Einstellungen, Pipeline, Profile, Zugangsdaten
+TEX_FOLDER = "tex"            # <MaO-Ordner>/tex: LaTeX-Vorlagen
+POINTER = "mao-ordner.txt"    # nur lokal: merkt sich den MaO-Ordner dieses Rechners
+
+
+def user_state_dir() -> Path:
+    """Rechnerlokaler Ordner (nicht synchronisieren): Verweis auf den MaO-Ordner."""
     if os.name == "nt":
         return (Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))) / "MaO").resolve()
     return (Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "mao").resolve()
+
+
+def normalize_config_dir(path: Path) -> Path:
+    """Akzeptiert auch den MaO-Ordner selbst und liefert dessen ``config``-Unterordner."""
+    path = path.expanduser().resolve()
+    if not (path / SETTINGS).is_file() and (path / CONFIG_FOLDER / SETTINGS).is_file():
+        return path / CONFIG_FOLDER
+    return path
+
+
+def find_config_upwards(start: Path) -> Path | None:
+    """Sucht von ``start`` aufwärts nach ``<MaO-Ordner>/config/settings.yaml``."""
+    start = start.resolve()
+    for folder in (start, *start.parents):
+        if (folder / CONFIG_FOLDER / SETTINGS).is_file():
+            return folder / CONFIG_FOLDER
+    return None
+
+
+def read_pointer() -> Path | None:
+    try:
+        text = (user_state_dir() / POINTER).read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeError):
+        return None
+    return Path(text) if text else None
+
+
+def write_pointer(mao_folder: Path) -> Path:
+    """Merkt sich den MaO-Ordner nur für diesen Rechner."""
+    config = normalize_config_dir(mao_folder)
+    if not (config / SETTINGS).is_file():
+        raise ConfigurationError(f"Kein MaO-Ordner: {SETTINGS} fehlt in {config}. Zuerst 'mao config init <ORDNER>' ausführen.")
+    state = user_state_dir()
+    state.mkdir(parents=True, exist_ok=True)
+    target = state / POINTER
+    tmp = target.with_suffix(".tmp")
+    tmp.write_text(str(config) + "\n", encoding="utf-8")
+    os.replace(tmp, target)
+    return target
+
+
+def resolve_config_dir(cli_value: Path | None = None, cwd: Path | None = None) -> tuple[Path, str]:
+    """Konfigurationsordner und Quelle.
+
+    Reihenfolge: ``--config-dir``, ``MAO_CONFIG``, Suche aufwärts vom aktuellen
+    Ordner, Verweis (``mao config use``), Editable-Quellordner, Benutzerordner.
+    ``--config-dir`` und ``MAO_CONFIG`` dürfen auch den MaO-Ordner selbst nennen.
+    """
+    if cli_value is not None:
+        return normalize_config_dir(cli_value), "--config-dir"
+    env = os.environ.get("MAO_CONFIG")
+    if env:
+        return normalize_config_dir(Path(env)), "MAO_CONFIG"
+    found = find_config_upwards(cwd or Path.cwd())
+    if found is not None:
+        return found, "aktueller Ordner"
+    pointed = read_pointer()
+    if pointed is not None and (pointed / SETTINGS).is_file():
+        return pointed.resolve(), "Verweis (mao config use)"
+    # Editable Installation: der Quellordner enthaelt pyproject.toml und
+    # den privaten Konfigurationsordner direkt neben mao_cli/.
+    project = Path(__file__).resolve().parent.parent
+    source_config = project / CONFIG_FOLDER
+    if (project / "pyproject.toml").is_file() and source_config.is_dir():
+        return source_config.resolve(), "Quellordner"
+    return user_state_dir(), "Standardordner"
+
+
+def config_dir_for(cli_value: Path | None = None) -> Path:
+    return resolve_config_dir(cli_value)[0]
 
 
 def check_year(value: str) -> str:
@@ -76,7 +140,11 @@ def load_settings(config_dir: Path, *, allow_missing: bool = False) -> dict[str,
             raise ConfigurationError(f"Workspace {year}: unbekannte Felder {sorted(unexpected)}")
         root = Path(entry["root"]).expanduser()
         if not root.is_absolute():
-            raise ConfigurationError(f"Workspace {year}: 'root' muss ein absoluter Pfad sein")
+            # Relative Pfade gelten ab dem MaO-Ordner (Elternordner von config/);
+            # so funktioniert dieselbe settings.yaml auf jedem Rechner der Nextcloud.
+            if config_dir.name != CONFIG_FOLDER:
+                raise ConfigurationError(f"Workspace {year}: 'root' muss ein absoluter Pfad sein")
+            root = config_dir.parent / root
         status = entry.get("status", "planned")
         if status not in ("current", "archived", "planned"):
             raise ConfigurationError(f"Workspace {year}: ungültiger Status")
@@ -104,9 +172,29 @@ def load_settings(config_dir: Path, *, allow_missing: bool = False) -> dict[str,
     return {"current_year": current, "workspaces": normalized, "defaults": {"profile": profile}}
 
 
+def _portable_roots(config_dir: Path, doc: dict[str, Any]) -> dict[str, Any]:
+    """Ordner innerhalb des MaO-Ordners relativ speichern (rechnerunabhängig)."""
+    if config_dir.name != CONFIG_FOLDER:
+        return doc
+    base = config_dir.resolve().parent
+    out = dict(doc)
+    out["workspaces"] = {}
+    for year, entry in doc.get("workspaces", {}).items():
+        entry = dict(entry)
+        root = Path(str(entry.get("root", "")))
+        if root.is_absolute():
+            try:
+                entry["root"] = root.resolve().relative_to(base).as_posix()
+            except ValueError:
+                pass
+        out["workspaces"][year] = entry
+    return out
+
+
 def save_settings(config_dir: Path, doc: dict[str, Any]) -> Path:
     """Validiert und veröffentlicht settings.yaml über atomaren Dateiersatz."""
     config_dir.mkdir(parents=True, exist_ok=True)
+    doc = _portable_roots(config_dir, doc)
     # Erst validieren, bevor die vorhandene Datei verändert wird.
     tmp = None
     path = config_dir / SETTINGS
@@ -118,7 +206,7 @@ def save_settings(config_dir: Path, doc: dict[str, Any]) -> Path:
         # Gleiche strukturelle Validierung wie beim Lesen, ohne die echte Datei zu überschreiben.
         # Für den temporären Namen erst temporäres Verzeichnis mit Symlinks vermeiden:
         # Eine rein strukturelle Validierung per interner Funktion.
-        _validate_document(tmp)
+        _validate_document(tmp, config_dir.name)
         os.replace(tmp, path)
         return path
     finally:
@@ -126,17 +214,25 @@ def save_settings(config_dir: Path, doc: dict[str, Any]) -> Path:
             tmp.unlink(missing_ok=True)
 
 
-def _validate_document(path: Path) -> None:
+def _validate_document(path: Path, folder_name: str = CONFIG_FOLDER) -> None:
     # Den Parser über einen ausschließlich temporär vorhandenen Unterordner benutzen.
     # settings.yaml wird dabei nie mit der produktiven Datei vertauscht.
     with tempfile.TemporaryDirectory(prefix="mao-settings-") as td:
-        shutil.copyfile(path, Path(td) / SETTINGS)
-        load_settings(Path(td))
+        check_dir = Path(td) / folder_name
+        check_dir.mkdir()
+        shutil.copyfile(path, check_dir / SETTINGS)
+        load_settings(check_dir)
 
 
 def init_config(config_dir: Path, defaults_dir: Path) -> list[Path]:
     config_dir.mkdir(parents=True, exist_ok=True)
     created: list[Path] = []
+    if config_dir.name == CONFIG_FOLDER:
+        # Zentraler MaO-Ordner: Platz für die LaTeX-Vorlagen neben config/.
+        tex = config_dir.parent / TEX_FOLDER
+        if not tex.exists():
+            tex.mkdir()
+            created.append(tex)
     for filename in ("pipeline.yaml", "profiles.ini", "tables.ini"):
         dest = config_dir / filename
         if not dest.exists():
@@ -246,7 +342,14 @@ def _registered_year_for(settings: dict[str, Any], target: Path) -> str | None:
 
 
 def resolve_workspace(settings: dict[str, Any], *, year: str | None = None,
-                      workspace: Path | None = None, allow_unregistered: bool = False) -> WorkspaceSelection:
+                      workspace: Path | None = None, allow_unregistered: bool = False,
+                      cwd: Path | None = None) -> WorkspaceSelection:
+    if year is None and workspace is None:
+        # Wer in einem registrierten Jahrgangsordner arbeitet, meint diesen Jahrgang.
+        here = _registered_year_for(settings, (cwd or Path.cwd()).resolve())
+        if here is not None:
+            item = settings["workspaces"][here]
+            return WorkspaceSelection(Path(item["root"]), here, item.get("mao"))
     selected = year or settings["current_year"]
     if year is not None:
         check_year(year)

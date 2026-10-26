@@ -17,6 +17,8 @@ Die CLI heißt `mao`; alternativ `python -m mao_cli`.
 
 ## Zentrale Konfiguration und Workspaces
 
+Für mehrere Rechner siehe Wiki „Konfiguration“, Abschnitt *Zentraler MaO-Ordner*: `mao config init <MaO-Ordner>` und pro Rechner einmal `mao config use <MaO-Ordner>`; danach entfällt `--config-dir`.
+
 `--config-dir` bestimmt das Konfigurationsverzeichnis. Fehlt der Schalter, wird `MAO_CONFIG` verwendet; andernfalls das benutzerspezifische Standardverzeichnis (Windows: `%APPDATA%/MaO`, Linux: `${XDG_CONFIG_HOME:-~/.config}/mao`).
 
 ```powershell
