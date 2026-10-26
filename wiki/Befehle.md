@@ -15,7 +15,8 @@ Alternative ohne installierten Konsolenbefehl aus dem Projektordner: `python -m 
 ```powershell
 mao --config-dir "D:/MaO/Config" config init
 mao --config-dir "D:/MaO/Config" config show
-mao --config-dir "D:/MaO/Config" workspace add 2026-27 --root "D:/Schuljahre/2026-27/MaO"
+mao --config-dir "D:/MaO/Config" workspace add 2026-27 --root "D:/Schuljahre/2026-27/MaO"   # Sonderfall
+mao jahrgang new / list / use 66        # Jahrgänge unter MaO/Jahrgang/
 mao workspace list
 mao workspace select 2026-27
 mao workspace wrapper 2026-27

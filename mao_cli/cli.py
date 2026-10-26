@@ -17,11 +17,11 @@ from .config import (
     ConfigurationError, apply_profile, load_config, load_profiles,
     load_tables, resolve_table_placeholders, validate_config, validate_profiles,
 )
-from .db import DB, current_MaO_number_db, current_MaO_number_fallback, load_db_config
+from .db import DB, active_jahrgang_db, current_MaO_number_db, current_MaO_number_fallback, load_db_config
 from .exports import ExportPlan, load_datasets, render_plan, run_exports
 from .latex import run_latex_jobs
 from .updater import update_action, UpdateError
-from .workspaces import (resolve_config_dir, write_pointer, CONFIG_FOLDER, normalize_config_dir, load_settings, save_settings, init_config,
+from .workspaces import (resolve_config_dir, write_pointer, CONFIG_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
 from .gf_import import import_participants, ImportErrorGF, write_import_report
@@ -123,7 +123,20 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     global_overrides(use)
     use.add_argument("folder", type=Path, metavar="MAO-ORDNER")
 
-    work = commands.add_parser("workspace", help="Jahrgangsverzeichnisse verwalten")
+    jahr = commands.add_parser("jahrgang", help="Jahrgangsordner unter <MaO>/Jahrgang/ anzeigen, anlegen, wählen")
+    global_overrides(jahr)
+    jsub = jahr.add_subparsers(dest="jahrgang_command", required=True)
+    jlist = jsub.add_parser("list", help="Erkannte Jahrgänge anzeigen")
+    global_overrides(jlist)
+    jnew = jsub.add_parser("new", help="Jahrgangsordner anlegen (ohne Angaben: aktiver Jahrgang aus der Datenbank)")
+    global_overrides(jnew)
+    jnew.add_argument("--nr", type=int, metavar="MAO-NR", help="MaO-Nummer (zusammen mit --year)")
+    jnew.add_argument("--current", action="store_true", help="Zum aktuellen Jahrgang machen (aus der Datenbank: immer)")
+    juse = jsub.add_parser("use", help="Aktuellen Jahrgang festlegen (MaO-Nummer oder Schuljahr)")
+    global_overrides(juse)
+    juse.add_argument("which", metavar="MAO-NR|YYYY-YY")
+
+    work = commands.add_parser("workspace", help="Sonderfälle: Jahrgangsordner außerhalb von <MaO>/Jahrgang/ registrieren")
     global_overrides(work)
     wsub = work.add_subparsers(dest="workspace_command", required=True)
     for action in ("list", "add", "select", "wrapper"):
@@ -133,9 +146,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
             item.add_argument("target_year", metavar="YYYY-YY")
         if action == "add":
             item.add_argument("--root", type=Path, required=True)
-            item.add_argument("--no-wrapper", action="store_true")
+            item.add_argument("--no-wrapper", action="store_true", help=argparse.SUPPRESS)
             item.add_argument("--wrapper", action="store_true",
-                              help="mao-hier.* auch im zentralen MaO-Ordner anlegen (dort nicht nötig)")
+                              help="mao-hier.cmd/.sh mit festem Konfigurationspfad anlegen (selten nötig)")
 
     gf = commands.add_parser("import-gf", help="Gravity-Forms-Meldungen sicher in die aktuelle Organisationstabelle importieren")
     common(gf)
@@ -206,6 +219,85 @@ def load_pipeline(config_dir: Path, workspace: Path, profile: Optional[str]):
     return cfg, profiles, files, tables
 
 
+def _print_workspaces(doc: dict) -> None:
+    for year, item in sorted(doc["workspaces"].items()):
+        current = "*" if year == doc["current_year"] else " "
+        number = f"MaO {item['mao']}" if item.get("mao") else "MaO -"
+        origin = f"{JAHRGANG_FOLDER}/" if item.get("auto") else "registriert"
+        print(f"{current} {year}  {number:<7} {item['root']} ({origin}, {item['status']})")
+
+
+def _make_current(doc: dict, year: str) -> None:
+    for entry in doc["workspaces"].values():
+        if entry["status"] == "current":
+            entry["status"] = "archived"
+    doc["workspaces"][year]["status"] = "current"
+    doc["current_year"] = year
+
+
+def jahrgang_action(args: argparse.Namespace, config_dir: Path) -> int:
+    command = args.jahrgang_command
+    doc = load_settings(config_dir)
+    if command == "list":
+        _print_workspaces(doc)
+        return 0
+    if command == "use":
+        wanted = args.which.strip()
+        if wanted.isdigit():
+            matches = [y for y, e in doc["workspaces"].items() if e.get("mao") == int(wanted)]
+            if not matches:
+                raise ConfigurationError(f"Kein Jahrgang mit MaO-Nummer {wanted} gefunden")
+            year = matches[0]
+        else:
+            year = check_year(wanted)
+            if year not in doc["workspaces"]:
+                raise ConfigurationError(f"Jahrgang {year} nicht gefunden. Mit 'mao jahrgang new' anlegen.")
+        _make_current(doc, year)
+        save_settings(config_dir, doc)
+        print(f"Aktueller Jahrgang: {year}")
+        return 0
+    # new
+    if config_dir.name != CONFIG_FOLDER:
+        raise ConfigurationError(f"Jahrgangsordner unter {JAHRGANG_FOLDER}/ gibt es nur im zentralen MaO-Ordner "
+                                 "(mao config init <MaO-ORDNER>). Sonst 'mao workspace add' verwenden.")
+    year_arg = getattr(args, "year", None)
+    if (args.nr is None) != (year_arg is None):
+        raise ConfigurationError("--nr und --year nur zusammen angeben (oder beide weglassen: Angaben aus der Datenbank)")
+    make_current = args.current
+    if args.nr is not None and year_arg is not None:
+        if args.nr < 1:
+            raise ConfigurationError("--nr muss positiv sein")
+        number, year = args.nr, check_year(year_arg)
+    else:
+        tables = load_tables(resolve_config_file(config_dir, "tables.ini"))
+        db_config = load_db_config(config_dir)
+        if not can_reach(db_config.host, db_config.port, timeout=3):
+            raise ConnectionError("Datenbank nicht erreichbar; alternativ --nr und --year angeben")
+        with DB(db_config) as db:
+            info = active_jahrgang_db(db, tables)
+        year = str(info["year"])
+        if info["mao"] is None:
+            last = info["last_mao"]
+            hint = f" (Vorschlag: --nr {int(last) + 1} --year {year})" if isinstance(last, int) else ""
+            raise ConfigurationError(f"In der Datenbank ist für das aktive Schuljahr {year} noch kein Jahrgang angelegt{hint}. "
+                                     "Das Anlegen in der Datenbank gehört zum Jahrgangswechsel.")
+        number = int(info["mao"])  # type: ignore[call-overload]
+        make_current = True
+    registered = doc["workspaces"].get(year)
+    target = config_dir.parent / JAHRGANG_FOLDER / jahrgang_folder_name(number, year)
+    if registered and Path(registered["root"]).resolve() != target.resolve():
+        raise ConfigurationError(f"Schuljahr {year} ist bereits mit {registered['root']} registriert")
+    existed = target.is_dir()
+    target.mkdir(parents=True, exist_ok=True)
+    doc = load_settings(config_dir)
+    if make_current:
+        _make_current(doc, year)
+        save_settings(config_dir, doc)
+    print(f"{'Vorhanden' if existed else 'Angelegt'}: {target}")
+    print(f"Aktueller Jahrgang: {doc['current_year'] or '-'}" + ("" if make_current else " (unverändert; --current setzt ihn)"))
+    return 0
+
+
 def management_action(args: argparse.Namespace, config_dir: Path, config_source: str = "") -> int:
     """Konfiguration und Workspaces verwalten, ohne DB/Export-Pipeline zu laden."""
     try:
@@ -229,13 +321,13 @@ def management_action(args: argparse.Namespace, config_dir: Path, config_source:
                     where = config_dir / name
                     print(f"  {name}: {'vorhanden' if where.exists() else 'nicht vorhanden'}")
             return 0
+        if args.command == "jahrgang":
+            return jahrgang_action(args, config_dir)
         if args.command == "workspace":
             doc = load_settings(config_dir)
             action = args.workspace_command
             if action == "list":
-                for year, item in sorted(doc["workspaces"].items()):
-                    current = "*" if year == doc["current_year"] else " "
-                    print(f"{current} {year}: {item['root']} ({item['status']})")
+                _print_workspaces(doc)
                 return 0
             year = check_year(args.target_year)
             if action == "add":
@@ -246,7 +338,7 @@ def management_action(args: argparse.Namespace, config_dir: Path, config_source:
                     raise ConfigurationError(f"Workspace {root} ist bereits einem anderen Jahrgang zugeordnet")
                 # Im zentralen MaO-Ordner erkennt MaO den Jahrgang am aktuellen Ordner;
                 # Wrapper mit festem Pfad würden sonst auf andere Rechner synchronisiert.
-                make_wrapper = not args.no_wrapper and (args.wrapper or config_dir.name != CONFIG_FOLDER)
+                make_wrapper = args.wrapper and not args.no_wrapper
                 if make_wrapper and any((root / name).exists() for name in ("mao-hier.cmd", "mao-hier.sh")):
                     raise ConfigurationError("Wrapper existiert bereits; --no-wrapper wählen oder Pfad ändern")
                 doc["workspaces"][year] = {"root": str(root), "status": "planned"}
@@ -274,7 +366,7 @@ def management_action(args: argparse.Namespace, config_dir: Path, config_source:
                 for path in write_wrapper(config_dir, year, Path(doc["workspaces"][year]["root"])):
                     print(f"Wrapper: {path}")
             return 0
-    except (ConfigurationError, OSError, ValueError) as exc:
+    except (ConfigurationError, OSError, ValueError, ConnectionError) as exc:
         print(f"Konfigurationsfehler: {exc}", file=sys.stderr)
         return 2
     raise AssertionError("Nicht unterstützter Verwaltungsbefehl")
@@ -300,7 +392,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"Updatefehler: {exc}", file=sys.stderr)
             return 5
     config_dir, config_source = resolve_config_dir(getattr(args, "config_dir", None))
-    if args.command in ("config", "workspace"):
+    if args.command in ("config", "workspace", "jahrgang"):
         return management_action(args, config_dir, config_source)
     try:
         settings = load_settings(config_dir)
