@@ -127,3 +127,18 @@ def test_workspace_add_central_has_no_wrapper_and_relative_root(home, monkeypatc
     assert cli.main(["workspace", "add", "2026-27", "--root", str(root)]) == 0
     assert not (root / "mao-hier.cmd").exists() and not (root / "mao-hier.sh").exists()
     assert "root: 66_2026-27" in (mao / "config" / "settings.yaml").read_text(encoding="utf-8")
+
+
+def test_conflict_copies_are_reported_but_not_blocking(home, capsys):
+    mao = make_mao(home)
+    (mao / "config" / "settings (conflicted copy 2026-10-26 120000).yaml").write_text("x")
+    (mao / "config" / "tables (Konflikt-Kopie 2026).ini").write_text("x")
+    (mao / "tex" / "Doc").mkdir()
+    (mao / "tex" / "Doc" / "Doc (conflicted copy PC2).tex").write_text("x")
+    (mao / "config" / "normal (kopie).yaml").write_text("x")
+    found = w.find_conflict_copies(mao / "config")
+    assert sorted(p.name for p in found) == ["Doc (conflicted copy PC2).tex", "settings (conflicted copy 2026-10-26 120000).yaml",
+                                             "tables (Konflikt-Kopie 2026).ini"]
+    assert cli.main(["--config-dir", str(mao), "config", "show"]) == 0
+    err = capsys.readouterr().err
+    assert err.count("Konfliktkopie") == 3

@@ -71,6 +71,26 @@ def write_pointer(mao_folder: Path) -> Path:
     return target
 
 
+CONFLICT_RE = re.compile(r"\((?:[^)]*\s)?(?:conflicted copy|konflikt)[^)]*\)", re.IGNORECASE)
+
+
+def find_conflict_copies(config_dir: Path, limit: int = 20) -> list[Path]:
+    """Konfliktkopien von Nextcloud/Dropbox im Konfigurations- und Vorlagenordner (nur Hinweis)."""
+    roots = [config_dir]
+    if config_dir.name == CONFIG_FOLDER:
+        roots.append(config_dir.parent / TEX_FOLDER)
+    found: list[Path] = []
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob("*")):
+            if path.is_file() and CONFLICT_RE.search(path.name):
+                found.append(path)
+                if len(found) >= limit:
+                    return found
+    return found
+
+
 def resolve_config_dir(cli_value: Path | None = None, cwd: Path | None = None) -> tuple[Path, str]:
     """Konfigurationsordner und Quelle.
 
