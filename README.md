@@ -66,7 +66,7 @@ defaults:
   profile: vollpaket
 ```
 
-`workspace add` registriert den Ordner und erstellt die Wrapper. Ein Aufruf aus dem Workspace erfolgt z. B. mit `mao-hier.cmd run --profile turniertag`. Die Wrapper enthalten keine Zugangsdaten, sondern nur `--config-dir`, `--year` und die weitergereichten Argumente.
+`workspace add` registriert einen Ordner außerhalb von `MaO/Jahrgang/`; Wrapper entstehen nur mit `--wrapper` (Aufruf z. B. `mao-hier.cmd run --profile turniertag`). Im zentralen MaO-Ordner genügt `mao run` im Jahrgangsordner. Die Wrapper enthalten keine Zugangsdaten, sondern nur `--config-dir`, `--year` und die weitergereichten Argumente.
 
 Optionen `--config-dir`, `--year` und `--workspace` können **vor oder nach dem Unterbefehl** stehen. Ein explizites `--workspace` hat Vorrang; zusammen mit einem ausdrücklich angegebenen `--year` muss der Ordner jedoch mit dem registrierten Pfad übereinstimmen. Liegt ein per `--workspace` angegebener Ordner in einem registrierten Workspace, gilt dessen Jahrgang, einschließlich der Sperre für archivierte Jahrgänge. Ohne explizite Auswahl gilt `current_year`.
 

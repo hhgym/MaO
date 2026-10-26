@@ -20,6 +20,8 @@ SETTINGS = "settings.yaml"
 
 CONFIG_FOLDER = "config"      # <MaO-Ordner>/config: Einstellungen, Pipeline, Profile, Zugangsdaten
 TEX_FOLDER = "tex"            # <MaO-Ordner>/tex: LaTeX-Vorlagen
+JAHRGANG_FOLDER = "Jahrgang"  # <MaO-Ordner>/Jahrgang/<MaO-Nr>_<Schuljahr>: Jahrgangsordner, automatisch erkannt
+JAHRGANG_RE = re.compile(r"^(\d{1,4})_(\d{4}-\d{2})$")
 POINTER = "mao-ordner.txt"    # nur lokal: merkt sich den MaO-Ordner dieses Rechners
 
 
@@ -110,6 +112,34 @@ def _default_settings() -> dict[str, Any]:
     return {"current_year": None, "workspaces": {}, "defaults": {"profile": "vollpaket"}}
 
 
+def jahrgang_folder_name(mao_number: int, year: str) -> str:
+    return f"{mao_number}_{check_year(year)}"
+
+
+def discover_jahrgaenge(mao_home: Path) -> dict[str, dict[str, Any]]:
+    """Erkennt ``<MaO-Ordner>/Jahrgang/<Nr>_<Schuljahr>`` ohne Registrierung."""
+    base = mao_home / JAHRGANG_FOLDER
+    found: dict[str, dict[str, Any]] = {}
+    if not base.is_dir():
+        return found
+    for folder in sorted(base.iterdir()):
+        match = JAHRGANG_RE.fullmatch(folder.name)
+        if not folder.is_dir() or match is None:
+            continue
+        number, year = int(match.group(1)), match.group(2)
+        try:
+            check_year(year)
+        except ConfigurationError:
+            continue
+        if year in found:
+            raise ConfigurationError(
+                f"Schuljahr {year} kommt in {JAHRGANG_FOLDER}/ doppelt vor: {found[year]['root'].name} und {folder.name}")
+        if number < 1:
+            continue
+        found[year] = {"root": folder, "mao": number}
+    return found
+
+
 def load_settings(config_dir: Path, *, allow_missing: bool = False) -> dict[str, Any]:
     path = config_dir / SETTINGS
     if not path.is_file():
@@ -155,10 +185,20 @@ def load_settings(config_dir: Path, *, allow_missing: bool = False) -> dict[str,
         if mao is not None:
             normalized[year]["mao"] = mao
     current = doc.get("current_year")
+    if config_dir.name == CONFIG_FOLDER:
+        known = {os.path.normcase(str(item["root"])) for item in normalized.values()}
+        for year, item in discover_jahrgaenge(config_dir.parent).items():
+            root = Path(item["root"]).resolve()
+            if year in normalized or os.path.normcase(str(root)) in known:
+                continue
+            normalized[year] = {"root": str(root), "status": "archived", "mao": item["mao"], "auto": True}
     if current is not None:
         check_year(current)
         if current not in normalized:
             raise ConfigurationError(f"'current_year' {current} ist nicht als Workspace registriert")
+    for year, item in normalized.items():
+        if item.get("auto"):
+            item["status"] = "current" if year == current else "archived"
     defaults = doc.get("defaults", {})
     if not isinstance(defaults, dict) or set(defaults) - {"profile"}:
         raise ConfigurationError("'defaults' unterstützt nur 'profile'")
@@ -173,14 +213,20 @@ def load_settings(config_dir: Path, *, allow_missing: bool = False) -> dict[str,
 
 
 def _portable_roots(config_dir: Path, doc: dict[str, Any]) -> dict[str, Any]:
-    """Ordner innerhalb des MaO-Ordners relativ speichern (rechnerunabhängig)."""
-    if config_dir.name != CONFIG_FOLDER:
-        return doc
-    base = config_dir.resolve().parent
+    """Ordner innerhalb des MaO-Ordners relativ speichern (rechnerunabhängig).
+
+    Automatisch erkannte Jahrgangsordner werden nicht gespeichert; sie ergeben sich aus dem Ordner.
+    """
     out = dict(doc)
     out["workspaces"] = {}
+    base = config_dir.resolve().parent
     for year, entry in doc.get("workspaces", {}).items():
+        if entry.get("auto"):
+            continue
         entry = dict(entry)
+        if config_dir.name != CONFIG_FOLDER:
+            out["workspaces"][year] = entry
+            continue
         root = Path(str(entry.get("root", "")))
         if root.is_absolute():
             try:
@@ -194,6 +240,7 @@ def _portable_roots(config_dir: Path, doc: dict[str, Any]) -> dict[str, Any]:
 def save_settings(config_dir: Path, doc: dict[str, Any]) -> Path:
     """Validiert und veröffentlicht settings.yaml über atomaren Dateiersatz."""
     config_dir.mkdir(parents=True, exist_ok=True)
+    auto_years = [(year, entry.get("mao")) for year, entry in doc.get("workspaces", {}).items() if entry.get("auto")]
     doc = _portable_roots(config_dir, doc)
     # Erst validieren, bevor die vorhandene Datei verändert wird.
     tmp = None
@@ -206,7 +253,7 @@ def save_settings(config_dir: Path, doc: dict[str, Any]) -> Path:
         # Gleiche strukturelle Validierung wie beim Lesen, ohne die echte Datei zu überschreiben.
         # Für den temporären Namen erst temporäres Verzeichnis mit Symlinks vermeiden:
         # Eine rein strukturelle Validierung per interner Funktion.
-        _validate_document(tmp, config_dir.name)
+        _validate_document(tmp, config_dir.name, auto_years)
         os.replace(tmp, path)
         return path
     finally:
@@ -214,13 +261,17 @@ def save_settings(config_dir: Path, doc: dict[str, Any]) -> Path:
             tmp.unlink(missing_ok=True)
 
 
-def _validate_document(path: Path, folder_name: str = CONFIG_FOLDER) -> None:
+def _validate_document(path: Path, folder_name: str = CONFIG_FOLDER,
+                       auto_years: list[tuple[str, Any]] | None = None) -> None:
     # Den Parser über einen ausschließlich temporär vorhandenen Unterordner benutzen.
     # settings.yaml wird dabei nie mit der produktiven Datei vertauscht.
     with tempfile.TemporaryDirectory(prefix="mao-settings-") as td:
         check_dir = Path(td) / folder_name
         check_dir.mkdir()
         shutil.copyfile(path, check_dir / SETTINGS)
+        for year, number in auto_years or []:
+            # Automatisch erkannte Jahrgänge für die Prüfung nachbilden.
+            (Path(td) / JAHRGANG_FOLDER / jahrgang_folder_name(int(number), year)).mkdir(parents=True)
         load_settings(check_dir)
 
 
@@ -373,7 +424,7 @@ def resolve_workspace(settings: dict[str, Any], *, year: str | None = None,
         return WorkspaceSelection(Path(entry["root"]), selected, entry.get("mao"))
     if allow_unregistered:
         return WorkspaceSelection(Path.cwd().resolve(), None, None)
-    raise ConfigurationError("Kein aktueller Workspace konfiguriert. 'mao workspace add YEAR --root PFAD' verwenden")
+    raise ConfigurationError("Kein aktueller Workspace konfiguriert. 'mao jahrgang new' (oder 'mao jahrgang use') ausführen")
 
 
 def write_wrapper(config_dir: Path, year: str, root: Path) -> list[Path]:

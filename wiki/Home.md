@@ -48,7 +48,7 @@ mao update install --channel develop --yes
 - [Befehle](Befehle) – CLI-Befehle und Parameter
 - [Konfiguration](Konfiguration) – SQL, Profile, Gravity Forms und private Einstellungen
 - [Profile](Profile) – Profile und Exportsteuerung
-- [Arbeitsverzeichnisse](Arbeitsverzeichnisse) – schuljahresbezogene Arbeitsordner
+- [Arbeitsverzeichnisse](Arbeitsverzeichnisse) – Jahrgangsordner unter `MaO/Jahrgang/`, `mao jahrgang`
 - [Jahrgangswechsel](Jahrgangswechsel) – schreibgeschützte Vorprüfung
 - [Updates](Updates) – Stable-, RC- und Develop-Kanal
 - [Fehlerbehebung](Fehlerbehebung) – Fehlermeldungen und Lösungen

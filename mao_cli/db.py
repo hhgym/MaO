@@ -125,6 +125,37 @@ def current_MaO_number_db(db: DB, tables: Mapping[str, str]) -> Optional[int]:
     return None
 
 
+def school_year_label(beginn: object) -> str:
+    """Schuljahr als ``2026-27`` aus dem Beginndatum (Schuljahre beginnen im Sommer)."""
+    start = pd.Timestamp(beginn).year  # type: ignore[arg-type]
+    return f"{start}-{(start + 1) % 100:02d}"
+
+
+def active_jahrgang_db(db: DB, tables: Mapping[str, str]) -> dict[str, object]:
+    """Aktives Schuljahr und dessen MaO-Nummer (nur lesend).
+
+    Liefert ``year`` (z. B. ``2026-27``), ``mao`` (Nummer oder ``None``, wenn für das
+    aktive Schuljahr noch kein Jahrgang angelegt ist) und ``last_mao`` (höchste vorhandene Nummer).
+    """
+    year_table = tables.get("jahrgaenge_table", "")
+    school_year_table = tables.get("schuljahre_table", "")
+    valid = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+    if (not valid.fullmatch(year_table) or not valid.fullmatch(school_year_table)
+            or year_table.startswith("DEMO_") or school_year_table.startswith("DEMO_")):
+        raise ValueError("Für die Jahrgangsabfrage müssen jahrgaenge_table und schuljahre_table in tables.ini echte Namen haben")
+    active = db.query_df(f"SELECT id, beginn FROM `{school_year_table}` WHERE aktiv = 1 ORDER BY beginn DESC LIMIT 1")
+    if active.empty:
+        raise ValueError("In der Datenbank ist kein Schuljahr als aktiv markiert")
+    school_year_id = int(active.iloc[0]["id"])
+    year = school_year_label(active.iloc[0]["beginn"])
+    nr = db.query_df(f"SELECT jahrgang_nr FROM `{year_table}` WHERE schuljahr_id = {school_year_id} "
+                     "ORDER BY id DESC LIMIT 1")
+    last = db.query_df(f"SELECT MAX(jahrgang_nr) AS n FROM `{year_table}`")
+    mao = int(nr.iloc[0]["jahrgang_nr"]) if not nr.empty and pd.notna(nr.iloc[0]["jahrgang_nr"]) else None
+    last_mao = int(last.iloc[0]["n"]) if not last.empty and pd.notna(last.iloc[0]["n"]) else None
+    return {"year": year, "mao": mao, "last_mao": last_mao}
+
+
 def current_MaO_number(db: Optional[DB] = None, tables: Optional[Mapping[str, str]] = None) -> int:
     if db is not None and tables is not None:
         x = current_MaO_number_db(db, tables)
