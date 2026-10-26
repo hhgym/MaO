@@ -183,6 +183,12 @@ Reihenfolge, in der MaO den Konfigurationsordner sucht: `--config-dir` → `MAO_
 
 Ordner unter `Jahrgang/` werden automatisch erkannt (siehe Wiki „Jahrgangsordner“); ausdrücklich registrierte Ordner innerhalb des MaO-Ordners stehen in `settings.yaml` **relativ** (`root: Jahrgang/66_2026-27`), sodass dieselbe Datei auf jedem Rechner gilt. Wer in einem Jahrgangsordner (oder darunter) arbeitet, meint automatisch diesen Jahrgang; `--year` und `--workspace` haben Vorrang. Wrapper `mao-hier.*` entstehen nur noch mit `workspace add --wrapper`. Der Verweis liegt rechnerlokal (Windows `%APPDATA%/MaO/mao-ordner.txt`, Linux `~/.config/mao/mao-ordner.txt`) und gehört nicht in die Nextcloud.
 
+### Nextcloud-Hinweise
+
+- **Konfliktkopien:** Ändern zwei Rechner dieselbe Datei gleichzeitig, legt Nextcloud eine Datei wie `settings (conflicted copy …).yaml` an. MaO warnt bei jedem Aufruf, wenn es solche Dateien in `config/` oder `tex/` findet; eine Fassung muss von Hand gelöscht werden.
+- **LaTeX-Hilfsdateien nicht synchronisieren:** Im Nextcloud-Desktop-Client (Einstellungen → Allgemein → *Ignorierte Dateien bearbeiten*) pro Rechner `*.aux`, `*.log`, `*.out`, `*.toc`, `*.synctex.gz` und `.__mao_cli_wrap__*` eintragen. Alternativ `mao run --cleanup-latex`.
+- **Gleichzeitiges Arbeiten:** MaO sperrt nichts. Schreibende Befehle (`run`, `import-gf --apply`) nicht auf zwei Rechnern gleichzeitig für denselben Jahrgang starten.
+
 ## Editable-Installation: lokaler Konfigurationsordner
 
 Bei `D:/MaO/mao_cli`, `D:/MaO/pyproject.toml` und `D:/MaO/config` erkennt MaO den vorhandenen Ordner `config` automatisch. `--config-dir` und `MAO_CONFIG` behalten Vorrang, für andere Installationstypen bleibt der Benutzer-Konfigurationsordner maßgeblich.

@@ -9,6 +9,9 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Cloud-Synchronisation (Schritt 6, Teil 5)
+- MaO warnt bei jedem Aufruf vor Konfliktkopien (Nextcloud/Dropbox) in `config/` und `tex/`. Wiki: Nextcloud-Hinweise (Ausschlussliste für LaTeX-Hilfsdateien). Bewusst keine Sperrdatei.
+
 ### Installation mit uv (Schritt 6, Teil 4)
 - MaO wird mit `uv tool install git+https://github.com/hhgym/MaO@<Ref>` installiert und aktualisiert. `mao update [--channel stable|rc|develop] [--version X]` erkennt die Installationsart (uv-Tool, Editable, pip), ermittelt bei Bedarf den neuesten Tag und nennt den passenden Befehl, installiert aber nichts selbst. Die alten Unterbefehle `check|download|install|status|rollback` werden mit Hinweis akzeptiert.
 - **Entfernt:** verwaltete Umgebungen und Starter, Editable-Updater, ZIP-Abgleich (`update_install.py`, `editable_update.py`, alter `updater.py` samt Tests) sowie der CI-Job `develop-build` mit dem Release `develop-build`. Release-Wheels bleiben als Download am Release.

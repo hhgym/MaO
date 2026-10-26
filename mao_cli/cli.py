@@ -21,7 +21,7 @@ from .db import DB, active_jahrgang_db, current_MaO_number_db, current_MaO_numbe
 from .exports import ExportPlan, load_datasets, render_plan, run_exports
 from .latex import run_latex_jobs
 from .updater import update_hint, UpdateError
-from .workspaces import (resolve_config_dir, write_pointer, CONFIG_FOLDER, TEX_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
+from .workspaces import (resolve_config_dir, find_conflict_copies, write_pointer, CONFIG_FOLDER, TEX_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
 from .gf_import import import_participants, ImportErrorGF, write_import_report
@@ -390,6 +390,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"Updatefehler: {exc}", file=sys.stderr)
             return 5
     config_dir, config_source = resolve_config_dir(getattr(args, "config_dir", None))
+    for conflict in find_conflict_copies(config_dir):
+        print(f"Warnung: Konfliktkopie der Cloud-Synchronisation, bitte prüfen und eine Fassung löschen: {conflict}",
+              file=sys.stderr)
     if args.command in ("config", "workspace", "jahrgang"):
         return management_action(args, config_dir, config_source)
     try:
