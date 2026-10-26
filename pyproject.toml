@@ -12,14 +12,13 @@ dependencies = [
   "pandas>=2.0",
   "PyYAML>=6.0",
   "packaging>=23",
-  "tomli>=2;python_version < '3.11'",
   "python-dateutil>=2.8",
   "mysql-connector-python>=8.0",
   "requests-oauthlib>=1.3",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "tomli>=2;python_version < '3.11'", "ruff>=0.6", "mypy>=1.10"]
 
 [project.scripts]
 mao = "mao_cli.cli:main"

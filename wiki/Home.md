@@ -38,9 +38,7 @@ Die Zugangsdaten (`gf.config`) und die SQL-Zuordnungen (`gf-import.yaml`) bleibe
 ## Aktualisieren
 
 ```powershell
-mao update check --channel develop
-mao update download --channel develop --output ./downloads
-mao update install --channel develop --yes
+mao update --channel develop   # nennt den uv-Befehl; Details: Updates
 ```
 
 ## Dokumentationsseiten

@@ -20,7 +20,7 @@ from .config import (
 from .db import DB, active_jahrgang_db, current_MaO_number_db, current_MaO_number_fallback, load_db_config
 from .exports import ExportPlan, load_datasets, render_plan, run_exports
 from .latex import run_latex_jobs
-from .updater import update_action, UpdateError
+from .updater import update_hint, UpdateError
 from .workspaces import (resolve_config_dir, write_pointer, CONFIG_FOLDER, TEX_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
@@ -165,17 +165,15 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     init_year.add_argument("--dry-run", action="store_true", default=True,
                            help="Immer ohne Datenänderung (Standard)")
 
-    update = commands.add_parser("update", help="GitHub-Builds (Stable/RC/Develop) prüfen/aktualisieren")
-    sub = update.add_subparsers(dest="update_command", required=True)
-    for action in ("check", "download", "install", "status", "rollback"):
-        cmd = sub.add_parser(action, help={"check": "Updates nur prüfen", "download": "Geprüftes GitHub-Wheel herunterladen", "install": "Update ausdrücklich installieren", "status": "Aktive Version und Rollback anzeigen", "rollback": "Vorherige Version wieder aktivieren"}[action])
-        cmd.add_argument("--channel", choices=("stable", "rc", "develop"), default="stable")
-        cmd.add_argument("--repository", metavar="OWNER/REPO", help="GitHub-Repository (alternativ MAO_GITHUB_REPO)")
-        if action == "download":
-            cmd.add_argument("--output", type=Path, required=True, help="Downloadordner")
-        if action in ("install", "rollback"):
-            cmd.add_argument("--yes", action="store_true", help="Aktion ausdrücklich bestätigen")
-        cmd.add_argument("--home", type=Path, help="Verzeichnis für verwaltete Versionen (alternativ MAO_UPDATE_HOME)")
+    update = commands.add_parser("update", help="Hinweis zur Aktualisierung mit uv (MaO ersetzt sich nicht selbst)")
+    update.add_argument("legacy", nargs="?", choices=("check", "download", "install", "status", "rollback"),
+                        help=argparse.SUPPRESS)
+    update.add_argument("--channel", choices=("stable", "rc", "develop"), default="stable")
+    update.add_argument("--version", metavar="X.Y.Z", help="Bestimmte Version statt der neuesten")
+    update.add_argument("--repository", metavar="OWNER/REPO", help="GitHub-Repository (alternativ MAO_GITHUB_REPO)")
+    for ignored in ("--yes", "--home"):
+        update.add_argument(ignored, nargs="?", const=True, default=None, help=argparse.SUPPRESS)
+    update.add_argument("--output", type=Path, help=argparse.SUPPRESS)
 
     args = parser.parse_args(argv)
     if args.command == "import-gf" and args.apply and args.report:
@@ -383,10 +381,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     if args.command == "update":
         try:
-            result = update_action(args.update_command, args.channel, args.repository,
-                                   yes=getattr(args, "yes", False),
-                                   dest=getattr(args, "output", None), home=getattr(args, "home", None))
-            print(result)
+            if args.legacy:
+                print("Hinweis: Die Unterbefehle von 'mao update' entfallen; MaO wird jetzt mit uv aktualisiert.")
+            for line in update_hint(args.channel, args.repository, args.version):
+                print(line)
             return 0
         except UpdateError as exc:
             print(f"Updatefehler: {exc}", file=sys.stderr)

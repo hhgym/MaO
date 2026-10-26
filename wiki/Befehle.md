@@ -35,9 +35,7 @@ Die zentralen Schalter `--config-dir`, `--year`, `--workspace` können vor oder 
 | `mao plan` | Exportdateien und Aktionen voraussehen | Ja | Nur optional die angegebene Markdown-Plan-Datei und ein Logfile |
 | `mao run` | Exporte erzeugen, optional PDFs kompilieren | Ja | Ja |
 | `mao latex` | Nur LaTeX mit vorhandenen Dateien | Nein | Ja |
-| `mao update check` | Öffentliche GitHub-Updates prüfen (stable, RC, develop) | Nein | Nein |
-| `mao update download` | Releasewheel geprüft herunterladen | Nein | Downloadordner |
-| `mao update install` | Bestätigtes Update mit verwalteter Python-Umgebung und Rollback | Nein | Verwaltete Python-Umgebung |
+| `mao update` | Aktualisierungsbefehl für uv nennen (stable, rc, develop) | Nein | Nein |
 | `mao --version` | Programmversion anzeigen | Nein | Nein |
 | `mao --help` | Hilfe anzeigen | Nein | Nein |
 
@@ -123,23 +121,14 @@ Wenn `--mao` fehlt, wird die Jahrgangsnummer rechnerisch anhand des Datums besti
 
 ## `mao update`
 
-Prüfen ohne Installation:
-
 ```bash
-mao update check --channel stable --repository OWNER/REPO
-mao update check --channel rc --repository OWNER/REPO
-mao update check --channel develop
+mao update                       # neuester stabiler Release
+mao update --channel rc          # inklusive Release Candidates
+mao update --channel develop
+mao update --version 0.6.0 [--repository OWNER/REPO]
 ```
 
-Prüfsummen-gesicherten Release-Download speichern bzw. installieren:
-
-```bash
-mao update download --channel stable --repository OWNER/REPO --output ./downloads
-mao update install --channel stable --repository OWNER/REPO --yes
-mao update install --channel develop --yes
-```
-
-Stable und RC benötigen veröffentlichte GitHub-Releases mit Python-Wheel und SHA-256-Prüfsumme. Develop wird anonym über öffentliche GitHub-Releases bezogen, benötigt einen erfolgreichen CI-Build des aktuellen Branch-Commits und unterstützt Rollback. Details: [Updates](Updates).
+Der Befehl erkennt die Installationsart, fragt bei stable/rc anonym die Tags auf GitHub ab und nennt den passenden `uv tool install --force --reinstall git+https://github.com/...@<Ref>`-Befehl. Er installiert nichts selbst. Details: [Updates](Updates).
 
 ## Beenden und Fehlercodes
 
@@ -149,7 +138,7 @@ Stable und RC benötigen veröffentlichte GitHub-Releases mit Python-Wheel und S
 | `2` | Konfigurations-, Dateipfad- oder Validierungsfehler |
 | `3` | Datenbankzugang oder Netzwerkverbindung fehlgeschlagen |
 | `4` | Unerwarteter Verarbeitungsfehler (z. B. SQL-/LaTeX-Prozess) |
-| `5` | Updatefehler (Git/Netzwerk/Prüfsumme/Installation) |
+| `5` | `mao update`: Netzwerk/Version nicht ermittelbar |
 
 **Sicherheit:** `db.config` nie in Git einchecken. Die Befehle `run` und `plan` lesen echte Daten aus der konfigurierten Datenbank. Bei Fehlern niemals vorhandene Listen ohne Prüfung als aktuell ansehen.
 
@@ -157,9 +146,9 @@ Stable und RC benötigen veröffentlichte GitHub-Releases mit Python-Wheel und S
 
 `gui` ist nicht implementiert. `init-jahrgang` existiert bislang ausschließlich als schreibgeschützte Vorprüfung.
 
-## Updateverwaltung (ab v0.5)
+## Updateverwaltung
 
-`mao update check|download|install|status|rollback` – Beispiele und Erklärung des versionierten Starters: [Updates](Updates.md).
+Installation und Updates laufen über uv: [Updates](Updates.md).
 
 ### Gravity-Forms-Import
 
