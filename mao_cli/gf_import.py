@@ -437,10 +437,20 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
                     "_source": "mandatory",
                 }
                 mandatory_count += 1
+    def class_key(name: Any) -> tuple[int, int, str]:
+        """Natürliche Klassenreihenfolge: 5-1, 5-2, 6-1, ..., 10-2."""
+        text = str(name or "").strip()
+        m = re.match(r"^(\d{1,2})(?:\s*-\s*(\d+))?", text)
+        return (int(m.group(1)) if m else 99, int(m.group(2) or 0) if m else 0, text.casefold())
+
+    order = {matrikel: i for i, matrikel in enumerate(seen)}
+
     def sort_key(x: dict):
-        st = x["stufe"]
-        return (0 if st in (11, 12) else 1, st, x["kurs_id"] or -1,
-                x["klasse"].casefold(), str(x["nachname"] or "").casefold(),
+        st = x["stufe"] if x["stufe"] is not None else 99
+        if st in (11, 12):
+            # Oberstufe zuletzt, innerhalb der Stufe in Reihenfolge der GF-Einträge.
+            return (1, st, order[x["matrikelnummer"]])
+        return (0, *class_key(x["klasse"]), str(x["nachname"] or "").casefold(),
                 str(x["vorname"] or "").casefold(), x["matrikelnummer"])
     result = sorted(seen.values(), key=sort_key)
     for i, row in enumerate(result, 1):

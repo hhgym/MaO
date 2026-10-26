@@ -21,10 +21,10 @@ def test_entry_checkbox_and_mandatory(opts):
                {"1": "5-1", "3": "7", "7.1": "34", "status": "spam"}]
     mandatory = [{"klasse": "5-1", "lehrkraft_id": 7, "lerngruppe_schuljahr_id": 200}]
     items, stat = g.build_participants(entries, students, mandatory, {7}, {(100, 7): 83, (200, 7): 84}, opts)
-    assert [r["matrikelnummer"] for r in items] == [12, 34]
+    assert [r["matrikelnummer"] for r in items] == [34, 12]
     assert [r["tnr"] for r in items] == [1, 2]
-    assert items[0]["kurs_id"] == 100 and items[0]["lehrkraft_id"] == 7
-    assert items[1]["kurs_id"] is None and items[1]["stufe"] == 5
+    assert items[1]["kurs_id"] == 100 and items[1]["lehrkraft_id"] == 7
+    assert items[0]["kurs_id"] is None and items[0]["stufe"] == 5
     assert stat == {"gf_entries": 1, "inactive_entries": 1, "empty_reports": 0, "mandatory_added": 1,
                     "mandatory_classes_present": 1, "optional_classes_present": 0,
                     "class_mismatch": 0, "unknown_gender": 0}
@@ -445,3 +445,26 @@ def test_gf_entries_rejects_entries_delivered_twice(monkeypatch):
                                {"total_count": 4, "entries": [{"id": "2"}, {"id": "3"}]}])
     with pytest.raises(g.ImportErrorGF, match="GF-Eintrag 2 wurde doppelt geliefert"):
         list(g.gf_entries(CREDENTIALS, 16, 2, 5))
+
+
+def test_sorting_sek_i_first_oberstufe_last_in_gf_order():
+    opts = g.ImportSettings(16, 200, 60, (), (),
+                            {"klasse": "1", "kurs": "5", "lehrkraft": "3", "teilnehmende": "7"}, {})
+    students = [
+        {"matrikelnummer": 1, "vorname": "A", "nachname": "A", "geschlecht": "w", "klasse": "10-1"},
+        {"matrikelnummer": 2, "vorname": "B", "nachname": "B", "geschlecht": "m", "klasse": "6-1"},
+        {"matrikelnummer": 3, "vorname": "C", "nachname": "C", "geschlecht": "w", "klasse": "5-2"},
+        {"matrikelnummer": 4, "vorname": "D", "nachname": "D", "geschlecht": "m", "klasse": "12"},
+        {"matrikelnummer": 5, "vorname": "E", "nachname": "E", "geschlecht": "w", "klasse": "11"},
+        {"matrikelnummer": 6, "vorname": "F", "nachname": "F", "geschlecht": "m", "klasse": "11"},
+    ]
+    entries = [
+        {"1": "12", "3": "7", "5": "100", "7.1": "4", "status": "active"},
+        {"1": "10-1", "3": "7", "7.1": "1", "status": "active"},
+        {"1": "11", "3": "7", "5": "100", "7.1": "6", "status": "active"},
+        {"1": "6-1", "3": "7", "7.1": "2", "status": "active"},
+        {"1": "11", "3": "7", "5": "100", "7.1": "5", "status": "active"},
+        {"1": "5-2", "3": "7", "7.1": "3", "status": "active"},
+    ]
+    items, _ = g.build_participants(entries, students, [], {7}, {(100, 7): 83}, opts)
+    assert [r["matrikelnummer"] for r in items] == [3, 2, 1, 6, 5, 4]

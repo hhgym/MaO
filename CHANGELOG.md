@@ -9,6 +9,10 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### GF-Import: Reihenfolge
+
+- `import-gf` sortiert Teilnehmende jetzt Sek I zuerst (5-1, 5-2, 6-1 … 10-x, danach Nachname/Vorname), die Oberstufe (11, 12) zuletzt in der Reihenfolge der Gravity-Forms-Einträge; `tnr` folgt dieser Reihenfolge.
+
 ### Cloud-Synchronisation (Schritt 6, Teil 5)
 - MaO warnt bei jedem Aufruf vor Konfliktkopien (Nextcloud/Dropbox) in `config/` und `tex/`. Wiki: Nextcloud-Hinweise (Ausschlussliste für LaTeX-Hilfsdateien). Bewusst keine Sperrdatei.
 
