@@ -20,7 +20,7 @@ def db():
         CREATE TABLE t_prizes (id INTEGER PRIMARY KEY, bezeichnung TEXT);
         CREATE TABLE t_lg (id INTEGER PRIMARY KEY, lerngruppe_kennung TEXT);
         CREATE TABLE t_lgs (id INTEGER PRIMARY KEY, lerngruppe_id INTEGER);
-        CREATE TABLE t_info (lerngruppe TEXT, kl TEXT, stellvkl TEXT, mathel TEXT);
+        CREATE TABLE t_info (lerngruppe TEXT, typ TEXT, kl TEXT, stellvkl TEXT, mathel TEXT);
         CREATE TABLE t_orga (id INTEGER PRIMARY KEY, tnr INT, nachname TEXT, vorname TEXT, geschlecht TEXT,
             klasse TEXT, matrikelnummer INT, stufe INT, lehrkraft_id INT, kurs_id INT, raum_id INT,
             anwesenheit INT, bemerkung TEXT, aufgabe_1 INT, aufgabe_2 INT, aufgabe_3 INT, aufgabe_4 INT,
@@ -40,7 +40,7 @@ def db():
         INSERT INTO t_prizes VALUES (1, '1. Preis');
         INSERT INTO t_lg VALUES (7, 'M-GK1');
         INSERT INTO t_lgs VALUES (5, 7);
-        INSERT INTO t_info VALUES ('11-1', 'KL', 'SKL', 'ML');
+        INSERT INTO t_info VALUES ('11-1', 'klasse', 'KL', 'SKL', 'ML'), ('11-1', 'kurs', NULL, NULL, 'XX');
         INSERT INTO t_orga VALUES (1, 1, 'Muster', 'Max', 'm', '11-1', 1001, 11, 1, 5, 1, 1, NULL, 1, 2, 3, 4, 10, 1, 25.0, 0);
         INSERT INTO t_orga VALUES (2, 2, 'Beispiel', 'Eva', 'w', '7-1', 1002, 7, NULL, NULL, NULL, 0, NULL, NULL, NULL, NULL, NULL, 0, NULL, NULL, NULL);
     """)
