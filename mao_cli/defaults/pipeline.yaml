@@ -1001,6 +1001,12 @@ exports:
 latex:
   runs: 2
   engine: "lualatex"
+  # tex: "@tex/<Ordner>/<Datei>.tex" liegt im Vorlagenordner <MaO>/tex (ein Ordner je Dokument,
+  #   gemeinsame Präambel/Bilder in <MaO>/tex/base); ohne "@tex/" relativ zum workdir des Jobs.
+  #   Die Vorlage findet ihre Dateien über den TeX-Suchpfad: \input{template.tex},
+  #   \includegraphics{logo.png}. Exportdaten: \MaOdb<Unterordner/Datei.csv>; außerdem
+  #   \MaO (Nummer), \MaOjahrgang, \MaOroot (Jahrgangsordner), \MaOtex (Vorlagenordner).
+  #   db_dir (Standard Listen/db) legt fest, worauf \MaOdb zeigt.
   # pdf_name: LaTeX schreibt das PDF direkt unter diesem Namen (Platzhalter {mao}) in den
   #   workdir des Jobs; es entsteht keine zweite Kopie. Alternativ: copy_pdf {from, to}.
   # cleanup_aux: true löscht .aux/.log usw. nach erfolgreichem Lauf (Standard: aus;
@@ -1010,7 +1016,7 @@ latex:
       id: korrekturlisten
       enabled: false
       workdir: "Listen/Korrekturlisten"
-      tex: "Korrekturlisten.tex"
+      tex: "@tex/Korrekturlisten/Korrekturlisten.tex"
       jobname: "Korrekturlisten"
       define_mao: true
       pdf_name: "MaO_{mao}_Korrekturlisten"
@@ -1019,7 +1025,7 @@ latex:
       id: raumuebersicht
       enabled: false
       workdir: "Listen/Raumuebersicht"
-      tex: "Raumuebersicht.tex"
+      tex: "@tex/Raumuebersicht/Raumuebersicht.tex"
       jobname: "Raumuebersicht"
       define_mao: true
       pdf_name: "MaO_{mao}_Raumuebersicht"
@@ -1028,7 +1034,7 @@ latex:
       id: anwesenheitslisten
       enabled: false
       workdir: "Listen/Raum-Anwesenheitslisten"
-      tex: "Raum-Anwesenheitslisten.tex"
+      tex: "@tex/Raum-Anwesenheitslisten/Raum-Anwesenheitslisten.tex"
       jobname: "Raum-Anwesenheitslisten"
       define_mao: true
       pdf_name: "MaO_{mao}_Anwesenheitslisten"
@@ -1037,7 +1043,7 @@ latex:
       id: teilnehmendenlisten
       enabled: false
       workdir: "Listen/Teilnehmendenlisten"
-      tex: "Teilnehmendenlisten.tex"
+      tex: "@tex/Teilnehmendenlisten/Teilnehmendenlisten.tex"
       jobname: "Teilnehmendenlisten"
       define_mao: true
       pdf_name: "MaO_{mao}_Teilnehmendenlisten"
@@ -1046,7 +1052,7 @@ latex:
       id: einsatz_oberstufe
       enabled: false
       workdir: "Listen/Einsatz-Oberstufe"
-      tex: "Einsatz-Oberstufe.tex"
+      tex: "@tex/Einsatz-Oberstufe/Einsatz-Oberstufe.tex"
       jobname: "Einsatz-Oberstufe"
       define_mao: true
       pdf_name: "MaO_{mao}_Einsatz-Oberstufe"
@@ -1055,7 +1061,7 @@ latex:
       id: rueckgabelisten
       enabled: true
       workdir: "Listen/Rueckgabelisten"
-      tex: "Rueckgabelisten.tex"
+      tex: "@tex/Rueckgabelisten/Rueckgabelisten.tex"
       jobname: "Rueckgabelisten"
       define_mao: true
       pdf_name: "MaO_{mao}_Rueckgabelisten"
@@ -1064,7 +1070,7 @@ latex:
       id: urkunden
       enabled: true
       workdir: "Listen/Urkunden- und Unterschriftenlisten"
-      tex: "Urkunden.tex"
+      tex: "@tex/Urkunden/Urkunden.tex"
       jobname: "Urkunden"
       define_mao: true
       pdf_name: "MaO_{mao}_Urkunden"
@@ -1073,7 +1079,7 @@ latex:
       id: unterschriften
       enabled: true
       workdir: "Listen/Urkunden- und Unterschriftenlisten"
-      tex: "Unterschriften.tex"
+      tex: "@tex/Unterschriften/Unterschriften.tex"
       jobname: "Unterschriften"
       define_mao: true
       pdf_name: "MaO_{mao}_Unterschriftenlisten"
@@ -1082,7 +1088,7 @@ latex:
       id: kopierliste
       enabled: false
       workdir: "Listen/Kopierliste"
-      tex: "Kopierliste.tex"
+      tex: "@tex/Kopierliste/Kopierliste.tex"
       jobname: "Kopierliste"
       define_mao: true
       pdf_name: "MaO_{mao}_Kopierliste"
@@ -1091,7 +1097,7 @@ latex:
       id: abwesenheitsliste
       enabled: true
       workdir: "Listen/Abwesenheitsliste"
-      tex: "Abwesenheitsliste.tex"
+      tex: "@tex/Abwesenheitsliste/Abwesenheitsliste.tex"
       jobname: "Abwesenheitsliste"
       define_mao: true
       pdf_name: "MaO_{mao}_Abwesenheitsliste"
@@ -1101,7 +1107,7 @@ latex:
       id: ergebnis_nach_lehrkraft
       enabled: true
       workdir: "Listen/Ergebnislisten"
-      tex: "Punkte-und-Ergebnisslisten.tex"
+      tex: "@tex/Punkte-und-Ergebnisslisten/Punkte-und-Ergebnisslisten.tex"
       jobname: "Punkte-und-Ergebnisslisten"
       define_mao: true
       extra_defs:
@@ -1112,7 +1118,7 @@ latex:
       id: ergebnis_nach_klassenstufe_vorname
       enabled: true
       workdir: "Listen/Ergebnislisten"
-      tex: "Punkte-und-Ergebnisslisten.tex"
+      tex: "@tex/Punkte-und-Ergebnisslisten/Punkte-und-Ergebnisslisten.tex"
       jobname: "Punkte-und-Ergebnisslisten"
       define_mao: true
       extra_defs:
@@ -1123,7 +1129,7 @@ latex:
       id: ergebnis_nach_klassenstufe_rangliste
       enabled: true
       workdir: "Listen/Ergebnislisten"
-      tex: "Punkte-und-Ergebnisslisten.tex"
+      tex: "@tex/Punkte-und-Ergebnisslisten/Punkte-und-Ergebnisslisten.tex"
       jobname: "Punkte-und-Ergebnisslisten"
       define_mao: true
       extra_defs:
@@ -1134,7 +1140,7 @@ latex:
       id: ergebnis_nach_klasse_vorname
       enabled: true
       workdir: "Listen/Ergebnislisten"
-      tex: "Punkte-und-Ergebnisslisten.tex"
+      tex: "@tex/Punkte-und-Ergebnisslisten/Punkte-und-Ergebnisslisten.tex"
       jobname: "Punkte-und-Ergebnisslisten"
       define_mao: true
       extra_defs:
@@ -1145,7 +1151,7 @@ latex:
       id: ergebnis_nach_klasse_rangliste
       enabled: true
       workdir: "Listen/Ergebnislisten"
-      tex: "Punkte-und-Ergebnisslisten.tex"
+      tex: "@tex/Punkte-und-Ergebnisslisten/Punkte-und-Ergebnisslisten.tex"
       jobname: "Punkte-und-Ergebnisslisten"
       define_mao: true
       extra_defs:
@@ -1157,7 +1163,7 @@ latex:
       id: preistraeger
       enabled: true
       workdir: "Listen/Ergebnislisten"
-      tex: "Punkte-und-Ergebnisslisten.tex"
+      tex: "@tex/Punkte-und-Ergebnisslisten/Punkte-und-Ergebnisslisten.tex"
       jobname: "Punkte-und-Ergebnisslisten"
       define_mao: true
       extra_defs:
@@ -1169,7 +1175,7 @@ latex:
       id: delegierte
       enabled: true
       workdir: "Listen/Ergebnislisten"
-      tex: "Punkte-und-Ergebnisslisten.tex"
+      tex: "@tex/Punkte-und-Ergebnisslisten/Punkte-und-Ergebnisslisten.tex"
       jobname: "Punkte-und-Ergebnisslisten"
       define_mao: true
       extra_defs:
@@ -1181,7 +1187,7 @@ latex:
       id: klassenleitungslisten
       enabled: true
       workdir: "Listen/Klassenleitungslisten"
-      tex: "Klassenleitungslisten.tex"
+      tex: "@tex/Klassenleitungslisten/Klassenleitungslisten.tex"
       jobname: "Klassenleitungslisten"
       define_mao: true
       pdf_name: "Klassenleitungslisten-MaO{mao}"
@@ -1191,7 +1197,7 @@ latex:
       id: rueckgabelisten_sek_i
       enabled: false
       workdir: "Listen/Rueckgabelisten"
-      tex: "Rueckgabelisten.tex"
+      tex: "@tex/Rueckgabelisten/Rueckgabelisten.tex"
       jobname: "Rueckgabelisten"
       define_mao: true
       pdf_name: "Rueckgabelisten-MaO{mao}_nach_Klassen_und_Kurse"

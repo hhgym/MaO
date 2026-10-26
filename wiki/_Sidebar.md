@@ -5,6 +5,7 @@
 - [Konfiguration](Konfiguration)
 - [Profile](Profile)
 - [Arbeitsverzeichnisse](Arbeitsverzeichnisse)
+- [LaTeX-Vorlagen](LaTeX-Vorlagen)
 - [Fehlerbehebung](Fehlerbehebung)
 - [Entwicklung](Entwicklung)
 - [Git Flow](Git-Flow)

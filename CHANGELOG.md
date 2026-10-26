@@ -9,6 +9,9 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### LaTeX-Vorlagen im MaO-Ordner (Schritt 6, Teil 3)
+- Job-Feld `tex: "@tex/<Ordner>/<Datei>.tex"` liest die Vorlage aus `<MaO>/tex`, während LaTeX im Job-Ordner läuft und dort das PDF erzeugt. `TEXINPUTS` enthält den Vorlagenordner, `tex/base` und `tex/` (Vorlage braucht nur `\input{template.tex}` und Dateinamen für Bilder). Neue Makros `\MaOdb`, `\MaOroot`, `\MaOtex`, `\MaOjahrgang` (mit `\detokenize` gesetzt, Leerzeichen im Pfad sind erlaubt). Neue Seite im Wiki „LaTeX-Vorlagen“; mitgelieferte `pipeline.yaml` nutzt `@tex/`. Ohne `@tex/` bleibt alles wie bisher.
+
 ### Zentraler MaO-Ordner (Schritt 6, Teil 1)
 - `mao config init <MaO-Ordner>` legt `config/` und `tex/` an; `mao config use <MaO-Ordner>` merkt den Ordner pro Rechner. Der Konfigurationsordner wird außerdem vom aktuellen Ordner aufwärts gefunden; `--config-dir`/`MAO_CONFIG` dürfen den MaO-Ordner selbst nennen. `mao config show` nennt die Quelle.
 - Jahrgangsordner innerhalb des MaO-Ordners stehen in `settings.yaml` relativ und gelten damit auf jedem Rechner; in einem Jahrgangsordner gilt dieser Jahrgang automatisch. `mao-hier.*`-Wrapper entstehen nur noch mit `workspace add --wrapper`.
