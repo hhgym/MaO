@@ -21,7 +21,7 @@ from .db import DB, active_jahrgang_db, current_MaO_number_db, current_MaO_numbe
 from .exports import ExportPlan, load_datasets, render_plan, run_exports
 from .latex import run_latex_jobs
 from .updater import update_action, UpdateError
-from .workspaces import (resolve_config_dir, write_pointer, CONFIG_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
+from .workspaces import (resolve_config_dir, write_pointer, CONFIG_FOLDER, TEX_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
 from .gf_import import import_participants, ImportErrorGF, write_import_report
@@ -414,6 +414,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     started = time.monotonic()
     try:
         profile_name = getattr(args, "profile", None) or settings["defaults"]["profile"]
+        tex_dir = config_dir.parent / TEX_FOLDER if config_dir.name == CONFIG_FOLDER else None
         if args.command == "import-gf":
             if selection.year is None or selection.year != settings["current_year"]:
                 raise ConfigurationError("GF-Import nur für den aktuell registrierten Jahrgang zulässig")
@@ -499,7 +500,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.command == "latex":
             mao = args.mao or selection.mao_number or current_MaO_number_fallback()
             LOGGER.info("LaTeX-Jahrgang: %d (keine Datenbankabfrage)", mao)
-            latex_stats = run_latex_jobs(cfg, workspace, mao, cleanup=args.cleanup_latex)
+            latex_stats = run_latex_jobs(cfg, workspace, mao, cleanup=args.cleanup_latex, tex_dir=tex_dir, year=selection.year)
             LOGGER.info("ABSCHLUSS | PDF-Jobs: %d | übersprungen: %d | Warnungen: %d | Dauer: %.2f s",
                         latex_stats["compiled"], latex_stats["skipped"], logger.warnings,
                         time.monotonic() - started)
@@ -557,7 +558,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 0
 
         changes = planner.commit()
-        latex_stats = run_latex_jobs(cfg, workspace, mao, no_latex=args.no_latex, cleanup=args.cleanup_latex)
+        latex_stats = run_latex_jobs(cfg, workspace, mao, no_latex=args.no_latex, cleanup=args.cleanup_latex, tex_dir=tex_dir, year=selection.year)
         LOGGER.info("ABSCHLUSS | Datasets: %d | Exporte: %d | Zeilen: %d | Neu: %d | Aktualisiert: %d | "
                     "Unverändert: %d | Entfernt: %d | PDF-Jobs: %d | Warnungen: %d | Dauer: %.2f s",
                     len(data), len(planner.outputs), planner.rows,

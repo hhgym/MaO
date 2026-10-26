@@ -1,6 +1,7 @@
 """MaO-CLI: latex."""
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -55,9 +56,50 @@ def remove_aux_files(workdir: Path, jobname: str) -> list[str]:
     return removed
 
 
+TEX_PREFIX = "@tex/"
+_TEX_UNSAFE = re.compile(r"[%#{}\\\r\n\x00]")
+
+
+def tex_path_value(path: Path, *, directory: bool = False) -> str:
+    """Pfad für TeX: Schrägstriche, optional abschließend ``/``; Zeichen, die TeX nicht übersteht, werden abgelehnt."""
+    text = path.resolve().as_posix()
+    if directory and not text.endswith("/"):
+        text += "/"
+    if _TEX_UNSAFE.search(text):
+        raise ConfigurationError(f"Pfad enthält Zeichen, die in LaTeX-Aufrufen nicht unterstützt werden (% # {{ }} \\): {path}")
+    return text
+
+
+def resolve_template(tex: str, workdir: Path, tex_dir: Path | None, job_name: str) -> Path:
+    """``@tex/<Ordner>/<Datei>.tex`` liegt im Vorlagenordner, sonst relativ zum Job-Ordner."""
+    if not tex.startswith(TEX_PREFIX):
+        return safe_output_path(workdir, tex)
+    if tex_dir is None:
+        raise ConfigurationError(f"LaTeX-Job '{job_name}': '{tex}' benötigt den zentralen MaO-Ordner mit tex/ "
+                                 "(mao config init <MaO-ORDNER>)")
+    return safe_output_path(tex_dir, tex[len(TEX_PREFIX):])
+
+
+def texinputs_for(tex_path: Path, tex_dir: Path | None, existing: str | None) -> str:
+    """Suchpfad für ``\\input``/``\\includegraphics``: Vorlagenordner, ``base``, ``tex``; danach die Standardpfade."""
+    parts: list[str] = []
+    if tex_dir is not None:
+        tex_dir = tex_dir.resolve()
+        for folder in (tex_path.resolve().parent, tex_dir / "base", tex_dir):
+            if folder.is_dir():
+                text = folder.as_posix()
+                if text not in parts:
+                    parts.append(text)
+    if existing:
+        parts.append(existing.rstrip(os.pathsep))
+    # Abschließendes Trennzeichen = danach die Standardpfade der TeX-Installation.
+    return os.pathsep.join(parts) + os.pathsep if parts else (existing or "")
+
+
 def run_latex_jobs(cfg: Dict[str, Any], base_dir: Path, mao_number: int, *,
                    only_latex: bool = False, no_latex: bool = False,
-                   dry_run: bool = False, cleanup: bool = False) -> dict[str, int]:
+                   dry_run: bool = False, cleanup: bool = False,
+                   tex_dir: Path | None = None, year: str | None = None) -> dict[str, int]:
     stats = {"compiled": 0, "skipped": 0}
     if no_latex:
         LOGGER.info("[SKIP] LaTeX deaktiviert")
@@ -80,7 +122,7 @@ def run_latex_jobs(cfg: Dict[str, Any], base_dir: Path, mao_number: int, *,
         tex = str(job.get("tex", "")).strip()
         if not tex:
             raise ConfigurationError(f"LaTeX-Job '{jname}' ohne tex")
-        tex_path = safe_output_path(workdir, tex)
+        tex_path = resolve_template(tex, workdir, tex_dir, jname)
         if not tex_path.is_file():
             LOGGER.warning("LaTeX-Job '%s' übersprungen: Quelldatei fehlt: %s", jname, tex_path)
             stats["skipped"] += 1
@@ -100,9 +142,21 @@ def run_latex_jobs(cfg: Dict[str, Any], base_dir: Path, mao_number: int, *,
         defs: List[str] = []
         if define_mao:
             defs.append(f"\\def\\MaO{{{mao_number}}}")
+            # Pfad-Makros für Vorlagen: \\MaOdb<Datei> (Exporte), \\MaOroot (Jahrgangsordner), \\MaOtex (Vorlagen).
+            db_dir = safe_output_path(base_dir, str(latex.get("db_dir", "Listen/db")))
+            for macro, value in (("MaOroot", tex_path_value(base_dir, directory=True)),
+                                 ("MaOdb", tex_path_value(db_dir, directory=True))):
+                defs.append(f"\\edef\\{macro}{{\\detokenize{{{value}}}}}")
+            if tex_dir is not None:
+                defs.append(f"\\edef\\MaOtex{{\\detokenize{{{tex_path_value(tex_dir, directory=True)}}}}}")
+            if year:
+                defs.append(f"\\edef\\MaOjahrgang{{\\detokenize{{{year}}}}}")
         defs.extend([str(x) for x in extra_defs if str(x).strip()])
         wrapper = workdir / f".__mao_cli_wrap__{jobname}.tex"
-        wrapper_content = "\n".join(defs) + "\n" + f"\\input{{{tex}}}\n"
+        input_name = tex_path_value(tex_path) if tex.startswith(TEX_PREFIX) else tex
+        wrapper_content = "\n".join(defs) + "\n" + f"\\input{{{input_name}}}\n"
+        run_env = {**os.environ, "TEXINPUTS": texinputs_for(tex_path, tex_dir, os.environ.get("TEXINPUTS"))} \
+            if tex_dir is not None else None
         cmd_base = [engine, "-interaction=nonstopmode", "-halt-on-error", f"-jobname={jobname}", wrapper.name]
         src_pdf = workdir / f"{jobname}.pdf"
         cp = job.get("copy_pdf") if final_name is None else None
@@ -117,7 +171,7 @@ def run_latex_jobs(cfg: Dict[str, Any], base_dir: Path, mao_number: int, *,
                     log_info(f"Lauf {i + 1}/{runs}", indent=1)
                     try:
                         result = subprocess.run(cmd_base, cwd=str(workdir), capture_output=True,
-                                                text=True, errors="replace", check=False)
+                                                text=True, errors="replace", check=False, env=run_env)
                     except FileNotFoundError as exc:
                         raise RuntimeError(f"LaTeX-Engine '{engine}' wurde nicht gefunden") from exc
                     if result.returncode:
