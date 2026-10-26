@@ -74,8 +74,8 @@ def test_wrapper_defines_path_macros_and_sets_texinputs(tmp_path, monkeypatch):
     assert "\\edef\\MaOtex{\\detokenize{" + (mao / "tex").resolve().as_posix() + "/}}" in text
     assert "\\edef\\MaOjahrgang{\\detokenize{2026-27}}" in text
     assert "\\input{" + (mao / "tex" / "Doc" / "Doc.tex").resolve().as_posix() + "}" in text
-    assert seen["cwd"] == (year / "Listen" / "Doc")
-    assert str(mao / "tex" / "base") in seen["env"]["TEXINPUTS"]
+    assert seen["cwd"].resolve() == (year / "Listen" / "Doc").resolve()
+    assert (mao / "tex" / "base").resolve().as_posix() in seen["env"]["TEXINPUTS"]
     assert (year / "Listen" / "Doc" / "MaO_66_Doc.pdf").is_file()
 
 
