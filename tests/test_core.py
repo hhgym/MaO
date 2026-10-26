@@ -231,3 +231,77 @@ def test_latex_engine_failure_does_not_copy_old_pdf(tmp_path, monkeypatch):
     with pytest.raises(RuntimeError, match='LaTeX fehlgeschlagen'):
         run_latex_jobs(config, tmp_path, 66)
     assert not (directory / 'export.pdf').exists()
+
+
+def _engine_writing(names, calls=None):
+    def simulate(args, cwd, **kw):
+        if calls is not None:
+            calls.append(args)
+        job = [a for a in args if a.startswith("-jobname=")][0].split("=", 1)[1]
+        (Path(cwd) / f"{job}.pdf").write_bytes(b"PDF")
+        for suffix in names:
+            (Path(cwd) / f"{job}{suffix}").write_text("x")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+    return simulate
+
+
+def test_latex_pdf_name_creates_final_pdf_directly(tmp_path, monkeypatch):
+    d = tmp_path / "Listen" / "Doc"
+    d.mkdir(parents=True)
+    (d / "document.tex").write_text("T", encoding="utf-8")
+    config = {"latex": {"runs": 1, "jobs": [
+        {"name": "t", "tex": "document.tex", "workdir": "Listen/Doc", "pdf_name": "MaO_{mao}_Liste"}]}}
+    calls = []
+    monkeypatch.setattr(latex_module.subprocess, "run", _engine_writing([".aux", ".log"], calls))
+    run_latex_jobs(config, tmp_path, 66)
+    assert "-jobname=MaO_66_Liste" in calls[0]
+    assert (d / "MaO_66_Liste.pdf").read_bytes() == b"PDF"
+    assert not (d / "document.pdf").exists()
+    assert (d / "MaO_66_Liste.aux").exists()  # ohne Wunsch kein Aufräumen
+    assert not (d / ".__mao_cli_wrap__MaO_66_Liste.tex").exists()
+
+
+def test_latex_cleanup_only_on_request_and_keeps_pdf(tmp_path, monkeypatch):
+    d = tmp_path / "t"
+    d.mkdir()
+    (d / "document.tex").write_text("T", encoding="utf-8")
+    (d / "other.aux").write_text("keep")
+    config = {"latex": {"runs": 1, "jobs": [
+        {"name": "t", "tex": "document.tex", "workdir": "t", "pdf_name": "Out"}]}}
+    monkeypatch.setattr(latex_module.subprocess, "run", _engine_writing([".aux", ".log", ".out"]))
+    run_latex_jobs(config, tmp_path, 1, cleanup=True)
+    assert (d / "Out.pdf").exists()
+    assert not (d / "Out.aux").exists() and not (d / "Out.log").exists() and not (d / "Out.out").exists()
+    assert (d / "other.aux").exists()
+
+
+def test_latex_cleanup_not_after_failure(tmp_path, monkeypatch):
+    d = tmp_path / "t"
+    d.mkdir()
+    (d / "document.tex").write_text("T", encoding="utf-8")
+    (d / "Out.log").write_text("log")
+    config = {"latex": {"runs": 1, "jobs": [
+        {"name": "t", "tex": "document.tex", "workdir": "t", "pdf_name": "Out"}]}}
+    monkeypatch.setattr(latex_module.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=1, stdout="", stderr=""))
+    with pytest.raises(RuntimeError):
+        run_latex_jobs(config, tmp_path, 1, cleanup=True)
+    assert (d / "Out.log").exists()
+
+
+def test_latex_pdf_name_umlaut_uses_ascii_jobname(tmp_path, monkeypatch):
+    d = tmp_path / "t"
+    d.mkdir()
+    (d / "document.tex").write_text("T", encoding="utf-8")
+    config = {"latex": {"runs": 1, "jobs": [
+        {"name": "t", "tex": "document.tex", "workdir": "t", "pdf_name": "Übersicht Gäste"}]}}
+    monkeypatch.setattr(latex_module.subprocess, "run", _engine_writing([]))
+    run_latex_jobs(config, tmp_path, 1)
+    assert (d / "Übersicht Gäste.pdf").read_bytes() == b"PDF"
+
+
+def test_pdf_name_validation(tmp_path):
+    job = {"id": "a", "name": "a", "tex": "a.tex"}
+    for bad in ({"pdf_name": "a/b"}, {"pdf_name": ".."}, {"pdf_name": "x", "copy_pdf": {"to": "y.pdf"}}):
+        cfg = {"datasets": [], "exports": [], "latex": {"jobs": [{**job, **bad}]}}
+        with pytest.raises(ConfigurationError, match="pdf_name"):
+            validate_config(cfg, tmp_path)

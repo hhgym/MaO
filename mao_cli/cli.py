@@ -87,6 +87,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     run = commands.add_parser("run", help="Datenexporte und optional LaTeX ausführen")
     common(run, profile=True)
     run.add_argument("--no-latex", action="store_true", help="LaTeX-Jobs überspringen")
+    run.add_argument("--cleanup-latex", action="store_true",
+                     help="LaTeX-Hilfsdateien (.aux, .log, ...) nach erfolgreichem Lauf löschen")
     run.add_argument("--mao", type=int, help="MaO-Nummer für Dokumente (nicht Datenquelle!)")
 
     plan = commands.add_parser("plan", help="Exportplan ermitteln (kein CSV/PDF schreiben)")
@@ -96,6 +98,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     plan.add_argument("--mao", type=int, help="MaO-Nummer für Dokumente (nicht Datenquelle!)")
 
     latex = commands.add_parser("latex", help="Nur LaTeX mit vorhandenen Dateien ausführen")
+    latex.add_argument("--cleanup-latex", action="store_true",
+                       help="LaTeX-Hilfsdateien (.aux, .log, ...) nach erfolgreichem Lauf löschen")
     common(latex, profile=True)
     latex.add_argument("--mao", type=int, help="MaO-Nummer für Dokumente (nicht Datenquelle!)")
 
@@ -385,7 +389,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.command == "latex":
             mao = args.mao or selection.mao_number or current_MaO_number_fallback()
             LOGGER.info("LaTeX-Jahrgang: %d (keine Datenbankabfrage)", mao)
-            latex_stats = run_latex_jobs(cfg, workspace, mao)
+            latex_stats = run_latex_jobs(cfg, workspace, mao, cleanup=args.cleanup_latex)
             LOGGER.info("ABSCHLUSS | PDF-Jobs: %d | übersprungen: %d | Warnungen: %d | Dauer: %.2f s",
                         latex_stats["compiled"], latex_stats["skipped"], logger.warnings,
                         time.monotonic() - started)
@@ -443,7 +447,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return 0
 
         changes = planner.commit()
-        latex_stats = run_latex_jobs(cfg, workspace, mao, no_latex=args.no_latex)
+        latex_stats = run_latex_jobs(cfg, workspace, mao, no_latex=args.no_latex, cleanup=args.cleanup_latex)
         LOGGER.info("ABSCHLUSS | Datasets: %d | Exporte: %d | Zeilen: %d | Neu: %d | Aktualisiert: %d | "
                     "Unverändert: %d | Entfernt: %d | PDF-Jobs: %d | Warnungen: %d | Dauer: %.2f s",
                     len(data), len(planner.outputs), planner.rows,
