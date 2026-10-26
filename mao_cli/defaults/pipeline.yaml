@@ -1001,6 +1001,10 @@ exports:
 latex:
   runs: 2
   engine: "lualatex"
+  # pdf_name: LaTeX schreibt das PDF direkt unter diesem Namen (Platzhalter {mao}) in den
+  #   workdir des Jobs; es entsteht keine zweite Kopie. Alternativ: copy_pdf {from, to}.
+  # cleanup_aux: true löscht .aux/.log usw. nach erfolgreichem Lauf (Standard: aus;
+  #   einmalig per `mao run --cleanup-latex` / `mao latex --cleanup-latex`).
   jobs:
     - name: korrekturlisten
       id: korrekturlisten
@@ -1009,9 +1013,7 @@ latex:
       tex: "Korrekturlisten.tex"
       jobname: "Korrekturlisten"
       define_mao: true
-      copy_pdf:
-        from: "Korrekturlisten.pdf"
-        to: "MaO_{mao}_Korrekturlisten.pdf"
+      pdf_name: "MaO_{mao}_Korrekturlisten"
 
     - name: raumuebersicht
       id: raumuebersicht
@@ -1020,9 +1022,7 @@ latex:
       tex: "Raumuebersicht.tex"
       jobname: "Raumuebersicht"
       define_mao: true
-      copy_pdf:
-        from: "Raumuebersicht.pdf"
-        to: "MaO_{mao}_Raumuebersicht.pdf"
+      pdf_name: "MaO_{mao}_Raumuebersicht"
 
     - name: anwesenheitslisten
       id: anwesenheitslisten
@@ -1031,9 +1031,7 @@ latex:
       tex: "Raum-Anwesenheitslisten.tex"
       jobname: "Raum-Anwesenheitslisten"
       define_mao: true
-      copy_pdf:
-        from: "Raum-Anwesenheitslisten.pdf"
-        to: "MaO_{mao}_Anwesenheitslisten.pdf"
+      pdf_name: "MaO_{mao}_Anwesenheitslisten"
 
     - name: teilnehmendenlisten
       id: teilnehmendenlisten
@@ -1042,9 +1040,7 @@ latex:
       tex: "Teilnehmendenlisten.tex"
       jobname: "Teilnehmendenlisten"
       define_mao: true
-      copy_pdf:
-        from: "Teilnehmendenlisten.pdf"
-        to: "MaO_{mao}_Teilnehmendenlisten.pdf"
+      pdf_name: "MaO_{mao}_Teilnehmendenlisten"
 
     - name: einsatz_oberstufe
       id: einsatz_oberstufe
@@ -1053,9 +1049,7 @@ latex:
       tex: "Einsatz-Oberstufe.tex"
       jobname: "Einsatz-Oberstufe"
       define_mao: true
-      copy_pdf:
-        from: "Einsatz-Oberstufe.pdf"
-        to: "MaO_{mao}_Einsatz-Oberstufe.pdf"
+      pdf_name: "MaO_{mao}_Einsatz-Oberstufe"
 
     - name: rueckgabelisten
       id: rueckgabelisten
@@ -1064,9 +1058,7 @@ latex:
       tex: "Rueckgabelisten.tex"
       jobname: "Rueckgabelisten"
       define_mao: true
-      copy_pdf:
-        from: "Rueckgabelisten.pdf"
-        to: "MaO_{mao}_Rueckgabelisten.pdf"
+      pdf_name: "MaO_{mao}_Rueckgabelisten"
 
     - name: urkunden
       id: urkunden
@@ -1075,9 +1067,7 @@ latex:
       tex: "Urkunden.tex"
       jobname: "Urkunden"
       define_mao: true
-      copy_pdf:
-        from: "Urkunden.pdf"
-        to: "MaO_{mao}_Urkunden.pdf"
+      pdf_name: "MaO_{mao}_Urkunden"
 
     - name: unterschriften
       id: unterschriften
@@ -1086,9 +1076,7 @@ latex:
       tex: "Unterschriften.tex"
       jobname: "Unterschriften"
       define_mao: true
-      copy_pdf:
-        from: "Unterschriften.pdf"
-        to: "MaO_{mao}_Unterschriftenlisten.pdf"
+      pdf_name: "MaO_{mao}_Unterschriftenlisten"
 
     - name: kopierliste
       id: kopierliste
@@ -1097,9 +1085,7 @@ latex:
       tex: "Kopierliste.tex"
       jobname: "Kopierliste"
       define_mao: true
-      copy_pdf:
-        from: "Kopierliste.pdf"
-        to: "MaO_{mao}_Kopierliste.pdf"
+      pdf_name: "MaO_{mao}_Kopierliste"
 
     - name: abwesenheitsliste
       id: abwesenheitsliste
@@ -1108,9 +1094,7 @@ latex:
       tex: "Abwesenheitsliste.tex"
       jobname: "Abwesenheitsliste"
       define_mao: true
-      copy_pdf:
-        from: "Abwesenheitsliste.pdf"
-        to: "MaO_{mao}_Abwesenheitsliste.pdf"
+      pdf_name: "MaO_{mao}_Abwesenheitsliste"
 
     # Ergebnislisten-Varianten
     - name: ergebnis_nach_lehrkraft
@@ -1122,9 +1106,7 @@ latex:
       define_mao: true
       extra_defs:
         - "\\def\\nachlehrer{1}"
-      copy_pdf:
-        from: "Punkte-und-Ergebnisslisten.pdf"
-        to: "Ergebnisse-MaO{mao}_nach_Lehrkraft.pdf"
+      pdf_name: "Ergebnisse-MaO{mao}_nach_Lehrkraft"
 
     - name: ergebnis_nach_klassenstufe_vorname
       id: ergebnis_nach_klassenstufe_vorname
@@ -1135,9 +1117,7 @@ latex:
       define_mao: true
       extra_defs:
         - "\\def\\nachklassenstufe{1}"
-      copy_pdf:
-        from: "Punkte-und-Ergebnisslisten.pdf"
-        to: "Ergebnisse-MaO{mao}_nach_Klassenstufe_alphabetisch_Vorname.pdf"
+      pdf_name: "Ergebnisse-MaO{mao}_nach_Klassenstufe_alphabetisch_Vorname"
 
     - name: ergebnis_nach_klassenstufe_rangliste
       id: ergebnis_nach_klassenstufe_rangliste
@@ -1148,9 +1128,7 @@ latex:
       define_mao: true
       extra_defs:
         - "\\def\\ranglisteklassenstufe{1}"
-      copy_pdf:
-        from: "Punkte-und-Ergebnisslisten.pdf"
-        to: "Ergebnisse-MaO{mao}_nach_Klassenstufe_Rangliste.pdf"
+      pdf_name: "Ergebnisse-MaO{mao}_nach_Klassenstufe_Rangliste"
 
     - name: ergebnis_nach_klasse_vorname
       id: ergebnis_nach_klasse_vorname
@@ -1161,9 +1139,7 @@ latex:
       define_mao: true
       extra_defs:
         - "\\def\\nachklassen{1}"
-      copy_pdf:
-        from: "Punkte-und-Ergebnisslisten.pdf"
-        to: "Ergebnisse-MaO{mao}_nach_Klassen_alphabetisch_Vorname.pdf"
+      pdf_name: "Ergebnisse-MaO{mao}_nach_Klassen_alphabetisch_Vorname"
 
     - name: ergebnis_nach_klasse_rangliste
       id: ergebnis_nach_klasse_rangliste
@@ -1174,9 +1150,7 @@ latex:
       define_mao: true
       extra_defs:
         - "\\def\\ranglisteklasse{1}"
-      copy_pdf:
-        from: "Punkte-und-Ergebnisslisten.pdf"
-        to: "Ergebnisse-MaO{mao}_nach_Klassen_Rangliste.pdf"
+      pdf_name: "Ergebnisse-MaO{mao}_nach_Klassen_Rangliste"
 
     # Preisträger
     - name: preistraeger
@@ -1188,9 +1162,7 @@ latex:
       define_mao: true
       extra_defs:
         - "\\def\\preistraeger{1}"
-      copy_pdf:
-        from: "Punkte-und-Ergebnisslisten.pdf"
-        to: "Preisträger-MaO{mao}.pdf"
+      pdf_name: "Preisträger-MaO{mao}"
     
     # Delegierte
     - name: delegierte
@@ -1202,9 +1174,7 @@ latex:
       define_mao: true
       extra_defs:
         - "\\def\\delegierte{1}"
-      copy_pdf:
-        from: "Punkte-und-Ergebnisslisten.pdf"
-        to: "Delegierte-MaO{mao}.pdf"
+      pdf_name: "Delegierte-MaO{mao}"
 
     # Delegierte
     - name: klassenleitungslisten
@@ -1214,9 +1184,7 @@ latex:
       tex: "Klassenleitungslisten.tex"
       jobname: "Klassenleitungslisten"
       define_mao: true
-      copy_pdf:
-        from: "Klassenleitungslisten.pdf"
-        to: "Klassenleitungslisten-MaO{mao}.pdf"
+      pdf_name: "Klassenleitungslisten-MaO{mao}"
 
     # Rückgabelisten
     - name: Rueckgabelisten
@@ -1226,6 +1194,4 @@ latex:
       tex: "Rueckgabelisten.tex"
       jobname: "Rueckgabelisten"
       define_mao: true
-      copy_pdf:
-        from: "Rueckgabelisten.pdf"
-        to: "Rueckgabelisten-MaO{mao}_nach_Klassen_und_Kurse.pdf"
+      pdf_name: "Rueckgabelisten-MaO{mao}_nach_Klassen_und_Kurse"

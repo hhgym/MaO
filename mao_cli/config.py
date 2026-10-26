@@ -161,6 +161,15 @@ def validate_config(cfg: Dict[str, Any], base_dir: Optional[Path] = None) -> Lis
                         job_ids.add(jid)
                     if job.get("enabled", True) and not job.get("tex"):
                         errors.append(f"latex.jobs[{j}] benötigt tex")
+                    if job.get("pdf_name") is not None:
+                        if job.get("copy_pdf") is not None:
+                            errors.append(f"latex.jobs[{j}]: pdf_name und copy_pdf schließen sich aus")
+                        else:
+                            try:
+                                from .latex import target_pdf_name
+                                target_pdf_name(job, "x", 0)
+                            except ConfigurationError as exc:
+                                errors.append(f"latex.jobs[{j}]: {exc}")
     if errors:
         raise ConfigurationError("Konfiguration ungültig:\n - " + "\n - ".join(errors))
     if enabled_ex == 0:
