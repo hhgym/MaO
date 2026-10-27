@@ -77,6 +77,6 @@ def test_klassenleitungslisten_returns_prize_name(db):
 
 def test_pipeline_reads_organisation_only_through_the_view():
     cfg = yaml.safe_load((DEFAULTS / "pipeline.yaml").read_text(encoding="utf-8"))
-    for name in ("orga", "orga_preis", "klassenleitungslisten"):
+    for name in ("orga", "orga_preis", "orga_delegierte", "klassenleitungslisten"):
         raw = next(item for item in cfg["datasets"] if item["name"] == name)["sql"]
         assert "{{table.orga_view}}" in raw and "{{table.orga_table}}" not in raw
