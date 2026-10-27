@@ -22,13 +22,13 @@ def layout(tmp_path: Path):
     (mao / "tex" / "base").mkdir(parents=True)
     (mao / "tex" / "Doc").mkdir()
     year = mao / "Jahrgang" / "66_2026-27"
-    (year / "Listen" / "db" / "T").mkdir(parents=True)
-    (year / "Listen" / "Doc").mkdir()
+    (year / "db" / "T").mkdir(parents=True)
+    (year / "Doc").mkdir()
     return mao, year
 
 
 def config(**job):
-    base = {"name": "doc", "id": "doc", "workdir": "Listen/Doc", "tex": "@tex/Doc/Doc.tex", "pdf_name": "MaO_{mao}_Doc"}
+    base = {"name": "doc", "id": "doc", "workdir": "Doc", "tex": "@tex/Doc/Doc.tex", "pdf_name": "MaO_{mao}_Doc"}
     return {"latex": {"runs": 1, "jobs": [{**base, **job}]}}
 
 
@@ -75,9 +75,9 @@ def test_wrapper_defines_path_macros_and_sets_texinputs(tmp_path, monkeypatch):
     assert "\\edef\\MaOtex{\\detokenize{" + (mao / "tex").resolve().as_posix() + "/}}" in text
     assert "\\edef\\MaOjahrgang{\\detokenize{2026-27}}" in text
     assert "\\input{" + (mao / "tex" / "Doc" / "Doc.tex").resolve().as_posix() + "}" in text
-    assert seen["cwd"].resolve() == (year / "Listen" / "Doc").resolve()
+    assert seen["cwd"].resolve() == (year / "Doc").resolve()
     assert (mao / "tex" / "base").resolve().as_posix() in seen["env"]["TEXINPUTS"]
-    assert (year / "Listen" / "Doc" / "MaO_66_Doc.pdf").is_file()
+    assert (year / "Doc" / "MaO_66_Doc.pdf").is_file()
 
 
 def test_missing_template_is_skipped(tmp_path, caplog):
@@ -96,13 +96,23 @@ def test_real_lualatex_template_data_and_pdf_in_different_folders(tmp_path):
         "\\input{template.tex}\n\\DTLloaddb{t}{\\MaOdb T/x.csv}\n\\begin{document}\n"
         "\\DTLforeach{t}{\\a=a,\\b=b}{\\a-\\b;}\n\\includegraphics[width=1cm]{logo.png}\n"
         "MaO \\MaO\\ Jahrgang \\MaOjahrgang\n\\end{document}\n", encoding="utf-8")
-    (year / "Listen" / "db" / "T" / "x.csv").write_text("a;b\n1;2\n3;4\n", encoding="utf-8")
+    (year / "db" / "T" / "x.csv").write_text("a;b\n1;2\n3;4\n", encoding="utf-8")
     stats = run_latex_jobs(config(), year, 66, tex_dir=mao / "tex", year="2026-27")
     assert stats["compiled"] == 1
-    pdf = year / "Listen" / "Doc" / "MaO_66_Doc.pdf"
+    pdf = year / "Doc" / "MaO_66_Doc.pdf"
     assert pdf.read_bytes().startswith(b"%PDF")
     if shutil.which("pdftotext"):  # Daten wurden trotz Leerzeichen im MaO-Ordnernamen geladen
         text = subprocess.run(["pdftotext", str(pdf), "-"], capture_output=True, text=True).stdout
         assert "1-2;" in text.replace(" ", "") and "3-4;" in text.replace(" ", "")
     assert not list((mao / "tex").glob("**/*.pdf"))  # PDF landet nie im Vorlagenordner
-    assert not list((year / "Listen" / "Doc").glob(".__mao_cli_wrap__*"))
+    assert not list((year / "Doc").glob(".__mao_cli_wrap__*"))
+
+
+def test_export_macros_use_maodb_relative_to_export_folder(tmp_path):
+    from mao_cli.exports import render_export_macros
+    db = tmp_path / "db"
+    text = render_export_macros(
+        tex_path=db / "Include" / "T.tex",
+        loads=[("A", db / "Teilnehmende" / "Klasse" / "a.csv")], db_dir=db)
+    assert "\\DTLloaddb{A}{\\MaOdb Teilnehmende/Klasse/a.csv}" in text
+    assert "../" not in text

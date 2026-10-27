@@ -88,6 +88,9 @@ def latex_list_value(value: Any, *, column: str = "") -> str:
     return "".join(_TEX_SPECIAL.get(ch, ch) for ch in text)
 
 
+DEFAULT_DB_DIR = "db"
+
+
 def relpath_from(from_dir: Path, to_path: Path) -> str:
     rel = os.path.relpath(to_path.resolve(), from_dir.resolve())
     return Path(rel).as_posix()
@@ -105,7 +108,7 @@ def write_export_macros(
     write_text(tex_path, text)
 
 
-def render_export_macros(*, tex_path: Path, loads: List[Tuple[str, Path]],
+def render_export_macros(*, tex_path: Path, loads: List[Tuple[str, Path]], db_dir: Optional[Path] = None,
                          list_macro: Optional[str] = None,
                          entries: Optional[List[str]] = None) -> str:
     """Render macro file without touching the filesystem (needed for dry-run)."""
@@ -136,21 +139,15 @@ def render_export_macros(*, tex_path: Path, loads: List[Tuple[str, Path]],
 
     lines: List[str] = []
     for db_name, csv_abs in dedup_loads:
-        # Pfadauflösung für \DTLloaddb:
-        # Makrodateien liegen unter Listen/db/..., werden aber aus TeX-Dateien unter Listen/<Dokument>/ eingebunden.
-        # Daher sollen CSV-Pfade als ../db/... geschrieben werden (relativ zu Listen/<Dokument>/).
-        tex_posix = tex_path.as_posix().replace("\\", "/")
-        if "/Listen/db/" in tex_posix or tex_posix.startswith("Listen/db/"):
-            listen_root: Optional[Path] = None
-            for p in tex_path.parents:
-                if p.name == "Listen":
-                    listen_root = p
-                    break
-            if listen_root is not None:
-                csv_rel = "../" + relpath_from(listen_root, csv_abs)
-            else:
-                csv_rel = relpath_from(tex_dir, csv_abs)
-        else:
+        # CSV-Pfade über \\MaOdb (Exportordner, relativ zum Job-Ordner): unabhängig von der Ordnertiefe
+        # der einbindenden Vorlage. Außerhalb des Exportordners bleibt der Pfad relativ zur Makrodatei.
+        csv_rel = None
+        if db_dir is not None:
+            try:
+                csv_rel = "\\MaOdb " + csv_abs.resolve().relative_to(db_dir.resolve()).as_posix()
+            except ValueError:
+                csv_rel = None
+        if csv_rel is None:
             csv_rel = relpath_from(tex_dir, csv_abs)
         lines.append(f"\\DTLloaddb{{{db_name}}}{{{csv_rel}}}")
 
@@ -345,6 +342,7 @@ def run_exports(datasets: Dict[str, pd.DataFrame], cfg: Dict[str, Any], base_dir
       - optional: write TeX macro files per export.macro or split.macro
         (supports entry_template with {db}, {key}, and dataset columns).
     """
+    db_root = base_dir / str((cfg.get("latex") or {}).get("db_dir", DEFAULT_DB_DIR))
     for ex in _as_list(cfg.get("exports")):
         name = str(ex.get("name", "")).strip() or "export"
         export_id = str(ex.get("id") or name)
@@ -542,6 +540,7 @@ def run_exports(datasets: Dict[str, pd.DataFrame], cfg: Dict[str, Any], base_dir
                 text = render_export_macros(
                     tex_path=tex_path,
                     loads=acc["loads"],
+                    db_dir=db_root,
                     list_macro=list_macro,
                     entries=acc["entries"] if list_macro else None,
                 )

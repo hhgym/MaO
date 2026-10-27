@@ -9,6 +9,11 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Ohne Ordner `Listen`
+
+- Exporte liegen in `<Jahrgang>/db/`, PDFs in `<Jahrgang>/<Dokument>/` (Standardpfade der `pipeline.yaml`, `latex.db_dir` jetzt `db`). Eine bestehende `pipeline.yaml` mit `Listen/…`-Pfaden braucht entweder dieselbe Umstellung oder `latex: db_dir: "Listen/db"`.
+- Erzeugte Makrodateien binden CSV-Dateien über `\MaOdb` ein statt über `../db/…`; sie hängen nicht mehr von der Ordnertiefe ab.
+
 ### LaTeX: \MaOdb relativ
 
 - `\MaOdb` zeigt relativ zum Job-Ordner auf die Exporte (z. B. `../db/`). Absolute Pfade mit Leerzeichen (etwa im Nextcloud-Ordner) ließen `\DTLloaddb` im Vorspann scheitern.

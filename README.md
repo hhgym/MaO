@@ -48,7 +48,7 @@ Im jeweiligen **Workspace** werden ausschließlich erzeugte Daten und Dokumente 
 D:/Schuljahre/2026-27/MaO/
   mao-hier.cmd        # Windows-Wrapper
   mao-hier.sh         # Linux/macOS-Wrapper
-  Listen/
+  db/
   .mao-cli/exports-manifest.json
   ...                # LaTeX- und PDF-Ausgaben gemäß pipeline.yaml
 ```

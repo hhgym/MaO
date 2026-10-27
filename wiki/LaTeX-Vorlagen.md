@@ -10,9 +10,8 @@ MaO/
       Teilnehmendenlisten.tex
       MO-Logo_200.jpg
   Jahrgang/66_2026-27/
-    Listen/
-      db/                      CSV- und Makrodateien (Export)
-      Teilnehmendenlisten/     hier entsteht das PDF, z. B. MaO_66_Teilnehmendenlisten.pdf
+    db/                        CSV- und Makrodateien (Export)
+    Teilnehmendenlisten/       hier entsteht das PDF, z. B. MaO_66_Teilnehmendenlisten.pdf
 ```
 
 ## Job in der `pipeline.yaml`
@@ -20,7 +19,7 @@ MaO/
 ```yaml
 - name: teilnehmendenlisten
   id: teilnehmendenlisten
-  workdir: "Listen/Teilnehmendenlisten"             # hier läuft LaTeX, hier landet das PDF
+  workdir: "Teilnehmendenlisten"             # hier läuft LaTeX, hier landet das PDF
   tex: "@tex/Teilnehmendenlisten/Teilnehmendenlisten.tex"
   pdf_name: "MaO_{mao}_Teilnehmendenlisten"
 ```
@@ -46,7 +45,7 @@ Zusätzlich definiert MaO diese Makros (Pfade mit `/`, mit abschließendem `/`, 
 | `\MaO` | MaO-Nummer |
 | `\MaOjahrgang` | Schuljahr, z. B. `2026-27` |
 | `\MaOroot` | Jahrgangsordner |
-| `\MaOdb` | Exportordner (`Listen/db/`, änderbar mit `latex.db_dir`), relativ zum Job-Ordner, z. B. `../db/` |
+| `\MaOdb` | Exportordner (`db/`, änderbar mit `latex.db_dir`), relativ zum Job-Ordner, z. B. `../db/` |
 | `\MaOtex` | Vorlagenordner `MaO/tex/` |
 
 Beispiel: `\DTLloaddb{t}{\MaOdb Teilnehmende/Teilnehmende-Stufe-5.csv}`.

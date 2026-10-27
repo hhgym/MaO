@@ -9,7 +9,8 @@ MaO/
   Jahrgang/
     65_2025-26/           <MaO-Nr>_<Schuljahr>
     66_2026-27/
-      Listen/ ...         Exporte und PDFs
+      db/                 CSV- und Makrodateien (Export)
+      <Dokument>/ ...     je Dokument ein Ordner mit dem PDF
 ```
 
 Jeder Ordner `Jahrgang/<Nr>_<Schuljahr>` wird **automatisch erkannt**; eine Registrierung ist nicht nötig. Der aktuelle Jahrgang steht als `current_year` in `settings.yaml`, alle anderen gelten als archiviert (SQL-Exporte gesperrt). Wer in einem Jahrgangsordner arbeitet, meint diesen Jahrgang.
@@ -38,13 +39,13 @@ D:/MaO/Config/
 D:/Schuljahre/2026-27/MaO/
   mao-hier.cmd
   mao-hier.sh
-  Listen/
+  db/
   .mao-cli/exports-manifest.json
   ...                # PDF-/TeX-Ausgaben
 
 E:/Archiv/2025-26/MaO/
   mao-hier.cmd
-  Listen/
+  db/
 ```
 
 Die `root`-Pfade werden einzeln in `settings.yaml` erfasst. Unterschiedliche Laufwerke sind ausdrücklich erlaubt.

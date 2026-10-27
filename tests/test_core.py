@@ -69,7 +69,7 @@ def test_export_actual_config_and_manifest_cleanup(sample_config, tmp_path):
     assert any(x.endswith("Tabellen-Rangliste-Stufe.tex") for x in plan.outputs)
     counts = plan.commit()
     assert counts["NEU"] == len(plan.outputs)
-    old_split = tmp_path / "Listen/db/Teilnehmende/Klasse/Teilnehmende-Klasse-7-1.csv"
+    old_split = tmp_path / "db/Teilnehmende/Klasse/Teilnehmende-Klasse-7-1.csv"
     assert old_split.exists()
     # Regression: a formerly used split is stale if its group disappears.
     data["orga"]["klasse"] = "7-2"
@@ -99,7 +99,7 @@ def test_empty_dataset_replaces_previously_generated_csv(sample_config, tmp_path
     first = ExportPlan(tmp_path)
     run_exports(data, sample_config, tmp_path, first)
     first.commit()
-    overall = tmp_path / "Listen/db/Rangliste/Rangliste-Gesamt.csv"
+    overall = tmp_path / "db/Rangliste/Rangliste-Gesamt.csv"
     assert "Muster" in overall.read_text(encoding="utf-8")
     data["orga"] = data["orga"].iloc[:0].copy()
     second = ExportPlan(tmp_path)
@@ -108,7 +108,7 @@ def test_empty_dataset_replaces_previously_generated_csv(sample_config, tmp_path
     assert overall.exists()
     assert "Muster" not in overall.read_text(encoding="utf-8")
     assert "nachname" in overall.read_text(encoding="utf-8")
-    tex = tmp_path / "Listen/db/Include/Tabellen-Rangliste-Stufe.tex"
+    tex = tmp_path / "db/Include/Tabellen-Rangliste-Stufe.tex"
     assert "\\newcommand{\\RanglisteStufenListe}{}" in tex.read_text(encoding="utf-8")
 
 
@@ -116,7 +116,7 @@ def test_dry_run_does_not_write_export_files(sample_config, tmp_path):
     datasets = make_datasets(sample_config)
     plan = ExportPlan(tmp_path)
     run_exports(datasets, sample_config, tmp_path, plan)
-    assert not (tmp_path / "Listen").exists()
+    assert not (tmp_path / "db").exists()
     assert not plan.manifest.exists()
     assert "NEU" in render_plan(plan.actions(), ["urkunden"], 66, source="test")
 
@@ -246,11 +246,11 @@ def _engine_writing(names, calls=None):
 
 
 def test_latex_pdf_name_creates_final_pdf_directly(tmp_path, monkeypatch):
-    d = tmp_path / "Listen" / "Doc"
+    d = tmp_path / "Doc"
     d.mkdir(parents=True)
     (d / "document.tex").write_text("T", encoding="utf-8")
     config = {"latex": {"runs": 1, "jobs": [
-        {"name": "t", "tex": "document.tex", "workdir": "Listen/Doc", "pdf_name": "MaO_{mao}_Liste"}]}}
+        {"name": "t", "tex": "document.tex", "workdir": "Doc", "pdf_name": "MaO_{mao}_Liste"}]}}
     calls = []
     monkeypatch.setattr(latex_module.subprocess, "run", _engine_writing([".aux", ".log"], calls))
     run_latex_jobs(config, tmp_path, 66)
