@@ -181,6 +181,7 @@ def run_latex_jobs(cfg: Dict[str, Any], base_dir: Path, mao_number: int, *,
                 # Generated wrappers never contain user-written text; remove them on failure too.
                 write_text(wrapper, wrapper_content)
                 previous_mtime = src_pdf.stat().st_mtime_ns if src_pdf.exists() else None
+                empty_document = False
                 for i in range(runs):
                     log_info(f"Lauf {i + 1}/{runs}", indent=1)
                     try:
@@ -188,11 +189,20 @@ def run_latex_jobs(cfg: Dict[str, Any], base_dir: Path, mao_number: int, *,
                                                 text=True, errors="replace", check=False, env=run_env)
                     except FileNotFoundError as exc:
                         raise RuntimeError(f"LaTeX-Engine '{engine}' wurde nicht gefunden") from exc
+                    if result.returncode and "no pages of output" in (result.stdout or ""):
+                        # Kein LaTeX-Fehler: Schleifen über leere Listen erzeugen keine Seite.
+                        empty_document = True
+                        break
                     if result.returncode:
                         LOGGER.error("LaTeX fehlgeschlagen (%s), Exit-Code %s. stdout:\n%s", jname, result.returncode,
                                      "\n".join(result.stdout.splitlines()[-25:]))
                         LOGGER.error("stderr:\n%s", "\n".join(result.stderr.splitlines()[-25:]))
                         raise RuntimeError(f"LaTeX fehlgeschlagen: {jname} (Log: {workdir / (jobname + '.log')})")
+                if empty_document:
+                    LOGGER.warning("LaTeX-Job '%s' übersprungen: Das Dokument hat keine Seiten. Vermutlich fehlen Daten "
+                                   "(z. B. keine Teilnehmenden mit anwesenheit = 1; leere Listen in db/Include/*.tex).", jname)
+                    stats["skipped"] += 1
+                    continue
                 if not src_pdf.is_file():
                     raise RuntimeError(f"LaTeX-Job '{jname}': Ausgabedatei fehlt: {src_pdf}")
                 if previous_mtime is not None and src_pdf.stat().st_mtime_ns <= previous_mtime:
