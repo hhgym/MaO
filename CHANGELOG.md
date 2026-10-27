@@ -9,6 +9,10 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### LaTeX: leere Dokumente
+
+- Ein LaTeX-Job, der keine Seite erzeugt (z. B. weil alle Listen leer sind), wird mit Warnung übersprungen statt als Fehler abzubrechen.
+
 ### Ohne Ordner `Listen`
 
 - Exporte liegen in `<Jahrgang>/db/`, PDFs in `<Jahrgang>/<Dokument>/` (Standardpfade der `pipeline.yaml`, `latex.db_dir` jetzt `db`). Eine bestehende `pipeline.yaml` mit `Listen/…`-Pfaden braucht entweder dieselbe Umstellung oder `latex: db_dir: "Listen/db"`.

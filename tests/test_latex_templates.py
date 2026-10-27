@@ -116,3 +116,17 @@ def test_export_macros_use_maodb_relative_to_export_folder(tmp_path):
         loads=[("A", db / "Teilnehmende" / "Klasse" / "a.csv")], db_dir=db)
     assert "\\DTLloaddb{A}{\\MaOdb Teilnehmende/Klasse/a.csv}" in text
     assert "../" not in text
+
+
+def test_document_without_pages_is_skipped_with_warning(tmp_path, monkeypatch, caplog):
+    mao, year = layout(tmp_path)
+    (mao / "tex" / "Doc" / "Doc.tex").write_text("x", encoding="utf-8")
+
+    def fake(args, cwd, env=None, **kw):
+        return SimpleNamespace(returncode=1, stdout="warning (pdf backend): no pages of output.\n", stderr="")
+
+    monkeypatch.setattr(latex_module.subprocess, "run", fake)
+    stats = run_latex_jobs(config(), year, 66, tex_dir=mao / "tex")
+    assert stats == {"compiled": 0, "skipped": 1}
+    assert "keine Seiten" in caplog.text
+    assert not list((year / "Doc").glob(".__mao_cli_wrap__*"))
