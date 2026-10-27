@@ -1079,8 +1079,8 @@ latex:
       id: unterschriften
       enabled: true
       workdir: "Listen/Urkunden- und Unterschriftenlisten"
-      tex: "@tex/Unterschriften/Unterschriften.tex"
-      jobname: "Unterschriften"
+      tex: "@tex/Unterschriftenlisten/Unterschriftenlisten.tex"
+      jobname: "Unterschriftenlisten"
       define_mao: true
       pdf_name: "MaO_{mao}_Unterschriftenlisten"
 
@@ -1107,8 +1107,8 @@ latex:
       id: ergebnis_nach_lehrkraft
       enabled: true
       workdir: "Listen/Ergebnislisten"
-      tex: "@tex/Punkte-und-Ergebnisslisten/Punkte-und-Ergebnisslisten.tex"
-      jobname: "Punkte-und-Ergebnisslisten"
+      tex: "@tex/Ergebnislisten/Ergebnislisten.tex"
+      jobname: "Ergebnislisten"
       define_mao: true
       extra_defs:
         - "\\def\\nachlehrer{1}"
@@ -1118,8 +1118,8 @@ latex:
       id: ergebnis_nach_klassenstufe_vorname
       enabled: true
       workdir: "Listen/Ergebnislisten"
-      tex: "@tex/Punkte-und-Ergebnisslisten/Punkte-und-Ergebnisslisten.tex"
-      jobname: "Punkte-und-Ergebnisslisten"
+      tex: "@tex/Ergebnislisten/Ergebnislisten.tex"
+      jobname: "Ergebnislisten"
       define_mao: true
       extra_defs:
         - "\\def\\nachklassenstufe{1}"
@@ -1129,8 +1129,8 @@ latex:
       id: ergebnis_nach_klassenstufe_rangliste
       enabled: true
       workdir: "Listen/Ergebnislisten"
-      tex: "@tex/Punkte-und-Ergebnisslisten/Punkte-und-Ergebnisslisten.tex"
-      jobname: "Punkte-und-Ergebnisslisten"
+      tex: "@tex/Ergebnislisten/Ergebnislisten.tex"
+      jobname: "Ergebnislisten"
       define_mao: true
       extra_defs:
         - "\\def\\ranglisteklassenstufe{1}"
@@ -1140,8 +1140,8 @@ latex:
       id: ergebnis_nach_klasse_vorname
       enabled: true
       workdir: "Listen/Ergebnislisten"
-      tex: "@tex/Punkte-und-Ergebnisslisten/Punkte-und-Ergebnisslisten.tex"
-      jobname: "Punkte-und-Ergebnisslisten"
+      tex: "@tex/Ergebnislisten/Ergebnislisten.tex"
+      jobname: "Ergebnislisten"
       define_mao: true
       extra_defs:
         - "\\def\\nachklassen{1}"
@@ -1151,8 +1151,8 @@ latex:
       id: ergebnis_nach_klasse_rangliste
       enabled: true
       workdir: "Listen/Ergebnislisten"
-      tex: "@tex/Punkte-und-Ergebnisslisten/Punkte-und-Ergebnisslisten.tex"
-      jobname: "Punkte-und-Ergebnisslisten"
+      tex: "@tex/Ergebnislisten/Ergebnislisten.tex"
+      jobname: "Ergebnislisten"
       define_mao: true
       extra_defs:
         - "\\def\\ranglisteklasse{1}"
@@ -1163,8 +1163,8 @@ latex:
       id: preistraeger
       enabled: true
       workdir: "Listen/Ergebnislisten"
-      tex: "@tex/Punkte-und-Ergebnisslisten/Punkte-und-Ergebnisslisten.tex"
-      jobname: "Punkte-und-Ergebnisslisten"
+      tex: "@tex/Ergebnislisten/Ergebnislisten.tex"
+      jobname: "Ergebnislisten"
       define_mao: true
       extra_defs:
         - "\\def\\preistraeger{1}"
@@ -1175,8 +1175,8 @@ latex:
       id: delegierte
       enabled: true
       workdir: "Listen/Ergebnislisten"
-      tex: "@tex/Punkte-und-Ergebnisslisten/Punkte-und-Ergebnisslisten.tex"
-      jobname: "Punkte-und-Ergebnisslisten"
+      tex: "@tex/Ergebnislisten/Ergebnislisten.tex"
+      jobname: "Ergebnislisten"
       define_mao: true
       extra_defs:
         - "\\def\\delegierte{1}"
