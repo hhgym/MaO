@@ -330,7 +330,7 @@ datasets:
     sql: "SELECT * FROM {{table.rooms_table}}"
 
   # ------------------------------------------------------------
-  # Views (Listen/Organisation)
+  # Views (Organisation)
   # ------------------------------------------------------------
   - name: pivot_raum_stufe_ui
     id: pivot_raum_stufe_ui
@@ -389,12 +389,12 @@ exports:
     enabled: false
     from_dataset: orga
     output:
-      path: "Listen/db/Basis/Orga-gesamt.csv"
+      path: "db/Basis/Orga-gesamt.csv"
       sep: ";"
       columns: "*"
     macro:
       enabled: true
-      tex_path: "Listen/Tabellen-Orga-Gesamt.tex"
+      tex_path: "db/Include/Tabellen-Orga-Gesamt.tex"
       db_prefix: "Orga"
       db_name: "OrgaGesamt"
 
@@ -403,12 +403,12 @@ exports:
     enabled: false
     from_dataset: teachers
     output:
-      path: "Listen/db/Basis/Lehrkraefte.csv"
+      path: "db/Basis/Lehrkraefte.csv"
       sep: ";"
       columns: "*"
     macro:
       enabled: false
-      tex_path: "Listen/Tabellen-Lehrkraefte-Gesamt.tex"
+      tex_path: "db/Include/Tabellen-Lehrkraefte-Gesamt.tex"
       db_prefix: "Lehrkraefte"
       db_name: "LehrkraefteTabelle"
 
@@ -417,12 +417,12 @@ exports:
     enabled: false
     from_dataset: lerngruppeninformationen
     output:
-      path: "Listen/db/Basis/Kurse.csv"
+      path: "db/Basis/Kurse.csv"
       sep: ";"
       columns: "*"
     macro:
       enabled: false
-      tex_path: "Listen/Tabellen-Kurse-Gesamt.tex"
+      tex_path: "db/Include/Tabellen-Kurse-Gesamt.tex"
       db_prefix: "Kurse"
       db_name: "KurseTabelle"
 
@@ -435,12 +435,12 @@ exports:
         op: "<="
         value: 10
     output:
-      path: "Listen/db/Lerngruppen/Klassenleitungen.csv"
+      path: "db/Lerngruppen/Klassenleitungen.csv"
       sep: ";"
       columns: ["lerngruppe","stufe","kl","stellvkl"]
     macro:
       enabled: true
-      tex_path: "Listen/db/Include/Klassenleitungen.tex"
+      tex_path: "db/Include/Klassenleitungen.tex"
       db_name: "KlassenleitungenTabelle"
 
   - name: klassen-sek-i
@@ -452,12 +452,12 @@ exports:
         op: "<="
         value: 10
     output:
-      path: "Listen/db/Lerngruppen/KlassenSekI.csv"
+      path: "db/Lerngruppen/KlassenSekI.csv"
       sep: ";"
       columns: ["lerngruppe","stufe"]
     macro:
       enabled: true
-      tex_path: "Listen/db/Include/KlassenSekI.tex"
+      tex_path: "db/Include/KlassenSekI.tex"
       db_name: "KlassenSekITabelle"
       
   - name: rooms_gesamt
@@ -465,12 +465,12 @@ exports:
     enabled: false
     from_dataset: rooms
     output:
-      path: "Listen/db/Basis/Raeume.csv"
+      path: "db/Basis/Raeume.csv"
       sep: ";"
       columns: "*"
     macro:
       enabled: false
-      tex_path: "Include/Tabellen-Raeume-Gesamt.tex"
+      tex_path: "db/Include/Tabellen-Raeume-Gesamt.tex"
       db_prefix: "Raeume"
       db_name: "RaeumeTabelle"
 
@@ -494,40 +494,40 @@ exports:
       - name: stufe
         enabled: true
         by: "stufe"
-        filename_template: "Listen/db/Teilnehmende/Stufe/Teilnehmende-Stufe-{key}.csv"
+        filename_template: "db/Teilnehmende/Stufe/Teilnehmende-Stufe-{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/db/Include/Tabellen-Teilnehmende-Stufe.tex"
+          tex_path: "db/Include/Tabellen-Teilnehmende-Stufe.tex"
           db_prefix: "Teilnehmende-Stufe"
           list_macro: "TeilnehmendeStufenListe"
           entry_template: "{stufe}/{db}"
       - name: klasse
         enabled: true
         by: "klasse"
-        filename_template: "Listen/db/Teilnehmende/Klasse/Teilnehmende-Klasse-{key}.csv"
+        filename_template: "db/Teilnehmende/Klasse/Teilnehmende-Klasse-{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/db/Include/Tabellen-Teilnehmende-Klasse.tex"
+          tex_path: "db/Include/Tabellen-Teilnehmende-Klasse.tex"
           db_prefix: "Teilnehmende-Klasse"
           list_macro: "TeilnehmendeKlassenListe"
           entry_template: "{klasse}/{stufe}/{db}"
       - name: kurse
         enabled: true
         by: "kurs"
-        filename_template: "Listen/db/Teilnehmende/Kurse/Teilnehmende-Kurse-{key}.csv"
+        filename_template: "db/Teilnehmende/Kurse/Teilnehmende-Kurse-{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/db/Include/Tabellen-Teilnehmende-Kurse.tex"
+          tex_path: "db/Include/Tabellen-Teilnehmende-Kurse.tex"
           db_prefix: "Teilnehmende-Kurs"
           list_macro: "TeilnehmendeKurseListe"
           entry_template: "{kurs}/{stufe}/{lehrkraft}/{db}"
       - name: lehrkraft
         enabled: true
         by: "lehrkraft"
-        filename_template: "Listen/db/Teilnehmende/Lehrkraft/Teilnehmende-Lehrkraft-{key}.csv"
+        filename_template: "db/Teilnehmende/Lehrkraft/Teilnehmende-Lehrkraft-{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/db/Include/Tabellen-Teilnehmende-Lehrkraft.tex"
+          tex_path: "db/Include/Tabellen-Teilnehmende-Lehrkraft.tex"
           db_prefix: "Teilnehmende-Lehrkraft"
           list_macro: "TeilnehmendeLehrkraftListe"
           entry_template: "{lehrkraft}/{db}"
@@ -543,7 +543,7 @@ exports:
     output:
       sep: ";"
       columns: ["tnr","nachname","vorname","klasse","stufe"]
-      path: "Listen/db/Abwesende/Abwesende.csv"
+      path: "db/Abwesende/Abwesende.csv"
 
   # ------------------------------------------------------------
   # Organisation – Kopierliste
@@ -553,17 +553,17 @@ exports:
     enabled: true
     from_dataset: kopierliste
     output:
-      path: "Listen/db/Kopierliste/Kopierliste.csv"
+      path: "db/Kopierliste/Kopierliste.csv"
       sep: ";"
       columns: "*"
     splits:
       - name: raum
         enabled: true
         by: "raum"
-        filename_template: "Listen/db/Kopierliste/Kopierliste-Raum-{key}.csv"
+        filename_template: "db/Kopierliste/Kopierliste-Raum-{key}.csv"
     macro:
       enabled: true
-      tex_path: "Listen/db/Include/Tabellen-Kopierliste.tex"
+      tex_path: "db/Include/Tabellen-Kopierliste.tex"
       include_gesamt: true
       gesamt_db_name: "Kopierliste"
       list_macro: "Kopierraumliste"
@@ -585,10 +585,10 @@ exports:
     output:
       sep: ";"
       columns: ["nachname","vorname","geschlecht","klasse","stufe","anwesenheit","bemerkung","aufgabe_1","aufgabe_2","aufgabe_3","aufgabe_4","punkte","preis","preisgeld","delegierung"]
-      path: "Listen/db/Rangliste/Rangliste-Gesamt.csv"
+      path: "db/Rangliste/Rangliste-Gesamt.csv"
     macro:
       enabled: true
-      tex_path: "Listen/db/Include/RanglisteGesamt.tex"
+      tex_path: "db/Include/RanglisteGesamt.tex"
       db_name: "RanglisteGesamtTabelle"
 
 
@@ -612,30 +612,30 @@ exports:
       - name: stufe
         enabled: true
         by: "stufe"
-        filename_template: "Listen/db/Rangliste/Stufe/Rangliste-Stufe-{key}.csv"
+        filename_template: "db/Rangliste/Stufe/Rangliste-Stufe-{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/db/Include/Tabellen-Rangliste-Stufe.tex"
+          tex_path: "db/Include/Tabellen-Rangliste-Stufe.tex"
           db_prefix: "Rangliste-Stufe"
           list_macro: "RanglisteStufenListe"
           entry_template: "{stufe}/{db}"
       - name: klasse
         enabled: true
         by: "klasse"
-        filename_template: "Listen/db/Rangliste/Klasse/Rangliste-Klasse-{key}.csv"
+        filename_template: "db/Rangliste/Klasse/Rangliste-Klasse-{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/db/Include/Tabellen-Rangliste-Klasse.tex"
+          tex_path: "db/Include/Tabellen-Rangliste-Klasse.tex"
           db_prefix: "Rangliste-Klasse"
           list_macro: "RanglisteKlasseListe"
           entry_template: "{klasse}/{db}"
       - name: lehrkraft
         enabled: true
         by: "lehrkraft"
-        filename_template: "Listen/db/Rangliste/Lehrkraft/Rangliste-Lehrkraft-{key}.csv"
+        filename_template: "db/Rangliste/Lehrkraft/Rangliste-Lehrkraft-{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/db/Include/Tabellen-Rangliste-Lehrkraft.tex"
+          tex_path: "db/Include/Tabellen-Rangliste-Lehrkraft.tex"
           db_prefix: "Rangliste-Lehrkraft"
           list_macro: "RanglisteLehrkraftListe"
           entry_template: "{lehrkraft}/{db}"
@@ -661,10 +661,10 @@ exports:
       - name: kurs
         enabled: true
         by: "kurs"
-        filename_template: "Listen/db/Rangliste/Kurs/Rangliste-Kurs-{key}.csv"
+        filename_template: "db/Rangliste/Kurs/Rangliste-Kurs-{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/db/Include/Tabellen-Rangliste-Kurs.tex"
+          tex_path: "db/Include/Tabellen-Rangliste-Kurs.tex"
           db_prefix: "Rangliste-Kurs"
           list_macro: "RanglisteKursListe"
           entry_template: "{kurs}/{stufe}/{lehrkraft}/{db}"
@@ -685,7 +685,7 @@ exports:
     output:
       sep: ";"
       columns: ["nachname","vorname","geschlecht","klasse","stufe","lehrkraft","kurs","punkte","preis","preisgeld","delegierung"]
-      path: "Listen/db/Preistraeger-und-Delegierte/Preistraeger.csv"
+      path: "db/Preistraeger-und-Delegierte/Preistraeger.csv"
     sort_by:
       - column: preis
         order: asc
@@ -701,7 +701,7 @@ exports:
     output:
       sep: ";"
       columns: ["nachname","vorname","geschlecht","klasse","lehrkraft","kurs","punkte","preis","preisgeld","delegierung"]
-      path: "Listen/db/Preistraeger-und-Delegierte/Delegierte.csv"
+      path: "db/Preistraeger-und-Delegierte/Delegierte.csv"
     sort_by:
       - column: stufe
         order: asc
@@ -717,7 +717,7 @@ exports:
     output:
       sep: ";"
       columns: ["nachname","vorname","geschlecht","klasse","lehrkraft","kurs","punkte","preis","preisgeld","delegierung"]
-      path: "Listen/db/Preisgeld/Preisgeld-gesamt.csv"
+      path: "db/Preisgeld/Preisgeld-gesamt.csv"
     sort_by:
       - column: preis
         order: asc
@@ -756,10 +756,10 @@ exports:
       - name: lehrkraft
         enabled: true
         by: "lehrkraft"
-        filename_template: "Listen/db/Preisgeld/Lehrkraft/Preisgeld-Lehrkraft-{key}.csv"
+        filename_template: "db/Preisgeld/Lehrkraft/Preisgeld-Lehrkraft-{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/db/Include/Tabellen-Preisgeld-Lehrkraft.tex"
+          tex_path: "db/Include/Tabellen-Preisgeld-Lehrkraft.tex"
           db_prefix: "Preisgeld-Lehrkraft"
           list_macro: "PreisgeldLehrkraftListe"
           entry_template: "{lehrkraft}/{db}"
@@ -775,7 +775,7 @@ exports:
     output:
       sep: ";"
       columns: ["nachname","vorname","geschlecht","klasse","lehrkraft","kurs","punkte","preis","preisgeld","delegierung"]
-      path: "Listen/db/Preisgeld/Preisgeld-zentral.csv"
+      path: "db/Preisgeld/Preisgeld-zentral.csv"
     sort_by:
       - column: stufe
         order: asc
@@ -789,10 +789,10 @@ exports:
       - name: klasse
         enabled: true
         by: "klasse"
-        filename_template: "Listen/db/Preisgeld/Klasse-zentral/Preisgeld-Klasse-zentral-{key}.csv"
+        filename_template: "db/Preisgeld/Klasse-zentral/Preisgeld-Klasse-zentral-{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/db/Include/Tabellen-Preisgeld-Klasse-zentral.tex"
+          tex_path: "db/Include/Tabellen-Preisgeld-Klasse-zentral.tex"
           db_prefix: "Preisgeld-Klassen-zentral"
           list_macro: "PreisgeldKlasseZentralListe"
           entry_template: "{klasse}/{db}"
@@ -806,7 +806,7 @@ exports:
   #   output:
   #     sep: ";"
   #     columns: "*"
-  #     path: "Listen/db/Klassenleitungslisten/Klassenleitungslisten.csv"
+  #     path: "db/Klassenleitungslisten/Klassenleitungslisten.csv"
   #   sort_by:
   #     - column: stufe
   #       order: asc
@@ -820,10 +820,10 @@ exports:
   #     - name: stufe
   #       enabled: true
   #       by: "stufe"
-  #       filename_template: "Listen/db/Klassenleitungslisten/Klassenleitungslisten-{key}.csv"
+  #       filename_template: "db/Klassenleitungslisten/Klassenleitungslisten-{key}.csv"
   #       macro:
   #         enabled: true
-  #         tex_path: "Listen/db/Include/Tabellen-Klassenleitungslisten.tex"
+  #         tex_path: "db/Include/Tabellen-Klassenleitungslisten.tex"
   #         db_prefix: "Klassenleitungslisten"
   #         list_macro: "KlassenleitungslistenListe"
   #         entry_template: "{stufe}/{db}"
@@ -836,12 +836,12 @@ exports:
     enabled: false
     from_dataset: pivot_raum_stufe_ui
     output:
-      path: "Listen/db/Organisation/Pivot-Raum-Stufe.csv"
+      path: "db/Organisation/Pivot-Raum-Stufe.csv"
       sep: ";"
       columns: "*"
     macro:
       enabled: true
-      tex_path: "Listen/Tabellen-Pivot-Raum-Stufe.tex"
+      tex_path: "db/Include/Tabellen-Pivot-Raum-Stufe.tex"
       db_prefix: "Pivot"
       db_name: "PivotRaumStufe"
 
@@ -850,22 +850,22 @@ exports:
     enabled: false
     from_dataset: einsaetze_detail
     output:
-      path: "Listen/db/Organisation/Einsaetze-Detail.csv"
+      path: "db/Organisation/Einsaetze-Detail.csv"
       sep: ";"
       columns: "*"
     macro:
       enabled: true
-      tex_path: "Listen/Tabellen-Einsaetze-Gesamt.tex"
+      tex_path: "db/Include/Tabellen-Einsaetze-Gesamt.tex"
       db_prefix: "Einsatz"
       db_name: "EinsaetzeDetail"
     splits:
       - name: lehrkraft
         enabled: true
         by: "lehrkraft"
-        filename_template: "Listen/db/Organisation/Einsaetze-Lehrkraft-{key}.csv"
+        filename_template: "db/Organisation/Einsaetze-Lehrkraft-{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/Tabellen-Einsaetze-Lehrkraft.tex"
+          tex_path: "db/Include/Tabellen-Einsaetze-Lehrkraft.tex"
           db_prefix: "EinsatzLehrkraft"
           list_macro: "EinsaetzeLehrkraftListe"
           entry_template: "{lehrkraft}/{db}"
@@ -877,17 +877,17 @@ exports:
     enabled: false
     from_dataset: aufsichten_mit_schueler
     output:
-      path: "Listen/db/Organisation/Aufsichten-Gesamt.csv"
+      path: "db/Organisation/Aufsichten-Gesamt.csv"
       sep: ";"
       columns: "*"
     splits:
       - name: lehrkraft
         enabled: true
         by: "lehrkraft"
-        filename_template: "Listen/db/Organisation/Aufsichten-Lehrkraft-{key}.csv"
+        filename_template: "db/Organisation/Aufsichten-Lehrkraft-{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/Tabellen-Aufsichten.tex"
+          tex_path: "db/Include/Tabellen-Aufsichten.tex"
           db_prefix: "Aufsicht"
           list_macro: "AufsichtenListe"
           entry_template: "{lehrkraft}/{db}"
@@ -902,17 +902,17 @@ exports:
     enabled: true
     from_dataset: stats_by_klasse
     output:
-      path: "Listen/db/Statistik/Klasse/stats_klasse.csv"
+      path: "db/Statistik/Klasse/stats_klasse.csv"
       sep: ";"
       columns: "*"
     splits:
       - name: klasse
         enabled: true
         by: "klasse"
-        filename_template: "Listen/db/Statistik/Klasse/stats_klasse_{key}.csv"
+        filename_template: "db/Statistik/Klasse/stats_klasse_{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/db/Include/Tabellen-Statistik-Klassen.tex"
+          tex_path: "db/Include/Tabellen-Statistik-Klassen.tex"
           db_prefix: "Statistik-Klasse-"
           list_macro: "StatistikKlassenListe"
           entry_template: "{klasse}/{stufe}/{db}"
@@ -924,17 +924,17 @@ exports:
     enabled: true
     from_dataset: stats_by_stufe
     output:
-      path: "Listen/db/Statistik/Stufe/stats_stufe.csv"
+      path: "db/Statistik/Stufe/stats_stufe.csv"
       sep: ";"
       columns: "*"
     splits:
       - name: stufe
         enabled: true
         by: "stufe"
-        filename_template: "Listen/db/Statistik/Stufe/stats_stufe_{key}.csv"
+        filename_template: "db/Statistik/Stufe/stats_stufe_{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/db/Include/Tabellen-Statistik-Stufen.tex"
+          tex_path: "db/Include/Tabellen-Statistik-Stufen.tex"
           db_prefix: "Statistik-Stufe-"
           list_macro: "StatistikStufenListe"
           entry_template: "{stufe}/{db}"
@@ -946,17 +946,17 @@ exports:
     enabled: true
     from_dataset: stats_by_kurse
     output:
-      path: "Listen/db/Statistik/Kurse/stats_kurse.csv"
+      path: "db/Statistik/Kurse/stats_kurse.csv"
       sep: ";"
       columns: "*"
     splits:
       - name: kurs
         enabled: true
         by: "kurs"
-        filename_template: "Listen/db/Statistik/Kurse/stats_kurs_{key}.csv"
+        filename_template: "db/Statistik/Kurse/stats_kurs_{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/db/Include/Tabellen-Statistik-Kurse.tex"
+          tex_path: "db/Include/Tabellen-Statistik-Kurse.tex"
           db_prefix: "Statistik-Kurs-"
           list_macro: "StatistikKurseListe"
           entry_template: "{kurs}/{lehrkraft}/{db}"
@@ -968,17 +968,17 @@ exports:
     enabled: true
     from_dataset: stats_by_lehrkraft
     output:
-      path: "Listen/db/Statistik/Lehrkraefte/stats_lehrkraft.csv"
+      path: "db/Statistik/Lehrkraefte/stats_lehrkraft.csv"
       sep: ";"
       columns: "*"
     splits:
       - name: lehrkraft
         enabled: true
         by: "lehrkraft"
-        filename_template: "Listen/db/Statistik/Lehrkraefte/stats_lehrkraft_{key}.csv"
+        filename_template: "db/Statistik/Lehrkraefte/stats_lehrkraft_{key}.csv"
         macro:
           enabled: true
-          tex_path: "Listen/db/Include/Tabellen-Statistik-Lehrkraefte.tex"
+          tex_path: "db/Include/Tabellen-Statistik-Lehrkraefte.tex"
           db_prefix: "Statistik-Lehkraft-"
           list_macro: "StatistikLehrkraefteListe"
           entry_template: "{lehrkraft}/{db}"
@@ -990,12 +990,12 @@ exports:
     enabled: true
     from_dataset: stats_by_gesamt
     output:
-      path: "Listen/db/Statistik/Gesamt/stats_gesamt.csv"
+      path: "db/Statistik/Gesamt/stats_gesamt.csv"
       sep: ";"
       columns: "*"
     macro:
       enabled: true
-      tex_path: "Listen/db/Include/Tabellen-Statistik.tex"
+      tex_path: "db/Include/Tabellen-Statistik.tex"
       db_name: "Statistik-Gesamt"
 
 latex:
@@ -1006,7 +1006,7 @@ latex:
   #   Die Vorlage findet ihre Dateien über den TeX-Suchpfad: \input{template.tex},
   #   \includegraphics{logo.png}. Exportdaten: \MaOdb<Unterordner/Datei.csv>; außerdem
   #   \MaO (Nummer), \MaOjahrgang, \MaOroot (Jahrgangsordner), \MaOtex (Vorlagenordner).
-  #   db_dir (Standard Listen/db) legt fest, worauf \MaOdb zeigt.
+  #   db_dir (Standard db) legt fest, worauf \MaOdb zeigt.
   # pdf_name: LaTeX schreibt das PDF direkt unter diesem Namen (Platzhalter {mao}) in den
   #   workdir des Jobs; es entsteht keine zweite Kopie. Alternativ: copy_pdf {from, to}.
   # cleanup_aux: true löscht .aux/.log usw. nach erfolgreichem Lauf (Standard: aus;
@@ -1015,7 +1015,7 @@ latex:
     - name: korrekturlisten
       id: korrekturlisten
       enabled: false
-      workdir: "Listen/Korrekturlisten"
+      workdir: "Korrekturlisten"
       tex: "@tex/Korrekturlisten/Korrekturlisten.tex"
       jobname: "Korrekturlisten"
       define_mao: true
@@ -1024,7 +1024,7 @@ latex:
     - name: raumuebersicht
       id: raumuebersicht
       enabled: false
-      workdir: "Listen/Raumuebersicht"
+      workdir: "Raumuebersicht"
       tex: "@tex/Raumuebersicht/Raumuebersicht.tex"
       jobname: "Raumuebersicht"
       define_mao: true
@@ -1033,7 +1033,7 @@ latex:
     - name: anwesenheitslisten
       id: anwesenheitslisten
       enabled: false
-      workdir: "Listen/Raum-Anwesenheitslisten"
+      workdir: "Raum-Anwesenheitslisten"
       tex: "@tex/Raum-Anwesenheitslisten/Raum-Anwesenheitslisten.tex"
       jobname: "Raum-Anwesenheitslisten"
       define_mao: true
@@ -1042,7 +1042,7 @@ latex:
     - name: teilnehmendenlisten
       id: teilnehmendenlisten
       enabled: false
-      workdir: "Listen/Teilnehmendenlisten"
+      workdir: "Teilnehmendenlisten"
       tex: "@tex/Teilnehmendenlisten/Teilnehmendenlisten.tex"
       jobname: "Teilnehmendenlisten"
       define_mao: true
@@ -1051,7 +1051,7 @@ latex:
     - name: einsatz_oberstufe
       id: einsatz_oberstufe
       enabled: false
-      workdir: "Listen/Einsatz-Oberstufe"
+      workdir: "Einsatz-Oberstufe"
       tex: "@tex/Einsatz-Oberstufe/Einsatz-Oberstufe.tex"
       jobname: "Einsatz-Oberstufe"
       define_mao: true
@@ -1060,7 +1060,7 @@ latex:
     - name: rueckgabelisten
       id: rueckgabelisten
       enabled: true
-      workdir: "Listen/Rueckgabelisten"
+      workdir: "Rueckgabelisten"
       tex: "@tex/Rueckgabelisten/Rueckgabelisten.tex"
       jobname: "Rueckgabelisten"
       define_mao: true
@@ -1069,7 +1069,7 @@ latex:
     - name: urkunden
       id: urkunden
       enabled: true
-      workdir: "Listen/Urkunden- und Unterschriftenlisten"
+      workdir: "Urkunden- und Unterschriftenlisten"
       tex: "@tex/Urkunden/Urkunden.tex"
       jobname: "Urkunden"
       define_mao: true
@@ -1078,7 +1078,7 @@ latex:
     - name: unterschriften
       id: unterschriften
       enabled: true
-      workdir: "Listen/Urkunden- und Unterschriftenlisten"
+      workdir: "Urkunden- und Unterschriftenlisten"
       tex: "@tex/Unterschriftenlisten/Unterschriftenlisten.tex"
       jobname: "Unterschriftenlisten"
       define_mao: true
@@ -1087,7 +1087,7 @@ latex:
     - name: kopierliste
       id: kopierliste
       enabled: false
-      workdir: "Listen/Kopierliste"
+      workdir: "Kopierliste"
       tex: "@tex/Kopierliste/Kopierliste.tex"
       jobname: "Kopierliste"
       define_mao: true
@@ -1096,7 +1096,7 @@ latex:
     - name: abwesenheitsliste
       id: abwesenheitsliste
       enabled: true
-      workdir: "Listen/Abwesenheitsliste"
+      workdir: "Abwesenheitsliste"
       tex: "@tex/Abwesenheitsliste/Abwesenheitsliste.tex"
       jobname: "Abwesenheitsliste"
       define_mao: true
@@ -1106,7 +1106,7 @@ latex:
     - name: ergebnis_nach_lehrkraft
       id: ergebnis_nach_lehrkraft
       enabled: true
-      workdir: "Listen/Ergebnislisten"
+      workdir: "Ergebnislisten"
       tex: "@tex/Ergebnislisten/Ergebnislisten.tex"
       jobname: "Ergebnislisten"
       define_mao: true
@@ -1117,7 +1117,7 @@ latex:
     - name: ergebnis_nach_klassenstufe_vorname
       id: ergebnis_nach_klassenstufe_vorname
       enabled: true
-      workdir: "Listen/Ergebnislisten"
+      workdir: "Ergebnislisten"
       tex: "@tex/Ergebnislisten/Ergebnislisten.tex"
       jobname: "Ergebnislisten"
       define_mao: true
@@ -1128,7 +1128,7 @@ latex:
     - name: ergebnis_nach_klassenstufe_rangliste
       id: ergebnis_nach_klassenstufe_rangliste
       enabled: true
-      workdir: "Listen/Ergebnislisten"
+      workdir: "Ergebnislisten"
       tex: "@tex/Ergebnislisten/Ergebnislisten.tex"
       jobname: "Ergebnislisten"
       define_mao: true
@@ -1139,7 +1139,7 @@ latex:
     - name: ergebnis_nach_klasse_vorname
       id: ergebnis_nach_klasse_vorname
       enabled: true
-      workdir: "Listen/Ergebnislisten"
+      workdir: "Ergebnislisten"
       tex: "@tex/Ergebnislisten/Ergebnislisten.tex"
       jobname: "Ergebnislisten"
       define_mao: true
@@ -1150,7 +1150,7 @@ latex:
     - name: ergebnis_nach_klasse_rangliste
       id: ergebnis_nach_klasse_rangliste
       enabled: true
-      workdir: "Listen/Ergebnislisten"
+      workdir: "Ergebnislisten"
       tex: "@tex/Ergebnislisten/Ergebnislisten.tex"
       jobname: "Ergebnislisten"
       define_mao: true
@@ -1162,7 +1162,7 @@ latex:
     - name: preistraeger
       id: preistraeger
       enabled: true
-      workdir: "Listen/Ergebnislisten"
+      workdir: "Ergebnislisten"
       tex: "@tex/Ergebnislisten/Ergebnislisten.tex"
       jobname: "Ergebnislisten"
       define_mao: true
@@ -1174,7 +1174,7 @@ latex:
     - name: delegierte
       id: delegierte
       enabled: true
-      workdir: "Listen/Ergebnislisten"
+      workdir: "Ergebnislisten"
       tex: "@tex/Ergebnislisten/Ergebnislisten.tex"
       jobname: "Ergebnislisten"
       define_mao: true
@@ -1186,7 +1186,7 @@ latex:
     - name: klassenleitungslisten
       id: klassenleitungslisten
       enabled: true
-      workdir: "Listen/Klassenleitungslisten"
+      workdir: "Klassenleitungslisten"
       tex: "@tex/Klassenleitungslisten/Klassenleitungslisten.tex"
       jobname: "Klassenleitungslisten"
       define_mao: true
@@ -1196,7 +1196,7 @@ latex:
     - name: Rueckgabelisten
       id: rueckgabelisten_sek_i
       enabled: false
-      workdir: "Listen/Rueckgabelisten"
+      workdir: "Rueckgabelisten"
       tex: "@tex/Rueckgabelisten/Rueckgabelisten.tex"
       jobname: "Rueckgabelisten"
       define_mao: true

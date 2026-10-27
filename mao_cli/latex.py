@@ -155,7 +155,7 @@ def run_latex_jobs(cfg: Dict[str, Any], base_dir: Path, mao_number: int, *,
         if define_mao:
             defs.append(f"\\def\\MaO{{{mao_number}}}")
             # Pfad-Makros für Vorlagen: \\MaOdb<Datei> (Exporte), \\MaOroot (Jahrgangsordner), \\MaOtex (Vorlagen).
-            db_dir = safe_output_path(base_dir, str(latex.get("db_dir", "Listen/db")))
+            db_dir = safe_output_path(base_dir, str(latex.get("db_dir", "db")))
             # \\MaOdb relativ zum Job-Ordner (z. B. ../db/): \\DTLloaddb/\\input vertragen im Dateinamen
             # keine Leerzeichen, relative Pfade bleiben davon unabhängig.
             for macro, value in (("MaOroot", tex_path_value(base_dir, directory=True)),

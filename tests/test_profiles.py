@@ -116,8 +116,8 @@ def test_cli_workspace_profile_smoke(monkeypatch, tmp_path):
     (workspace / 'config').mkdir()
     (tmp_path / 'central/tables.ini').write_text((cli.DEFAULTS / 'tables.ini').read_text(encoding='utf8').replace('DEMO_', 'TEST_'), encoding='utf8')
     assert cli.main(['plan','--workspace',str(workspace),'--profile','vorbereitung','--no-latex']) == 0
-    assert not (workspace / 'Listen').exists()
+    assert not (workspace / 'db').exists()
     assert cli.main(['run','--workspace',str(workspace),'--profile','vorbereitung','--no-latex']) == 0
-    assert (workspace / 'Listen').exists()
+    assert (workspace / 'db').exists()
     assert (workspace / '.mao-cli/exports-manifest.json').exists()
     assert cli.main(['validate','--workspace',str(workspace),'--profile','unknown']) == 2

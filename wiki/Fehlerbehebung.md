@@ -24,7 +24,7 @@ Dieses Entwicklungspaket verwendet ausschließlich **Schema 2**. Altes Manifest 
 
 ## LaTeX-Job übersprungen
 
-Die angegebene `.tex`-Datei muss bereits im korrekten Unterordner `Listen/` existieren. Die Anwendung liefert nur das Python-Programm und die Pipeline-Konfiguration, nicht sämtliche schulischen TeX-Vorlagen.
+Die angegebene `.tex`-Datei muss bereits im Vorlagenordner `MaO/tex/<Dokument>/` existieren. Die Anwendung liefert nur das Python-Programm und die Pipeline-Konfiguration, nicht sämtliche schulischen TeX-Vorlagen.
 
 ## Veraltete Ausgabedateien
 
