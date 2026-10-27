@@ -9,6 +9,10 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### LaTeX: \MaOdb relativ
+
+- `\MaOdb` zeigt relativ zum Job-Ordner auf die Exporte (z. B. `../db/`). Absolute Pfade mit Leerzeichen (etwa im Nextcloud-Ordner) ließen `\DTLloaddb` im Vorspann scheitern.
+
 ### GF-Import: Reihenfolge
 
 - `import-gf` sortiert Teilnehmende jetzt Sek I zuerst (5-1, 5-2, 6-1 … 10-x, danach Nachname/Vorname), die Oberstufe (11, 12) zuletzt in der Reihenfolge der Gravity-Forms-Einträge; `tnr` folgt dieser Reihenfolge.

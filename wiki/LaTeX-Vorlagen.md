@@ -46,7 +46,7 @@ Zusätzlich definiert MaO diese Makros (Pfade mit `/`, mit abschließendem `/`, 
 | `\MaO` | MaO-Nummer |
 | `\MaOjahrgang` | Schuljahr, z. B. `2026-27` |
 | `\MaOroot` | Jahrgangsordner |
-| `\MaOdb` | Exportordner (`Listen/db/`, änderbar mit `latex.db_dir`) |
+| `\MaOdb` | Exportordner (`Listen/db/`, änderbar mit `latex.db_dir`), relativ zum Job-Ordner, z. B. `../db/` |
 | `\MaOtex` | Vorlagenordner `MaO/tex/` |
 
 Beispiel: `\DTLloaddb{t}{\MaOdb Teilnehmende/Teilnehmende-Stufe-5.csv}`.
