@@ -279,7 +279,7 @@ datasets:
     enabled: false
     sql: |
       SELECT *
-      FROM {{table.orga_table}}
+      FROM {{table.orga_view}}
       WHERE delegierung IS NOT NULL
 
 
