@@ -70,6 +70,18 @@ def tex_path_value(path: Path, *, directory: bool = False) -> str:
     return text
 
 
+def relative_tex_dir(target: Path, start: Path) -> str:
+    """Ordner ``target`` relativ zu ``start`` mit Schrägstrichen und abschließendem ``/``; sonst absolut."""
+    try:
+        rel = Path(os.path.relpath(target.resolve(), start.resolve())).as_posix()
+    except ValueError:  # z. B. anderes Laufwerk unter Windows
+        return tex_path_value(target, directory=True)
+    text = "./" if rel == "." else rel.rstrip("/") + "/"
+    if _TEX_UNSAFE.search(text):
+        raise ConfigurationError(f"Pfad enthält Zeichen, die in LaTeX-Aufrufen nicht unterstützt werden (% # {{ }} \\): {target}")
+    return text
+
+
 def resolve_template(tex: str, workdir: Path, tex_dir: Path | None, job_name: str) -> Path:
     """``@tex/<Ordner>/<Datei>.tex`` liegt im Vorlagenordner, sonst relativ zum Job-Ordner."""
     if not tex.startswith(TEX_PREFIX):
@@ -144,8 +156,10 @@ def run_latex_jobs(cfg: Dict[str, Any], base_dir: Path, mao_number: int, *,
             defs.append(f"\\def\\MaO{{{mao_number}}}")
             # Pfad-Makros für Vorlagen: \\MaOdb<Datei> (Exporte), \\MaOroot (Jahrgangsordner), \\MaOtex (Vorlagen).
             db_dir = safe_output_path(base_dir, str(latex.get("db_dir", "Listen/db")))
+            # \\MaOdb relativ zum Job-Ordner (z. B. ../db/): \\DTLloaddb/\\input vertragen im Dateinamen
+            # keine Leerzeichen, relative Pfade bleiben davon unabhängig.
             for macro, value in (("MaOroot", tex_path_value(base_dir, directory=True)),
-                                 ("MaOdb", tex_path_value(db_dir, directory=True))):
+                                 ("MaOdb", relative_tex_dir(db_dir, workdir))):
                 defs.append(f"\\edef\\{macro}{{\\detokenize{{{value}}}}}")
             if tex_dir is not None:
                 defs.append(f"\\edef\\MaOtex{{\\detokenize{{{tex_path_value(tex_dir, directory=True)}}}}}")

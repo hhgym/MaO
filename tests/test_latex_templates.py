@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import os
 import shutil
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -70,7 +71,7 @@ def test_wrapper_defines_path_macros_and_sets_texinputs(tmp_path, monkeypatch):
     assert stats["compiled"] == 1
     text = seen["wrapper"]
     assert "\\def\\MaO{66}" in text
-    assert "\\edef\\MaOdb{\\detokenize{" + (year / "Listen" / "db").resolve().as_posix() + "/}}" in text
+    assert "\\edef\\MaOdb{\\detokenize{../db/}}" in text
     assert "\\edef\\MaOtex{\\detokenize{" + (mao / "tex").resolve().as_posix() + "/}}" in text
     assert "\\edef\\MaOjahrgang{\\detokenize{2026-27}}" in text
     assert "\\input{" + (mao / "tex" / "Doc" / "Doc.tex").resolve().as_posix() + "}" in text
@@ -92,7 +93,7 @@ def test_real_lualatex_template_data_and_pdf_in_different_folders(tmp_path):
         "\\documentclass{article}\n\\usepackage{graphicx,datatool}\n\\DTLsetseparator{;}\n", encoding="utf-8")
     (mao / "tex" / "Doc" / "logo.png").write_bytes(PNG)
     (mao / "tex" / "Doc" / "Doc.tex").write_text(
-        "\\input{template.tex}\n\\begin{document}\n\\DTLloaddb{t}{\\MaOdb T/x.csv}\n"
+        "\\input{template.tex}\n\\DTLloaddb{t}{\\MaOdb T/x.csv}\n\\begin{document}\n"
         "\\DTLforeach{t}{\\a=a,\\b=b}{\\a-\\b;}\n\\includegraphics[width=1cm]{logo.png}\n"
         "MaO \\MaO\\ Jahrgang \\MaOjahrgang\n\\end{document}\n", encoding="utf-8")
     (year / "Listen" / "db" / "T" / "x.csv").write_text("a;b\n1;2\n3;4\n", encoding="utf-8")
@@ -100,5 +101,8 @@ def test_real_lualatex_template_data_and_pdf_in_different_folders(tmp_path):
     assert stats["compiled"] == 1
     pdf = year / "Listen" / "Doc" / "MaO_66_Doc.pdf"
     assert pdf.read_bytes().startswith(b"%PDF")
+    if shutil.which("pdftotext"):  # Daten wurden trotz Leerzeichen im MaO-Ordnernamen geladen
+        text = subprocess.run(["pdftotext", str(pdf), "-"], capture_output=True, text=True).stdout
+        assert "1-2;" in text.replace(" ", "") and "3-4;" in text.replace(" ", "")
     assert not list((mao / "tex").glob("**/*.pdf"))  # PDF landet nie im Vorlagenordner
     assert not list((year / "Listen" / "Doc").glob(".__mao_cli_wrap__*"))
