@@ -1,0 +1,28 @@
+# Wird von mao config init als raumregeln.yaml angelegt (Konfigurationsordner, nicht im Repository).
+# Raumcodes entsprechen der Spalte raumcode der Raumtabelle (tables.ini: rooms_table).
+# Befehl: mao raumzuteilung --dry-run --report raum.json   (prüfen)  /  --apply  (schreiben)
+rooms:
+  # Zielräume je Klassenstufe. Stufen 5 und 6 mit gemeinsamen Räumen werden je Raum 15 + 15 gefüllt.
+  grade_rooms:
+    "5":  ["R01", "R02", "R03", "R04"]
+    "6":  ["R01", "R02", "R03", "R04"]
+    "7":  ["R05", "R06", "R07"]
+    "8":  ["R08", "R09"]
+    "9":  ["R10"]
+    "10": ["R11"]
+    "11": ["Aula"]
+    "12": ["Aula"]
+  # Überlauf (höchstens max_per_room Plätze)
+  reserve: "R12"
+  # Die besten Teilnehmenden des Vorjahres (Punkte laut points_last_year_view) sitzen gemeinsam.
+  top15:
+    by_grade:        # Stufe 7–10: eigener Raum je Stufe
+      "7": "R13"
+      "8": "R14"
+      "9": "R15"
+      "10": "R16"
+    oberstufe: "R17" # Stufe 11 und 12 zusammen
+top_count: 15        # Anzahl je Top-Gruppe
+max_per_room: 15     # Obergrenze je Raum (zusätzlich gilt die Datenbankkapazität)
+paired_capacity: 30  # Räume, die Stufe 5 und 6 gemeinsam nutzen
+db_capacity_rooms: ["Aula"]  # Räume, für die nur die Datenbankkapazität gilt

@@ -167,3 +167,21 @@ Installation und Updates laufen über uv: [Updates](Updates.md).
 Erforderlich sind `gf.config`, `gf-import.yaml`, `db.config` und die echte
 `orga_table` in der zentralen `tables.ini`. Archivieren, Leeren und die
 Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
+
+
+## Raumzuteilung
+
+- `mao raumzuteilung --dry-run --report raum.json` plant die Verteilung nach
+  `raumregeln.yaml` und zeigt sie im Log (Raum, Belegung, Stufen, offene
+  Teilnehmende). Der Bericht enthält keine Namen. Es wird nichts geschrieben.
+- `mao raumzuteilung --seed 123 --apply` schreibt `raum_id` in die
+  Organisationstabelle (Transaktion, Sperre, Zählabgleich). Mit demselben
+  `--seed` entsteht dieselbe Verteilung wie im Dry-Run (der Seed steht im Log).
+- Vorhandene Zuordnungen bleiben erhalten und belegen Plätze; so lassen sich
+  Lücken nach einer Korrektur nachtragen. `--ueberschreiben` verwirft alles und
+  verteilt neu.
+- Die Top-15 der Vorjahres-Runde werden über die View aus `points_last_year_view`
+  (tables.ini) bestimmt: Spalten `Matrikelnummer`, `Klasse` (aktuell), `Punkte`.
+  Nur Zahlen zählen; Stufe 11 und 12 werden gemeinsam gewertet.
+- Regeln (Zielräume je Stufe, Reserve, Top-15-Räume, Kapazitäten) stehen in
+  `raumregeln.yaml` im Konfigurationsordner; `mao config init` legt eine Vorlage an.
