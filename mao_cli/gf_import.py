@@ -465,7 +465,8 @@ def build_participants(entries: Iterable[dict], students: list[dict], mandatory:
                     "unknown_gender": len(gender_notes)}
 
 
-WRITE_COLUMNS = ("tnr", "matrikelnummer", "vorname", "nachname", "geschlecht", "klasse", "stufe", "lehrkraft_id", "kurs_id")
+# Name, Geschlecht, Klasse und Stufe setzt der Datenbank-Trigger aus den Stammdaten.
+WRITE_COLUMNS = ("tnr", "matrikelnummer", "lehrkraft_id", "kurs_id")
 
 
 def _entry_id_issues(entries: list[dict], students: list[dict], field: str, empty_field: str = "10") -> list[str]:
