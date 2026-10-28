@@ -35,7 +35,7 @@ def base_config():
 
 def test_all_sql_datasets_reference_only_pseudonymous_tables():
     cfg = base_config()
-    assert len(cfg['datasets']) == 16
+    assert len(cfg['datasets']) == 13
     assert all('{{table.' not in d['sql'] for d in cfg['datasets'])
     assert any('DEMO_ORGA' in d['sql'] for d in cfg['datasets'])
 

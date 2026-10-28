@@ -241,78 +241,7 @@ datasets:
       aufgabe_4: Int64
       punkte: Int64
       delegierung: Int64
-
-  - name: orga_preis
-    id: orga_preis
-    enabled: true
-    sql: |
-      SELECT
-      m.tnr,
-      m.matrikelnummer,
-      m.nachname,
-      m.vorname,
-      m.geschlecht,
-      m.klasse,
-      m.stufe,
-      m.lehrkraft,
-      COALESCE(m.kurs, '') AS kurs,
-      m.raum,
-      m.anwesenheit,
-      m.bemerkung,
-      m.aufgabe_1,
-      m.aufgabe_2,
-      m.aufgabe_3,
-      m.aufgabe_4,
-      m.punkte,
-      m.preis,
-      m.preisgeld,
-      m.delegierung
-      FROM {{table.orga_view}} m
-      WHERE m.preis_id IS NOT NULL
-    cast:
-      punkte: Int64
       preisgeld: Int64
-      delegierung: Int64
-
-  - name: orga_delegierte
-    id: orga_delegierte
-    enabled: false
-    sql: |
-      SELECT *
-      FROM {{table.orga_view}}
-      WHERE delegierung IS NOT NULL
-
-
-  - name: klassenleitungslisten
-    id: klassenleitungslisten
-    enabled: true
-    sql: |
-      SELECT 
-      m.nachname,
-      m.vorname,
-      m.geschlecht,
-      m.klasse,
-      m.stufe,
-      lg.kl,
-      lg.stellvkl,
-      lg.mathel,
-      m.anwesenheit,
-      m.aufgabe_1,
-      m.aufgabe_2,
-      m.aufgabe_3,
-      m.aufgabe_4,
-      m.punkte,
-      m.preis,
-      m.delegierung
-      FROM {{table.orga_view}} m
-      JOIN {{table.courses_table}} lg ON lg.lerngruppe = m.klasse AND lg.typ = 'klasse'
-    cast:
-      aufgabe_1: Int64
-      aufgabe_2: Int64
-      aufgabe_3: Int64
-      aufgabe_4: Int64
-      punkte: Int64
-      delegierung: Int64
 
   - name: teachers
     id: teachers
@@ -713,7 +642,13 @@ exports:
   - name: preisgeld
     id: preisgeld
     enabled: true
-    from_dataset: orga_preis
+    from_dataset: orga
+    filter:
+      - column: preis
+        op: notnull
+      - column: preis
+        op: "!="
+        value: ""
     output:
       sep: ";"
       columns: ["nachname","vorname","geschlecht","klasse","lehrkraft","kurs","punkte","preis","preisgeld","delegierung"]
@@ -733,8 +668,13 @@ exports:
   - name: preisgeld
     id: preisgeld_2
     enabled: true
-    from_dataset: orga_preis
+    from_dataset: orga
     filter:
+      - column: preis
+        op: notnull
+      - column: preis
+        op: "!="
+        value: ""
       - column: klasse
         op: "notin"
         value: ["5-1","5-2","6-1","6-2","7-3","7-4"]
@@ -767,8 +707,13 @@ exports:
   - name: preisgeld_zentral
     id: preisgeld_zentral
     enabled: true
-    from_dataset: orga_preis
+    from_dataset: orga
     filter:
+      - column: preis
+        op: notnull
+      - column: preis
+        op: "!="
+        value: ""
       - column: klasse
         op: "in"
         value: ["5-1","5-2","6-1","6-2","7-3","7-4"]

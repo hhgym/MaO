@@ -64,19 +64,19 @@ def test_orga_dataset_selects_text_columns_without_ids(db):
     assert not any(column.endswith("_id") for column in rows[1001])
 
 
-def test_orga_preis_filters_on_preis_id(db):
-    rows = list(db.execute(dataset_sql("orga_preis")))
-    assert [r["matrikelnummer"] for r in rows] == [1001]
-    assert rows[0]["preis"] == "1. Preis"
-
-
-def test_klassenleitungslisten_returns_prize_name(db):
-    rows = list(db.execute(dataset_sql("klassenleitungslisten")))
-    assert rows[0]["preis"] == "1. Preis" and rows[0]["kl"] == "KL"
+def test_prize_exports_filter_the_orga_dataset():
+    cfg = yaml.safe_load((DEFAULTS / "pipeline.yaml").read_text(encoding="utf-8"))
+    names = {item["name"] for item in cfg["datasets"]}
+    assert not names & {"orga_preis", "orga_delegierte", "klassenleitungslisten"}
+    prize = [e for e in cfg["exports"] if str(e["id"]).startswith("preisgeld")]
+    assert len(prize) == 3
+    for export in prize:
+        assert export["from_dataset"] == "orga"
+        assert {"column": "preis", "op": "notnull"} in export["filter"]
 
 
 def test_pipeline_reads_organisation_only_through_the_view():
     cfg = yaml.safe_load((DEFAULTS / "pipeline.yaml").read_text(encoding="utf-8"))
-    for name in ("orga", "orga_preis", "orga_delegierte", "klassenleitungslisten"):
+    for name in ("orga",):
         raw = next(item for item in cfg["datasets"] if item["name"] == name)["sql"]
         assert "{{table.orga_view}}" in raw and "{{table.orga_table}}" not in raw
