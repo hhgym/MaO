@@ -9,6 +9,10 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### GF-Import: schlanker Insert
+
+- Der Import schreibt nur noch `tnr`, `matrikelnummer`, `lehrkraft_id` und `kurs_id`. Vorname, Nachname, Geschlecht, Klasse und Stufe setzt der Trigger auf MaO_Orga_2 aus den Stammdaten (Voraussetzung: Trigger setzt auch `stufe`).
+
 ### Weniger Datasets
 
 - Die Datasets `orga_preis`, `orga_delegierte` und `klassenleitungslisten` entfallen. Die Preisgeld-Exporte filtern das Dataset `orga` (`preis` nicht leer); `preisgeld` wird dort als `Int64` ausgegeben.
