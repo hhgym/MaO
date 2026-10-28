@@ -305,3 +305,15 @@ def test_pdf_name_validation(tmp_path):
         cfg = {"datasets": [], "exports": [], "latex": {"jobs": [{**job, **bad}]}}
         with pytest.raises(ConfigurationError, match="pdf_name"):
             validate_config(cfg, tmp_path)
+
+
+def test_fill_empty_replaces_missing_values_with_placeholder(tmp_path):
+    import pandas as pd
+    from mao_cli.exports import ExportPlan, run_exports
+    df = pd.DataFrame({"lerngruppe": ["7-1", "7-2"], "kl": [None, "AB"], "stellvkl": ["", None]})
+    cfg = {"exports": [{"name": "kl", "from_dataset": "d", "fill_empty": {"kl": "N.N.", "stellvkl": "N.N."},
+                        "output": {"path": "db/kl.csv", "sep": ";", "columns": "*"}}]}
+    plan = ExportPlan(tmp_path)
+    run_exports({"d": df}, cfg, tmp_path, plan)
+    content = next(iter(plan.outputs.values()))[0].decode("utf-8")
+    assert "7-1;N.N.;N.N." in content and "7-2;AB;N.N." in content
