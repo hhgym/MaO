@@ -527,9 +527,8 @@ def _class_summary(rows: list[dict], entries: list[dict] | None = None,
     return [classes[key] for key in sorted(classes, key=lambda name: (grade(name) or 99, name))]
 
 
-def write_import_report(workspace: Path, config_dir: Path, filename: Path,
-                        report: Mapping[str, Any]) -> Path:
-    """Neuen Bericht ausschließlich im Workspace schreiben; keine Überschreibungen."""
+def report_target(workspace: Path, config_dir: Path, filename: Path) -> Path:
+    """Zielpfad eines Berichts prüfen: nur im Workspace, nie in Konfiguration oder .mao-cli."""
     if filename.suffix.lower() not in (".json", ".csv"):
         raise ConfigurationError("--report benötigt einen Dateinamen mit .json oder .csv")
     base = workspace.resolve()
@@ -540,6 +539,13 @@ def write_import_report(workspace: Path, config_dir: Path, filename: Path,
         raise ConfigurationError("--report muss eine Datei innerhalb des Workspaces sein, außerhalb der Konfiguration")
     if any(part in (".mao-cli",) for part in target.relative_to(base).parts[:-1]):
         raise ConfigurationError("--report darf keine internen MaO-Systemdateien ersetzen")
+    return target
+
+
+def write_import_report(workspace: Path, config_dir: Path, filename: Path,
+                        report: Mapping[str, Any]) -> Path:
+    """Neuen Bericht ausschließlich im Workspace schreiben; keine Überschreibungen."""
+    target = report_target(workspace, config_dir, filename)
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
         with target.open("x", encoding="utf-8", newline="") as file:

@@ -341,6 +341,7 @@ def init_config(config_dir: Path, defaults_dir: Path) -> list[Path]:
     missing = {
         "students_table": "DEMO_CURRENT_STUDENTS",
         "current_groups_view": "DEMO_CURRENT_GROUP_VIEW",
+        "points_last_year_view": "DEMO_POINTS_LAST_YEAR_VIEW",
     }
     missing = {key: value for key, value in missing.items() if not tables_parser.has_option("table", key)}
     if missing:
@@ -385,6 +386,10 @@ def init_config(config_dir: Path, defaults_dir: Path) -> list[Path]:
             template = old_example
         shutil.copyfile(template, gf_import)
         created.append(gf_import)
+    rules = config_dir / "raumregeln.yaml"
+    if not rules.exists():
+        shutil.copyfile(defaults_dir / "raumregeln.yaml.example", rules)
+        created.append(rules)
     return created
 
 

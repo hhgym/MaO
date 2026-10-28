@@ -9,6 +9,13 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Raumzuteilung (`mao raumzuteilung`)
+
+- Neuer Befehl: teilt `raum_id` in der Organisationstabelle nach `raumregeln.yaml` zu (Top-15-Räume, Stufen 5/6 gemeinsam, klassenbalanciert, Reserveraum). Standard ist `--dry-run`; geschrieben wird nur mit `--apply` (Transaktion, Sperre, Zählabgleich).
+- Vorhandene Zuordnungen bleiben erhalten und zählen zur Raumkapazität; `--ueberschreiben` verteilt alles neu. `--seed N` macht die Verteilung reproduzierbar (der Seed steht im Log), `--report` schreibt einen Bericht ohne Namen.
+- Die Top-15 stammen aus der neuen tables.ini-Angabe `points_last_year_view` (Spalten Matrikelnummer, Klasse, Punkte); Stufe 11/12 zählen zusammen. Bei Punktgleichstand an der Grenze entscheidet die kleinere Matrikelnummer (mit Hinweis).
+- `mao config init` legt `raumregeln.yaml` aus einer Vorlage an.
+
 ### Export-Option `fill_empty`
 
 - Leere oder NULL-Werte einzelner Spalten werden durch einen Platzhalter ersetzt (Warnung im Log). Der Export `klassenleitungen` setzt `N.N.` für fehlende `kl`/`stellvkl`, damit die Klassenleitungslisten nicht mit einem LaTeX-Fehler abbrechen.

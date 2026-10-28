@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import random
 import sys
 import time
 import traceback
@@ -25,6 +26,7 @@ from .workspaces import (resolve_config_dir, find_conflict_copies, write_pointer
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
 from .gf_import import import_participants, ImportErrorGF, write_import_report
+from .rooms import RoomError, assign_rooms, write_room_report
 from .validation import validate_online
 
 DEFAULTS = Path(__file__).resolve().parent / "defaults"
@@ -158,6 +160,18 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     gf.add_argument("--no-mandatory", action="store_true", help="Pflichtteilnahmen ausnahmsweise nicht ergänzen")
     gf.add_argument("--report", type=Path, metavar="DATEI.json|DATEI.csv",
                     help="Prüfbericht im Workspace speichern (ohne vorhandene Datei zu überschreiben)")
+
+    rooms = commands.add_parser("raumzuteilung", help="Räume (raum_id) nach raumregeln.yaml zuteilen")
+    common(rooms)
+    rooms_mode = rooms.add_mutually_exclusive_group()
+    rooms_mode.add_argument("--apply", action="store_true", help="Zuteilung in die Datenbank schreiben")
+    rooms_mode.add_argument("--dry-run", action="store_true", help="Nur planen und berichten (Standard)")
+    rooms.add_argument("--seed", type=int, metavar="N",
+                       help="Zufallswert für eine reproduzierbare Verteilung (wird im Log genannt)")
+    rooms.add_argument("--ueberschreiben", action="store_true",
+                       help="Vorhandene Raumzuordnungen verwerfen und alles neu verteilen (sonst bleiben sie erhalten)")
+    rooms.add_argument("--report", type=Path, metavar="DATEI.json|DATEI.csv",
+                       help="Bericht im Workspace speichern (ohne vorhandene Datei zu überschreiben)")
 
     init_year = commands.add_parser("init-jahrgang", help="Jahrgangswechsel sicher vorprüfen (read-only)")
     global_overrides(init_year)
@@ -456,6 +470,36 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if args.report:
                 saved = write_import_report(workspace, config_dir, args.report, report)
                 LOGGER.info("GF-Prüfbericht: %s", saved)
+            return 0
+        if args.command == "raumzuteilung":
+            if selection.year is None or selection.year != settings["current_year"]:
+                raise ConfigurationError("Raumzuteilung nur für den aktuell registrierten Jahrgang zulässig")
+            tables = load_tables(resolve_config_file(config_dir, "tables.ini"))
+            if tables.get("orga_table", "").startswith("DEMO_"):
+                raise ConfigurationError("Für raumzuteilung muss in der privaten tables.ini eine echte orga_table stehen")
+            db_config = load_db_config(config_dir)
+            if not can_reach(db_config.host, db_config.port, timeout=3):
+                raise ConnectionError("Datenbank für die Raumzuteilung nicht erreichbar")
+            seed = args.seed if args.seed is not None else random.SystemRandom().randrange(1, 10 ** 6)
+            room_report: dict = {"schema_version": 1, "status": "blocked", "mode": "apply" if args.apply else "dry-run",
+                                 "issues": [], "summary": {}}
+            try:
+                with DB(db_config) as db:
+                    db_mao = current_MaO_number_db(db, tables)
+                    if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
+                        raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
+                    assign_rooms(db, config_dir, tables, dry_run=not args.apply, seed=seed,
+                                 overwrite=args.ueberschreiben, report=room_report)
+            except (RoomError, ConfigurationError) as exc:
+                if str(exc) not in room_report["issues"]:
+                    room_report["issues"].append(str(exc))
+                if args.report:
+                    LOGGER.info("Blockierter Raumbericht: %s", write_room_report(workspace, config_dir, args.report, room_report))
+                raise
+            if args.report:
+                LOGGER.info("Raumbericht: %s", write_room_report(workspace, config_dir, args.report, room_report))
+            if not args.apply:
+                LOGGER.info("DRY-RUN: nichts geschrieben. Mit --seed %s --apply genau diese Verteilung übernehmen.", seed)
             return 0
         cfg, profiles, config_files, tables = load_pipeline(config_dir, workspace, profile_name if args.command not in ("profiles", "init-jahrgang") else None)
         LOGGER.info("Konfiguration: %s", config_dir)
