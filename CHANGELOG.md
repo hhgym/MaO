@@ -9,6 +9,10 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Weniger Datasets
+
+- Die Datasets `orga_preis`, `orga_delegierte` und `klassenleitungslisten` entfallen. Die Preisgeld-Exporte filtern das Dataset `orga` (`preis` nicht leer); `preisgeld` wird dort als `Int64` ausgegeben.
+
 ### LaTeX: leere Dokumente
 
 - Ein LaTeX-Job, der keine Seite erzeugt (z. B. weil alle Listen leer sind), wird mit Warnung übersprungen statt als Fehler abzubrechen.
