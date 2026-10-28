@@ -14,7 +14,7 @@ rooms:
     "12": ["Aula"]
   # Überlauf (höchstens max_per_room Plätze)
   reserve: "R12"
-  # Die besten Teilnehmenden des Vorjahres (Punkte laut points_last_year_view) sitzen gemeinsam.
+  # Die besten Teilnehmenden unter den aktuell Gemeldeten (Vorjahrespunkte laut points_last_year_view) sitzen gemeinsam.
   top15:
     by_grade:        # Stufe 7–10: eigener Raum je Stufe
       "7": "R13"
@@ -22,6 +22,8 @@ rooms:
       "9": "R15"
       "10": "R16"
     oberstufe: "R17" # Stufe 11 und 12 zusammen
+# fill: full = Raum für Raum auffüllen (wenige Aufsichten), even = gleichmäßig auf die Zielräume verteilen
+fill: full
 top_count: 15        # Anzahl je Top-Gruppe
 max_per_room: 15     # Obergrenze je Raum (zusätzlich gilt die Datenbankkapazität)
 paired_capacity: 30  # Räume, die Stufe 5 und 6 gemeinsam nutzen

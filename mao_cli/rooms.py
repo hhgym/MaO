@@ -8,6 +8,7 @@ und geschrieben wird nur mit --apply.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import logging
 import random
@@ -40,6 +41,7 @@ class RoomRules:
     max_per_room: int = 15
     paired_capacity: int = 30
     db_capacity_rooms: tuple[str, ...] = ("Aula",)
+    fill: str = "full"  # full: Raum für Raum auffüllen (wenige Aufsichten); even: gleichmäßig verteilen
 
     def all_rooms(self) -> set[str]:
         rooms = {r for values in self.grade_rooms.values() for r in values}
@@ -86,6 +88,9 @@ def load_room_rules(path: Path) -> RoomRules:
     db_rooms = data.get("db_capacity_rooms", ["Aula"])
     if not isinstance(db_rooms, list):
         raise ConfigurationError(f"{path.name}: db_capacity_rooms muss eine Liste sein")
+    fill = str(data.get("fill", "full"))
+    if fill not in ("full", "even"):
+        raise ConfigurationError(f"{path.name}: fill muss 'full' oder 'even' sein")
     reserve = rooms.get("reserve")
     ober = top15.get("oberstufe")
     return RoomRules(
@@ -97,6 +102,7 @@ def load_room_rules(path: Path) -> RoomRules:
         max_per_room=number("max_per_room", 15),
         paired_capacity=number("paired_capacity", 30),
         db_capacity_rooms=tuple(str(x) for x in db_rooms),
+        fill=fill,
     )
 
 
@@ -110,7 +116,14 @@ class RoomPlan:
     paired_rooms: list[str] = field(default_factory=list)
     capacities: dict[str, int] = field(default_factory=dict)
     warnings: list[str] = field(default_factory=list)
+    capacity_check: list[dict[str, Any]] = field(default_factory=list)
     kept: int = 0
+
+    @property
+    def plan_id(self) -> str:
+        """Kurzprüfsumme der Zuteilung: erkennt Datenänderungen zwischen Dry-Run und --apply."""
+        text = json.dumps(sorted(self.assignments.items()))
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
 
 
 def parse_points(value: Any) -> int | None:
@@ -143,13 +156,34 @@ def select_top(points: list[tuple[int, int, int | None]], count: int) -> tuple[d
     return result, notes
 
 
+def capacity_check(by_stufe: Mapping[str, list[dict[str, Any]]], rules: RoomRules, cap: Any,
+                   usage: Mapping[str, int], plan: RoomPlan) -> list[dict[str, Any]]:
+    """Je Stufe: noch zu verteilende Teilnehmende gegen freie Plätze (Zielräume und Top-Raum)."""
+    rows: list[dict[str, Any]] = []
+    for stufe in sorted(by_stufe, key=int):
+        rooms = list(rules.grade_rooms.get(stufe, []))
+        extra = rules.top15_oberstufe if stufe in ("11", "12") else rules.top15_by_grade.get(stufe)
+        if extra and extra not in rooms:
+            rooms.append(extra)
+        free = sum(max(cap(room, stufe) - usage.get(room, 0), 0) for room in dict.fromkeys(rooms))
+        rows.append({"stufe": stufe, "teilnehmende": len(by_stufe[stufe]), "freie_plaetze": free})
+    reserve_free = max(cap(rules.reserve, "7") - usage.get(rules.reserve, 0), 0) if rules.reserve else 0
+    for row in rows:
+        if row["teilnehmende"] > row["freie_plaetze"]:
+            missing = row["teilnehmende"] - row["freie_plaetze"]
+            plan.warnings.append(f"Engpass Stufe {row['stufe']}: {row['teilnehmende']} Teilnehmende, "
+                                 f"{row['freie_plaetze']} freie Plätze in den Zielräumen (Reserve: {reserve_free} frei, "
+                                 f"{missing} fehlen)")
+    return rows
+
+
 def plan_rooms(participants: list[dict[str, Any]], capacities: Mapping[str, int | None], rules: RoomRules,
-               points: list[tuple[int, int, int | None]], *, seed: int) -> RoomPlan:
+               points: Mapping[int, int], *, seed: int) -> RoomPlan:
     """Reiner Planer ohne Datenbankzugriff.
 
     participants: matrikelnummer, stufe, klasse, raum (vorhandener Raumcode oder None).
     capacities: Raumcode -> Wettbewerbskapazität (None = unbegrenzt).
-    points: (matrikelnummer, punkte, aktuelle Stufe) aller aktiven Schüler:innen mit Vorjahrespunkten.
+    points: matrikelnummer -> Vorjahrespunkte (nur Zahlen). Top-15 = die Besten unter den aktuell Teilnehmenden.
     """
     rng = random.Random(seed)
     plan = RoomPlan()
@@ -201,8 +235,13 @@ def plan_rooms(participants: list[dict[str, Any]], capacities: Mapping[str, int 
     def assigned(person: dict[str, Any]) -> bool:
         return int(person["matrikelnummer"]) in plan.assignments
 
-    # 1) Top-15 in ihre Räume
-    plan.top15, notes = select_top(points, rules.top_count)
+    # Kapazitätsübersicht vorab (freie Plätze, vorhandene Zuordnungen schon abgezogen)
+    plan.capacity_check = capacity_check(by_stufe, rules, cap, usage, plan)
+
+    # 1) Top-15 in ihre Räume: die Besten unter allen aktuell Teilnehmenden (auch bereits platzierten)
+    ranked = [(int(p["matrikelnummer"]), points[int(p["matrikelnummer"])], p["stufe"])
+              for p in participants if p.get("stufe") is not None and int(p["matrikelnummer"]) in points]
+    plan.top15, notes = select_top(ranked, rules.top_count)
     plan.warnings.extend(notes)
     if rules.top15_oberstufe:
         wanted = set(plan.top15.get(OBER, []))
@@ -256,24 +295,31 @@ def plan_rooms(participants: list[dict[str, Any]], capacities: Mapping[str, int 
         buckets = buckets_of(members)
         classes = sorted(buckets)
         rng.shuffle(classes)
-        class_index = room_index = 0
-        left: list[dict[str, Any]] = []
-        while any(buckets.values()):
-            room = targets[room_index % len(targets)]
-            room_index += 1
-            chosen = None
-            for _ in range(len(classes)):
-                key = classes[class_index % len(classes)]
-                class_index += 1
-                if buckets[key]:
-                    chosen = buckets[key].pop(0)
+        left = []
+        if rules.fill == "full":
+            # Klassen reihum mischen, dann Raum für Raum bis zur Kapazität auffüllen.
+            queue = take_round_robin(buckets, len(members))
+            for person in queue:
+                if not any(place(person, room, stufe) for room in targets):
+                    left.append(person)
+        else:
+            class_index = room_index = 0
+            while any(buckets.values()):
+                room = targets[room_index % len(targets)]
+                room_index += 1
+                chosen = None
+                for _ in range(len(classes)):
+                    key = classes[class_index % len(classes)]
+                    class_index += 1
+                    if buckets[key]:
+                        chosen = buckets[key].pop(0)
+                        break
+                if chosen is None:
                     break
-            if chosen is None:
-                break
-            if not place(chosen, room, stufe):
-                left.append(chosen)
-        for key in classes:
-            left.extend(buckets.get(key, []))
+                if not place(chosen, room, stufe):
+                    left.append(chosen)
+            for key in classes:
+                left.extend(buckets.get(key, []))
         leftovers_all.extend(left)
 
     # 4) Überlauf in den Reserveraum
@@ -294,7 +340,7 @@ def _ident(name: str, label: str) -> str:
 
 
 def load_room_data(cur: Any, tables: Mapping[str, str]) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]],
-                                                                    list[tuple[int, int, int | None]]]:
+                                                                    dict[int, int]]:
     orga = _ident(tables.get("orga_table", ""), "orga_table")
     rooms_table = _ident(tables.get("rooms_table", ""), "rooms_table")
     view = _ident(tables.get("points_last_year_view", ""), "points_last_year_view")
@@ -320,11 +366,11 @@ def load_room_data(cur: Any, tables: Mapping[str, str]) -> tuple[list[dict[str, 
                              "raum": by_id.get(int(raum_id)) if raum_id is not None else None,
                              "raum_id": raum_id})
     cur.execute(f"SELECT Matrikelnummer, Klasse, Punkte FROM `{view}`")
-    points: list[tuple[int, int, int | None]] = []
-    for matrikel, klasse, punkte in cur.fetchall():
+    points: dict[int, int] = {}
+    for matrikel, _klasse, punkte in cur.fetchall():
         value = parse_points(punkte)
         if matrikel is not None and value is not None:
-            points.append((int(matrikel), value, grade(klasse)))
+            points[int(matrikel)] = value
     return participants, rooms, points
 
 
@@ -336,11 +382,15 @@ def review(rules: RoomRules, rooms: Mapping[str, Mapping[str, Any]], participant
     unknown = sorted(r for r in rules.all_rooms() if r not in rooms)
     if unknown:
         issues.append("Raumcodes aus raumregeln.yaml fehlen in der Raumtabelle: " + ", ".join(unknown))
+    inactive = sorted(r for r in rules.all_rooms() if r in rooms and not rooms[r]["active"])
+    if inactive:
+        issues.append("Inaktive Räume (aktiv = 0) in raumregeln.yaml: " + ", ".join(inactive))
     return issues
 
 
 def assign_rooms(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_run: bool, seed: int,
-                 overwrite: bool = False, report: dict[str, Any] | None = None) -> dict[str, int]:
+                 overwrite: bool = False, plan_id: str | None = None,
+                 report: dict[str, Any] | None = None) -> dict[str, Any]:
     rules = load_room_rules(config_dir / "raumregeln.yaml")
     cnx = db.conn
     if cnx is None:
@@ -358,15 +408,12 @@ def assign_rooms(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_ru
         capacities = {code: info["capacity"] for code, info in rooms.items()}
         working = [{**p, "raum": None} for p in participants] if overwrite else participants
         plan = plan_rooms(working, capacities, rules, points, seed=seed)
-        for code in sorted(plan.per_room):
-            if not rooms[code]["active"]:
-                plan.warnings.append(f"Raum {code} ist in der Raumtabelle als inaktiv markiert")
         for code in plan.paired_rooms:
             db_cap = capacities.get(code)
             if db_cap is not None and db_cap < rules.paired_capacity:
                 plan.warnings.append(f"Raum {code}: Kapazität laut Datenbank {db_cap} (Regel für 5/6: {rules.paired_capacity})")
         stats = {"participants": len(participants), "kept": plan.kept, "assigned": len(plan.assignments),
-                 "unassigned": len(plan.unassigned), "seed": seed}
+                 "unassigned": len(plan.unassigned), "seed": seed, "plan_id": plan.plan_id}
         if report is not None:
             report["summary"] = stats
             report["rooms"] = [{"raum": code, "teilnehmende": plan.per_room[code], "kapazitaet": plan.capacities.get(code),
@@ -375,9 +422,13 @@ def assign_rooms(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_ru
                                     for p in plan.unassigned]
             report["warnings"] = plan.warnings
             report["top15"] = {key: len(values) for key, values in plan.top15.items()}
+            report["capacity_check"] = plan.capacity_check
         for note in plan.warnings:
             LOGGER.warning("Raumzuteilung | %s", note)
         _log_plan(plan, stats, overwrite)
+        if not dry_run and plan_id and plan_id != plan.plan_id:
+            raise RoomError(f"Plan-ID {plan.plan_id} weicht von der geprüften {plan_id} ab: Daten oder Regeln haben sich "
+                            "seit dem Dry-Run geändert. Dry-Run wiederholen und neu prüfen.")
         if not dry_run:
             lock_name = f"mao-rooms-{tables['orga_table']}"
             _persist(cnx, cur, tables["orga_table"], rooms, plan, overwrite, lock_name)
@@ -397,10 +448,14 @@ def assign_rooms(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_ru
         cur.close()
 
 
-def _log_plan(plan: RoomPlan, stats: Mapping[str, int], overwrite: bool) -> None:
-    LOGGER.info("Raumzuteilung | Teilnehmende: %s | bereits mit Raum: %s | neu zugeteilt: %s | offen: %s | Seed: %s%s",
+def _log_plan(plan: RoomPlan, stats: Mapping[str, Any], overwrite: bool) -> None:
+    LOGGER.info("Raumzuteilung | Teilnehmende: %s | bereits mit Raum: %s | neu zugeteilt: %s | offen: %s | Seed: %s | Plan-ID: %s%s",
                 stats["participants"], stats["kept"], stats["assigned"], stats["unassigned"], stats["seed"],
-                " | alle Zuordnungen werden ersetzt" if overwrite else "")
+                stats["plan_id"], " | alle Zuordnungen werden ersetzt" if overwrite else "")
+    for row in plan.capacity_check:
+        LOGGER.info("  Stufe %-3s %3d Teilnehmende, %3d freie Plätze", row["stufe"], row["teilnehmende"], row["freie_plaetze"])
+    for key in sorted(plan.top15):
+        LOGGER.info("  Top-%d Stufe %s: %d Personen", len(plan.top15[key]), key, len(plan.top15[key]))
     for room in sorted(plan.per_room, key=lambda r: (_floor(r), r)):
         parts = ", ".join(f"{count}× Stufe {stufe}" for stufe, count in sorted(
             plan.per_room_grade.get(room, {}).items(), key=lambda item: int(item[0])))

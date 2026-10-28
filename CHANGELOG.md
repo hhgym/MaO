@@ -9,11 +9,19 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Raumzuteilung: Auffüllen, Top-15, Plan-ID
+
+- `fill: full` (Standard) füllt die Zielräume Raum für Raum bis zur Kapazität auf, um Aufsichten zu sparen; `fill: even` verteilt gleichmäßig. Klassen werden dabei weiterhin gemischt.
+- Top-15 sind die besten Punktzahlen unter den aktuell Teilnehmenden (nicht mehr: Beste des Vorjahres, soweit wieder dabei).
+- Vorab-Kapazitätsübersicht je Stufe im Log und im Bericht, Warnung bei Engpass.
+- Inaktive Räume (`aktiv = 0`) in `raumregeln.yaml` blockieren die Zuteilung.
+- Der Dry-Run nennt eine Plan-ID; `--apply --plan-id ID` schreibt nur, wenn sich die Verteilung seitdem nicht geändert hat.
+
 ### Raumzuteilung (`mao raumzuteilung`)
 
 - Neuer Befehl: teilt `raum_id` in der Organisationstabelle nach `raumregeln.yaml` zu (Top-15-Räume, Stufen 5/6 gemeinsam, klassenbalanciert, Reserveraum). Standard ist `--dry-run`; geschrieben wird nur mit `--apply` (Transaktion, Sperre, Zählabgleich).
 - Vorhandene Zuordnungen bleiben erhalten und zählen zur Raumkapazität; `--ueberschreiben` verteilt alles neu. `--seed N` macht die Verteilung reproduzierbar (der Seed steht im Log), `--report` schreibt einen Bericht ohne Namen.
-- Die Top-15 stammen aus der neuen tables.ini-Angabe `points_last_year_view` (Spalten Matrikelnummer, Klasse, Punkte); Stufe 11/12 zählen zusammen. Bei Punktgleichstand an der Grenze entscheidet die kleinere Matrikelnummer (mit Hinweis).
+- Die Top-15-Punkte stammen aus der neuen tables.ini-Angabe `points_last_year_view` (Spalten Matrikelnummer, Klasse, Punkte); Stufe 11/12 zählen zusammen. Bei Punktgleichstand an der Grenze entscheidet die kleinere Matrikelnummer (mit Hinweis).
 - `mao config init` legt `raumregeln.yaml` aus einer Vorlage an.
 
 ### Export-Option `fill_empty`

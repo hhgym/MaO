@@ -168,6 +168,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     rooms_mode.add_argument("--dry-run", action="store_true", help="Nur planen und berichten (Standard)")
     rooms.add_argument("--seed", type=int, metavar="N",
                        help="Zufallswert für eine reproduzierbare Verteilung (wird im Log genannt)")
+    rooms.add_argument("--plan-id", metavar="ID",
+                       help="Mit --apply: nur schreiben, wenn der Plan der im Dry-Run genannten Plan-ID entspricht")
     rooms.add_argument("--ueberschreiben", action="store_true",
                        help="Vorhandene Raumzuordnungen verwerfen und alles neu verteilen (sonst bleiben sie erhalten)")
     rooms.add_argument("--report", type=Path, metavar="DATEI.json|DATEI.csv",
@@ -190,6 +192,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     update.add_argument("--output", type=Path, help=argparse.SUPPRESS)
 
     args = parser.parse_args(argv)
+    if args.command == "raumzuteilung" and args.plan_id and not args.apply:
+        parser.error("--plan-id gehört zu --apply")
     if args.command == "import-gf" and args.apply and args.report:
         parser.error("--report ist für den Import-Dry-Run vorgesehen; --apply ohne --report verwenden")
     if getattr(args, "year", None) is not None:
@@ -489,7 +493,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
                         raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
                     assign_rooms(db, config_dir, tables, dry_run=not args.apply, seed=seed,
-                                 overwrite=args.ueberschreiben, report=room_report)
+                                 overwrite=args.ueberschreiben, plan_id=args.plan_id, report=room_report)
             except (RoomError, ConfigurationError) as exc:
                 if str(exc) not in room_report["issues"]:
                     room_report["issues"].append(str(exc))
@@ -499,7 +503,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if args.report:
                 LOGGER.info("Raumbericht: %s", write_room_report(workspace, config_dir, args.report, room_report))
             if not args.apply:
-                LOGGER.info("DRY-RUN: nichts geschrieben. Mit --seed %s --apply genau diese Verteilung übernehmen.", seed)
+                LOGGER.info("DRY-RUN: nichts geschrieben. Diese Verteilung übernehmen: mao raumzuteilung --seed %s --apply --plan-id %s",
+                            seed, room_report["summary"].get("plan_id", "?"))
             return 0
         cfg, profiles, config_files, tables = load_pipeline(config_dir, workspace, profile_name if args.command not in ("profiles", "init-jahrgang") else None)
         LOGGER.info("Konfiguration: %s", config_dir)

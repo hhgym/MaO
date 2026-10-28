@@ -177,10 +177,12 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
 - `mao raumzuteilung --seed 123 --apply` schreibt `raum_id` in die
   Organisationstabelle (Transaktion, Sperre, Zählabgleich). Mit demselben
   `--seed` entsteht dieselbe Verteilung wie im Dry-Run (der Seed steht im Log).
+  Der Dry-Run nennt außerdem eine Plan-ID; `--apply --plan-id ID` schreibt nur,
+  wenn sich Daten oder Regeln seitdem nicht geändert haben.
 - Vorhandene Zuordnungen bleiben erhalten und belegen Plätze; so lassen sich
   Lücken nach einer Korrektur nachtragen. `--ueberschreiben` verwirft alles und
   verteilt neu.
-- Die Top-15 der Vorjahres-Runde werden über die View aus `points_last_year_view`
+- Die Top-15 sind die Besten unter den aktuell Teilnehmenden; ihre Vorjahrespunkte werden über die View aus `points_last_year_view`
   (tables.ini) bestimmt: Spalten `Matrikelnummer`, `Klasse` (aktuell), `Punkte`.
   Nur Zahlen zählen; Stufe 11 und 12 werden gemeinsam gewertet.
 - Regeln (Zielräume je Stufe, Reserve, Top-15-Räume, Kapazitäten) stehen in

@@ -56,7 +56,7 @@ def test_top_selection_groups_oberstufe_and_reports_ties():
 
 def test_top15_go_to_their_rooms_and_rest_is_spread():
     people = [person(i, 7, "7-1") for i in range(1, 41)]
-    pts = [(i, 100 - i, 7) for i in range(1, 41)]
+    pts = {i: 100 - i for i in range(1, 41)}
     plan = r.plan_rooms(people, {}, rules(), pts, seed=1)
     assert sorted(m for m, room in plan.assignments.items() if room == "T7") == list(range(1, 16))
     assert all(plan.per_room[room] <= 15 for room in plan.per_room)
@@ -65,7 +65,7 @@ def test_top15_go_to_their_rooms_and_rest_is_spread():
 
 def test_oberstufe_top_and_aula_use_database_capacity():
     people = [person(i, 11 if i % 2 else 12, "11") for i in range(1, 31)]
-    pts = [(i, 50 - i, 11 if i % 2 else 12) for i in range(1, 31)]
+    pts = {i: 50 - i for i in range(1, 31)}
     plan = r.plan_rooms(people, {"Aula": 40}, rules(), pts, seed=3)
     assert sum(1 for room in plan.assignments.values() if room == "TO") == 15
     assert sum(1 for room in plan.assignments.values() if room == "Aula") == 15
@@ -73,7 +73,7 @@ def test_oberstufe_top_and_aula_use_database_capacity():
 
 def test_stufen_5_und_6_share_rooms_15_plus_15():
     people = [person(i, 5, "5-1") for i in range(1, 16)] + [person(100 + i, 6, "6-1") for i in range(1, 16)]
-    plan = r.plan_rooms(people, {}, rules(), [], seed=2)
+    plan = r.plan_rooms(people, {}, rules(), {}, seed=2)
     assert plan.paired_rooms == ["A", "B"]
     assert plan.per_room_grade["A"] == {"5": 15, "6": 15} or plan.per_room_grade["B"] == {"5": 15, "6": 15}
     assert len(plan.assignments) == 30
@@ -81,30 +81,30 @@ def test_stufen_5_und_6_share_rooms_15_plus_15():
 
 def test_overflow_goes_to_reserve_then_unassigned():
     people = [person(i, 8, "8-1") for i in range(1, 21)]
-    plan = r.plan_rooms(people, {}, rules(grade_rooms={"8": ["X"]}, top15_by_grade={}), [], seed=1)
+    plan = r.plan_rooms(people, {}, rules(grade_rooms={"8": ["X"]}, top15_by_grade={}), {}, seed=1)
     assert plan.per_room == {"X": 15, "R": 5} and not plan.unassigned
-    plan = r.plan_rooms(people, {}, rules(grade_rooms={"8": ["X"]}, reserve=None, top15_by_grade={}), [], seed=1)
+    plan = r.plan_rooms(people, {}, rules(grade_rooms={"8": ["X"]}, reserve=None, top15_by_grade={}), {}, seed=1)
     assert len(plan.unassigned) == 5
 
 
 def test_stufe_without_rooms_warns_and_existing_assignments_are_protected():
     people = [person(1, 9, "9-1"), person(2, 7, "7-1", raum="C"), person(3, 7, "7-1")]
-    plan = r.plan_rooms(people, {}, rules(reserve=None, top15_by_grade={}), [], seed=1)
+    plan = r.plan_rooms(people, {}, rules(reserve=None, top15_by_grade={}), {}, seed=1)
     assert plan.kept == 1 and 2 not in plan.assignments and plan.assignments[3] in ("C", "D")
     assert any("Stufe 9" in w for w in plan.warnings) and [p["matrikelnummer"] for p in plan.unassigned] == [1]
 
 
 def test_existing_rooms_count_towards_capacity():
     people = [person(i, 7, "7-1", raum="C") for i in range(1, 16)] + [person(99, 7, "7-1")]
-    plan = r.plan_rooms(people, {}, rules(grade_rooms={"7": ["C"]}, reserve=None, top15_by_grade={}), [], seed=1)
+    plan = r.plan_rooms(people, {}, rules(grade_rooms={"7": ["C"]}, reserve=None, top15_by_grade={}), {}, seed=1)
     assert [p["matrikelnummer"] for p in plan.unassigned] == [99]
 
 
 def test_same_seed_same_plan():
     people = [person(i, 7, f"7-{i % 3 + 1}") for i in range(1, 60)]
-    a = r.plan_rooms(people, {}, rules(top15_by_grade={}), [], seed=7).assignments
-    b = r.plan_rooms(people, {}, rules(top15_by_grade={}), [], seed=7).assignments
-    c = r.plan_rooms(people, {}, rules(top15_by_grade={}), [], seed=8).assignments
+    a = r.plan_rooms(people, {}, rules(top15_by_grade={}), {}, seed=7).assignments
+    b = r.plan_rooms(people, {}, rules(top15_by_grade={}), {}, seed=7).assignments
+    c = r.plan_rooms(people, {}, rules(top15_by_grade={}), {}, seed=8).assignments
     assert a == b and a != c
 
 
@@ -211,3 +211,59 @@ def test_report_files_stay_in_workspace(tmp_path):
         r.write_room_report(ws, cfg, Path("raum.csv"), rep)
     with pytest.raises(ConfigurationError):
         r.write_room_report(ws, cfg, Path("../x.json"), rep)
+
+
+def test_fill_full_packs_rooms_even_spreads():
+    people = [person(i, 7, f"7-{i % 2 + 1}") for i in range(1, 31)]
+    base = dict(grade_rooms={"7": ["C", "D", "E"]}, reserve=None, top15_by_grade={})
+    full = r.plan_rooms(people, {}, rules(**base), {}, seed=1)
+    assert sorted(full.per_room.values()) == [15, 15] and full.per_room["C"] == 15
+    even = r.plan_rooms(people, {}, rules(**base, fill="even"), {}, seed=1)
+    assert sorted(even.per_room.values()) == [10, 10, 10]
+
+
+def test_fill_full_mixes_classes_in_each_room():
+    people = [person(i, 7, "7-1" if i <= 15 else "7-2") for i in range(1, 31)]
+    plan = r.plan_rooms(people, {}, rules(grade_rooms={"7": ["C", "D"]}, reserve=None, top15_by_grade={}), {}, seed=4)
+    in_c = [m for m, room in plan.assignments.items() if room == "C"]
+    assert 0 < sum(m <= 15 for m in in_c) < 15
+
+
+def test_top15_are_the_best_of_the_current_participants():
+    people = [person(i, 7, "7-1") for i in range(11, 41)]  # 1..10 nehmen nicht teil
+    pts = {i: 100 - i for i in range(1, 41)}
+    plan = r.plan_rooms(people, {}, rules(), pts, seed=1)
+    assert sorted(m for m, room in plan.assignments.items() if room == "T7") == list(range(11, 26))
+
+
+def test_capacity_check_reports_shortage():
+    people = [person(i, 9, "9-1") for i in range(1, 31)]
+    plan = r.plan_rooms(people, {}, rules(grade_rooms={"9": ["X"]}, reserve=None, top15_by_grade={}), {}, seed=1)
+    assert plan.capacity_check == [{"stufe": "9", "teilnehmende": 30, "freie_plaetze": 15}]
+    assert any("Engpass Stufe 9" in w for w in plan.warnings)
+
+
+def test_plan_id_is_stable_and_guards_apply(tmp_path):
+    dry = setup(tmp_path, 3)
+    stats = r.assign_rooms(SimpleNamespace(conn=dry), tmp_path, TABLES, dry_run=True, seed=1)
+    cnx = setup(tmp_path, 3)
+    r.assign_rooms(SimpleNamespace(conn=cnx), tmp_path, TABLES, dry_run=False, seed=1, plan_id=stats["plan_id"])
+    assert cnx.commits == 1
+    other = setup(tmp_path, 3)
+    with pytest.raises(r.RoomError, match="Plan-ID"):
+        r.assign_rooms(SimpleNamespace(conn=other), tmp_path, TABLES, dry_run=False, seed=1, plan_id="000000000000")
+    assert other.commits == 0
+
+
+def test_inactive_room_in_rules_blocks(tmp_path):
+    cnx = setup(tmp_path, 3)
+    cnx.cur.data["raeume"] = [(1, "C", 15, 1), (2, "D", 15, 0), (3, "R", 15, 1)]
+    with pytest.raises(r.RoomError, match="Inaktive Räume"):
+        r.assign_rooms(SimpleNamespace(conn=cnx), tmp_path, TABLES, dry_run=True, seed=1)
+
+
+def test_fill_value_is_validated(tmp_path):
+    path = tmp_path / "raumregeln.yaml"
+    path.write_text("rooms:\n  grade_rooms:\n    '5': [A]\nfill: halb\n", encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="fill"):
+        r.load_room_rules(path)
