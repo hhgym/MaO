@@ -108,6 +108,21 @@ def write_export_macros(
     write_text(tex_path, text)
 
 
+def _apply_fill_empty(df: pd.DataFrame, spec: Any, name: str) -> pd.DataFrame:
+    """Leere/NULL-Werte einzelner Spalten durch Platzhalter ersetzen (z. B. kl: "N.N.")."""
+    if not spec:
+        return df
+    df = df.copy()
+    for column, placeholder in dict(spec).items():
+        if column not in df.columns:
+            continue
+        empty = df[column].isna() | (df[column].astype(str).str.strip() == "")
+        if empty.any():
+            LOGGER.warning("Export '%s': %d leere Werte in '%s' durch '%s' ersetzt", name, int(empty.sum()), column, placeholder)
+            df[column] = df[column].astype(object).where(~empty, str(placeholder))
+    return df
+
+
 def render_export_macros(*, tex_path: Path, loads: List[Tuple[str, Path]], db_dir: Optional[Path] = None,
                          list_macro: Optional[str] = None,
                          entries: Optional[List[str]] = None) -> str:
@@ -364,6 +379,7 @@ def run_exports(datasets: Dict[str, pd.DataFrame], cfg: Dict[str, Any], base_dir
             df = _apply_filters(df, _as_list(ex.get("filter")))
             df = _apply_rename(df, ex.get("rename"))
             df = _apply_cast(df, ex.get("cast"))
+            df = _apply_fill_empty(df, ex.get("fill_empty"), name)
 
             sort_by = _as_list(ex.get("sort_by"))
             if sort_by:

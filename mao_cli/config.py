@@ -96,6 +96,8 @@ def validate_config(cfg: Dict[str, Any], base_dir: Optional[Path] = None) -> Lis
             errors.append(f"Export '{name}': rename muss Mapping sein")
         if ex.get("cast") is not None and not isinstance(ex["cast"], dict):
             errors.append(f"Export '{name}': cast muss Mapping sein")
+        if ex.get("fill_empty") is not None and not isinstance(ex["fill_empty"], dict):
+            errors.append(f"Export '{name}': fill_empty muss Mapping sein")
         if ex.get("macro") is not None and not isinstance(ex.get("macro"), dict):
             errors.append(f"Export '{name}': macro muss Mapping sein")
         splits = ex.get("splits")

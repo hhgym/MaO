@@ -9,6 +9,10 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Export-Option `fill_empty`
+
+- Leere oder NULL-Werte einzelner Spalten werden durch einen Platzhalter ersetzt (Warnung im Log). Der Export `klassenleitungen` setzt `N.N.` für fehlende `kl`/`stellvkl`, damit die Klassenleitungslisten nicht mit einem LaTeX-Fehler abbrechen.
+
 ### GF-Import: schlanker Insert
 
 - Der Import schreibt nur noch `tnr`, `matrikelnummer`, `lehrkraft_id` und `kurs_id`. Vorname, Nachname, Geschlecht, Klasse und Stufe setzt der Trigger auf MaO_Orga_2 aus den Stammdaten (Voraussetzung: Trigger setzt auch `stufe`).

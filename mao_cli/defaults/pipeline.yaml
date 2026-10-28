@@ -363,6 +363,10 @@ exports:
       - column: stufe
         op: "<="
         value: 10
+    # Noch nicht eingetragene Klassenleitungen: Platzhalter statt LaTeX-Fehler
+    fill_empty:
+      kl: "N.N."
+      stellvkl: "N.N."
     output:
       path: "db/Lerngruppen/Klassenleitungen.csv"
       sep: ";"
