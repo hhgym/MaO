@@ -26,6 +26,7 @@ from .workspaces import (resolve_config_dir, find_conflict_copies, write_pointer
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
 from .gf_import import import_participants, ImportErrorGF, write_import_report
+from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, sync_schools
 from .rooms import RoomError, assign_rooms, write_room_report
 from .validation import validate_online
 
@@ -175,6 +176,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     rooms.add_argument("--report", type=Path, metavar="DATEI.json|DATEI.csv",
                        help="Bericht im Workspace speichern (ohne vorhandene Datei zu überschreiben)")
 
+    schools = commands.add_parser("schulen-sync", help="Schulverzeichnis Berlin in die Schulen-Tabelle übernehmen")
+    common(schools)
+    schools_mode = schools.add_mutually_exclusive_group()
+    schools_mode.add_argument("--apply", action="store_true", help="Änderungen in die Datenbank schreiben")
+    schools_mode.add_argument("--dry-run", action="store_true", help="Nur vergleichen und berichten (Standard)")
+    schools.add_argument("--url", default=DEFAULT_SCHOOLS_URL, help="Adresse des GeoJSON (Standard: Schulverzeichnis Berlin)")
+    schools.add_argument("--report", type=Path, metavar="DATEI.json", help="Bericht im Workspace speichern")
+
     init_year = commands.add_parser("init-jahrgang", help="Jahrgangswechsel sicher vorprüfen (read-only)")
     global_overrides(init_year)
     init_year.add_argument("--offline", action="store_true", help="Nur geplante Prüfschritte anzeigen")
@@ -192,6 +201,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     update.add_argument("--output", type=Path, help=argparse.SUPPRESS)
 
     args = parser.parse_args(argv)
+    if args.command == "schulen-sync" and args.report and args.report.suffix.lower() != ".json":
+        parser.error("--report benötigt für schulen-sync einen Dateinamen mit .json")
     if args.command == "raumzuteilung" and args.plan_id and not args.apply:
         parser.error("--plan-id gehört zu --apply")
     if args.command == "import-gf" and args.apply and args.report:
@@ -474,6 +485,26 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             if args.report:
                 saved = write_import_report(workspace, config_dir, args.report, report)
                 LOGGER.info("GF-Prüfbericht: %s", saved)
+            return 0
+        if args.command == "schulen-sync":
+            tables = load_tables(resolve_config_file(config_dir, "tables.ini"))
+            db_config = load_db_config(config_dir)
+            if not can_reach(db_config.host, db_config.port, timeout=3):
+                raise ConnectionError("Datenbank für den Schulabgleich nicht erreichbar")
+            school_report: dict = {"schema_version": 1, "status": "blocked", "mode": "apply" if args.apply else "dry-run",
+                                   "issues": [], "summary": {}}
+            try:
+                with DB(db_config) as db:
+                    sync_schools(db, tables, url=args.url, dry_run=not args.apply, report=school_report)
+            except (SchoolError, OSError) as exc:
+                school_report["issues"].append(str(exc))
+                if args.report:
+                    LOGGER.info("Blockierter Schulbericht: %s", write_import_report(workspace, config_dir, args.report, school_report))
+                if isinstance(exc, SchoolError):
+                    raise
+                raise ConnectionError(f"Schulverzeichnis nicht abrufbar: {exc}") from exc
+            if args.report:
+                LOGGER.info("Schulbericht: %s", write_import_report(workspace, config_dir, args.report, school_report))
             return 0
         if args.command == "raumzuteilung":
             if selection.year is None or selection.year != settings["current_year"]:

@@ -187,3 +187,14 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
   Nur Zahlen zählen; Stufe 11 und 12 werden gemeinsam gewertet.
 - Regeln (Zielräume je Stufe, Reserve, Top-15-Räume, Kapazitäten) stehen in
   `raumregeln.yaml` im Konfigurationsordner; `mao config init` legt eine Vorlage an.
+
+
+## Schulabgleich
+
+- `mao schulen-sync --dry-run --report schulen.json` lädt das Schulverzeichnis Berlin und
+  zeigt, welche Schulen neu, geändert oder weggefallen sind. Es wird nichts geschrieben.
+- `mao schulen-sync --apply` schreibt die Änderungen in die Tabelle aus `schools_table`
+  (tables.ini). Weggefallene Schulen werden auf `aktiv = 0` gesetzt, nie gelöscht.
+- Bei unvollständiger Antwort der Quelle (weniger als 100 Schulen, weniger als die Hälfte der
+  bisher aktiven, abweichende Gesamtzahl) bricht der Befehl ab, ohne etwas zu schreiben.
+- `--url` ersetzt die Standardadresse (Schulverzeichnis Berlin, GeoJSON).
