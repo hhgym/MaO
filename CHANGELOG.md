@@ -9,6 +9,11 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Schulabgleich (`mao schulen-sync`)
+
+- Neuer Befehl: lädt das Schulverzeichnis Berlin (GeoJSON, öffentlich) und gleicht es mit der Tabelle aus `schools_table` (tables.ini) ab. Standard ist `--dry-run`; `--apply` legt neue Schulen an, aktualisiert geänderte und setzt weggefallene auf `aktiv = 0`. Es wird nie gelöscht, und manuell gepflegte Spalten bleiben unberührt.
+- Schutz: nur https, Vollständigkeitsprüfung gegen die gemeldete Gesamtzahl, Abbruch bei weniger als 100 Schulen oder weniger als der Hälfte der bisher aktiven, Transaktion mit Sperre und Zählabgleich. `--report DATEI.json` speichert den Bericht.
+
 ### Raumzuteilung: Auffüllen, Top-15, Plan-ID
 
 - `fill: full` (Standard) füllt die Zielräume Raum für Raum bis zur Kapazität auf, um Aufsichten zu sparen; `fill: even` verteilt gleichmäßig. Klassen werden dabei weiterhin gemischt.

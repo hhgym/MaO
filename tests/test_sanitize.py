@@ -11,7 +11,7 @@ DEFAULTS = ROOT / "mao_cli" / "defaults"
 
 def test_default_table_names_are_only_demo():
     values = load_tables(DEFAULTS / "tables.ini")
-    assert len(values) == 22
+    assert len(values) == 23
     assert all(v.startswith("DEMO_") for v in values.values())
     assert values["jahrgaenge_table"] == "DEMO_JAHRGAENGE"
 

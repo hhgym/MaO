@@ -342,6 +342,7 @@ def init_config(config_dir: Path, defaults_dir: Path) -> list[Path]:
         "students_table": "DEMO_CURRENT_STUDENTS",
         "current_groups_view": "DEMO_CURRENT_GROUP_VIEW",
         "points_last_year_view": "DEMO_POINTS_LAST_YEAR_VIEW",
+        "schools_table": "DEMO_SCHOOLS",
     }
     missing = {key: value for key, value in missing.items() if not tables_parser.has_option("table", key)}
     if missing:
