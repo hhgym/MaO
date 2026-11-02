@@ -28,3 +28,7 @@ top_count: 15        # Anzahl je Top-Gruppe
 max_per_room: 15     # Obergrenze je Raum (zusätzlich gilt die Datenbankkapazität)
 paired_capacity: 30  # Räume, die Stufe 5 und 6 gemeinsam nutzen
 db_capacity_rooms: ["Aula"]  # Räume, für die nur die Datenbankkapazität gilt
+# Externe Teilnehmende (Grundschulen): eigene Räume, nie dieselben wie im Hauptwettbewerb.
+# Zuteilung mit: mao raumzuteilung --extern --dry-run   /   --apply. Weiterer Raum = weiterer Eintrag (je max_per_room Plätze).
+extern:
+  rooms: ["R18"]

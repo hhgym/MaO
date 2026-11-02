@@ -25,7 +25,7 @@ from .updater import UpdateError, plan_update, run_update, update_notice
 from .workspaces import (resolve_config_dir, find_conflict_copies, write_pointer, CONFIG_FOLDER, TEX_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
-from .extern import ExternError, import_extern
+from .extern import ExternError, assign_extern_rooms, import_extern
 from .gf_import import import_participants, ImportErrorGF, write_import_report
 from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, read_file, sync_schools
 from .rooms import RoomError, assign_rooms, write_room_report
@@ -174,6 +174,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                        help="Mit --apply: nur schreiben, wenn der Plan der im Dry-Run genannten Plan-ID entspricht")
     rooms.add_argument("--ueberschreiben", action="store_true",
                        help="Vorhandene Raumzuordnungen verwerfen und alles neu verteilen (sonst bleiben sie erhalten)")
+    rooms.add_argument("--extern", action="store_true",
+                       help="Stattdessen die externen Teilnehmenden zuteilen (Räume aus raumregeln.yaml, Abschnitt extern)")
     rooms.add_argument("--report", type=Path, metavar="DATEI.json|DATEI.csv",
                        help="Bericht im Workspace speichern (ohne vorhandene Datei zu überschreiben)")
 
@@ -574,7 +576,7 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
             if selection.year is None or selection.year != settings["current_year"]:
                 raise ConfigurationError("Raumzuteilung nur für den aktuell registrierten Jahrgang zulässig")
             tables = load_tables(resolve_config_file(config_dir, "tables.ini"))
-            if tables.get("orga_table", "").startswith("DEMO_"):
+            if not args.extern and tables.get("orga_table", "").startswith("DEMO_"):
                 raise ConfigurationError("Für raumzuteilung muss in der privaten tables.ini eine echte orga_table stehen")
             db_config = load_db_config(config_dir)
             if not can_reach(db_config.host, db_config.port, timeout=3):
@@ -587,9 +589,13 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                     db_mao = current_MaO_number_db(db, tables)
                     if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
                         raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
-                    assign_rooms(db, config_dir, tables, dry_run=not args.apply, seed=seed,
-                                 overwrite=args.ueberschreiben, plan_id=args.plan_id, report=room_report)
-            except (RoomError, ConfigurationError) as exc:
+                    if args.extern:
+                        assign_extern_rooms(db, config_dir, tables, dry_run=not args.apply, overwrite=args.ueberschreiben,
+                                            plan_id=args.plan_id, report=room_report)
+                    else:
+                        assign_rooms(db, config_dir, tables, dry_run=not args.apply, seed=seed,
+                                     overwrite=args.ueberschreiben, plan_id=args.plan_id, report=room_report)
+            except (RoomError, ExternError, ConfigurationError) as exc:
                 if str(exc) not in room_report["issues"]:
                     room_report["issues"].append(str(exc))
                 if args.report:
@@ -598,8 +604,9 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
             if args.report:
                 LOGGER.info("Raumbericht: %s", write_room_report(workspace, config_dir, args.report, room_report))
             if not args.apply:
-                LOGGER.info("DRY-RUN: nichts geschrieben. Diese Verteilung übernehmen: mao raumzuteilung --seed %s --apply --plan-id %s",
-                            seed, room_report["summary"].get("plan_id", "?"))
+                LOGGER.info("DRY-RUN: nichts geschrieben. Diese Verteilung übernehmen: mao raumzuteilung%s%s --apply --plan-id %s",
+                            " --extern" if args.extern else "", "" if args.extern else f" --seed {seed}",
+                            room_report["summary"].get("plan_id", "?"))
             return 0
         cfg, profiles, config_files, tables = load_pipeline(config_dir, workspace, profile_name if args.command not in ("profiles", "init-jahrgang") else None)
         LOGGER.info("Konfiguration: %s", config_dir)

@@ -168,3 +168,105 @@ def test_gender_is_optional_and_validated():
     assert [r["geschlecht"] for r in rows] == ["d", None, None] and len(issues) == 1
     rows, issues, _ = e.parse_entries([entry(1)], {k: v for k, v in FIELDS.items() if k != "geschlecht"})
     assert rows[0]["geschlecht"] is None and not issues
+
+
+# ------------------------------------------------------------------ Raumzuteilung
+
+from mao_cli import rooms as r  # noqa: E402
+
+
+def rules_file(tmp_path, extern="rooms: [X1, X2]"):
+    (tmp_path / "raumregeln.yaml").write_text(
+        'rooms:\n  grade_rooms: {"5": [R1]}\n  reserve: R2\nextern:\n  ' + extern + "\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_rules_reject_shared_or_malformed_extern_rooms(tmp_path):
+    assert r.load_room_rules(rules_file(tmp_path) / "raumregeln.yaml").extern_rooms == ("X1", "X2")
+    with pytest.raises(ConfigurationError, match="eigene Räume"):
+        r.load_room_rules(rules_file(tmp_path, "rooms: [R2]") / "raumregeln.yaml")
+    with pytest.raises(ConfigurationError, match="extern"):
+        r.load_room_rules(rules_file(tmp_path, "rooms: [X1, X1]") / "raumregeln.yaml")
+    with pytest.raises(ConfigurationError, match="extern"):
+        r.load_room_rules(rules_file(tmp_path, "zimmer: [X1]") / "raumregeln.yaml")
+
+
+ROOMS = {"X1": {"id": 1, "capacity": 15, "active": True}, "X2": {"id": 2, "capacity": 15, "active": True},
+         "R9": {"id": 9, "capacity": 30, "active": True}}
+
+
+def people(n, raum=None):
+    return [{"id": 100 + i, "nr": i, "klassenstufe": 4, "raum": raum} for i in range(1, n + 1)]
+
+
+def test_extern_rooms_fill_one_by_one_and_overflow_is_reported(tmp_path):
+    rules = r.load_room_rules(rules_file(tmp_path, "rooms: [X1]") / "raumregeln.yaml")
+    plan = e.plan_extern_rooms(people(17), ROOMS, rules)
+    assert plan.per_room == {"X1": 15} and len(plan.unassigned) == 2 and plan.assignments[101] == "X1"
+    plan = e.plan_extern_rooms(people(17), ROOMS, r.load_room_rules(rules_file(tmp_path) / "raumregeln.yaml"))
+    assert plan.per_room == {"X1": 15, "X2": 2} and not plan.unassigned
+
+
+def test_extern_rooms_keep_existing_and_overwrite(tmp_path):
+    rules = r.load_room_rules(rules_file(tmp_path) / "raumregeln.yaml")
+    mixed = people(3)
+    mixed[2]["raum"] = "X2"
+    plan = e.plan_extern_rooms(mixed, ROOMS, rules)
+    assert plan.kept == 1 and set(plan.assignments.values()) == {"X1"}
+    plan = e.plan_extern_rooms(mixed, ROOMS, rules, overwrite=True)
+    assert plan.kept == 0 and len(plan.assignments) == 3
+
+
+class RoomCur:
+    def __init__(self, rows, total):
+        self.rows, self.total, self.sql, self.executed = rows, total, "", []
+    def execute(self, sql, params=None):
+        self.sql = sql
+        self.executed.append((sql, params))
+    def executemany(self, sql, params):
+        self.executed.append((sql, list(params)))
+    def fetchall(self):
+        if "GET_LOCK" in self.sql:
+            return [(1,)]
+        if "FROM `jg`" in self.sql:
+            return [(7,)]
+        if "FROM `raeume`" in self.sql:
+            return [(1, "X1", 15, 1), (2, "X2", 15, 1)]
+        if "COUNT(*)" in self.sql:
+            return [(self.total,)]
+        return self.rows
+    def close(self):
+        pass
+
+
+RTABLES = {**TABLES, "rooms_table": "raeume"}
+
+
+def test_assign_extern_apply_is_guarded_and_checked(tmp_path):
+    rules_file(tmp_path)
+    cnx = Conn(RoomCur([(1, 1, 4, None), (2, 2, 4, None)], total=2))
+    report: dict = {}
+    stats = e.assign_extern_rooms(SimpleNamespace(conn=cnx), tmp_path, RTABLES, dry_run=True, report=report)
+    assert stats["assigned"] == 2 and cnx.commits == 0 and report["status"] == "ready"
+    cnx = Conn(RoomCur([(1, 1, 4, None), (2, 2, 4, None)], total=2))
+    e.assign_extern_rooms(SimpleNamespace(conn=cnx), tmp_path, RTABLES, dry_run=False, plan_id=stats["plan_id"])
+    assert cnx.commits == 1 and any("raum_id IS NULL" in q for q, _ in cnx.c.executed if q.startswith("UPDATE"))
+    bad = Conn(RoomCur([(1, 1, 4, None)], total=0))
+    with pytest.raises(r.RoomError, match="Zählabgleich"):
+        e.assign_extern_rooms(SimpleNamespace(conn=bad), tmp_path, RTABLES, dry_run=False)
+    assert bad.commits == 0 and bad.rollbacks == 1
+    with pytest.raises(r.RoomError, match="Plan-ID"):
+        e.assign_extern_rooms(SimpleNamespace(conn=Conn(RoomCur([(1, 1, 4, None)], total=1))), tmp_path, RTABLES,
+                              dry_run=False, plan_id="falsch")
+
+
+def test_assign_extern_needs_section_participants_and_known_rooms(tmp_path):
+    (tmp_path / "raumregeln.yaml").write_text('rooms:\n  grade_rooms: {"5": [R1]}\n', encoding="utf-8")
+    with pytest.raises(r.RoomError, match="Abschnitt extern"):
+        e.assign_extern_rooms(SimpleNamespace(conn=Conn(RoomCur([], 0))), tmp_path, RTABLES, dry_run=True)
+    rules_file(tmp_path)
+    with pytest.raises(r.RoomError, match="Keine externen"):
+        e.assign_extern_rooms(SimpleNamespace(conn=Conn(RoomCur([], 0))), tmp_path, RTABLES, dry_run=True)
+    rules_file(tmp_path, "rooms: [Y9]")
+    with pytest.raises(r.RoomError, match="fehlt in der Raumtabelle"):
+        e.assign_extern_rooms(SimpleNamespace(conn=Conn(RoomCur([(1, 1, 4, None)], 0))), tmp_path, RTABLES, dry_run=True)

@@ -189,6 +189,13 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
   `raumregeln.yaml` im Konfigurationsordner; `mao config init` legt eine Vorlage an.
 
 
+- `mao raumzuteilung --extern` teilt stattdessen die externen Teilnehmenden zu. Die Räume stehen in
+  `raumregeln.yaml` unter `extern: {rooms: [...]}` und dürfen nicht zugleich im Hauptwettbewerb vorkommen.
+  Gefüllt wird nach Teilnehmernummer Raum für Raum bis `max_per_room` (bzw. Datenbankkapazität). Wer
+  keinen Platz findet, wird gemeldet; dann einen weiteren Raum eintragen. Dry-Run, `--apply`,
+  `--plan-id` und `--ueberschreiben` verhalten sich wie bei der normalen Zuteilung.
+
+
 ## Schulabgleich
 
 - `mao schulen-sync --dry-run --report schulen.json` lädt das Schulverzeichnis Berlin und
