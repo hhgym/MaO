@@ -186,7 +186,12 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
   (tables.ini) bestimmt: Spalten `Matrikelnummer`, `Klasse` (aktuell), `Punkte`.
   Nur Zahlen zählen; Stufe 11 und 12 werden gemeinsam gewertet.
 - Regeln (Zielräume je Stufe, Reserve, Top-15-Räume, Kapazitäten) stehen in
-  `raumregeln.yaml` im Konfigurationsordner; `mao config init` legt eine Vorlage an.
+  `raumregeln.yaml` und gelten **je Jahrgang**: maßgeblich ist die Datei im Jahrgangsordner
+  (`Jahrgang/<Nr>_<Schuljahr>/raumregeln.yaml`), weil sich die Teilnehmerzahlen je Stufe jährlich ändern.
+  Fehlt sie dort, nimmt mao die zentrale Vorlage im Konfigurationsordner (`mao config init` legt sie an)
+  und warnt. `mao raumzuteilung --regeln-anlegen` kopiert die Vorlage in den Jahrgangsordner (nie
+  überschreibend); `mao jahrgang new` übernimmt die Regeln des letzten Jahrgangs als Ausgangspunkt.
+  Der Bericht nennt die verwendete Datei (`rules_file`).
 
 
 - `mao raumzuteilung --extern` teilt stattdessen die externen Teilnehmenden zu. Die Räume stehen in

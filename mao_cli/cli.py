@@ -28,7 +28,7 @@ from .year_ops import preliminary_plan, database_preflight
 from .extern import ExternError, assign_extern_rooms, import_extern
 from .gf_import import import_participants, ImportErrorGF, write_import_report
 from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, read_file, sync_schools
-from .rooms import RoomError, assign_rooms, write_room_report
+from .rooms import RoomError, assign_rooms, create_year_rules, write_room_report
 from .validation import validate_online
 
 DEFAULTS = Path(__file__).resolve().parent / "defaults"
@@ -176,6 +176,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                        help="Vorhandene Raumzuordnungen verwerfen und alles neu verteilen (sonst bleiben sie erhalten)")
     rooms.add_argument("--extern", action="store_true",
                        help="Stattdessen die externen Teilnehmenden zuteilen (Räume aus raumregeln.yaml, Abschnitt extern)")
+    rooms.add_argument("--regeln-anlegen", action="store_true",
+                       help="raumregeln.yaml im Jahrgangsordner aus der zentralen Vorlage anlegen (überschreibt nie) und beenden")
     rooms.add_argument("--report", type=Path, metavar="DATEI.json|DATEI.csv",
                        help="Bericht im Workspace speichern (ohne vorhandene Datei zu überschreiben)")
 
@@ -332,6 +334,7 @@ def jahrgang_action(args: argparse.Namespace, config_dir: Path) -> int:
         raise ConfigurationError(f"Schuljahr {year} ist bereits mit {registered['root']} registriert")
     existed = target.is_dir()
     target.mkdir(parents=True, exist_ok=True)
+    _seed_year_rules(target, config_dir)
     doc = load_settings(config_dir)
     if make_current:
         _make_current(doc, year)
@@ -339,6 +342,18 @@ def jahrgang_action(args: argparse.Namespace, config_dir: Path) -> int:
     print(f"{'Vorhanden' if existed else 'Angelegt'}: {target}")
     print(f"Aktueller Jahrgang: {doc['current_year'] or '-'}" + ("" if make_current else " (unverändert; --current setzt ihn)"))
     return 0
+
+
+def _seed_year_rules(target: Path, config_dir: Path) -> None:
+    """Neuer Jahrgangsordner: Raumregeln des letzten vorhandenen Jahrgangs als Ausgangspunkt übernehmen (sonst zentrale Vorlage)."""
+    if (target / "raumregeln.yaml").exists():
+        return
+    earlier = sorted((p for p in target.parent.iterdir() if p.is_dir() and p != target and (p / "raumregeln.yaml").is_file()),
+                     key=lambda p: (int(p.name.split("_")[0]) if p.name.split("_")[0].isdigit() else -1, p.name))
+    source = earlier[-1] / "raumregeln.yaml" if earlier else config_dir / "raumregeln.yaml"
+    if source.is_file():
+        (target / "raumregeln.yaml").write_text(source.read_text(encoding="utf-8-sig"), encoding="utf-8")
+        print(f"raumregeln.yaml übernommen aus {source.parent.name if earlier else 'der zentralen Vorlage'}; bitte für den neuen Jahrgang anpassen.")
 
 
 def management_action(args: argparse.Namespace, config_dir: Path, config_source: str = "") -> int:
@@ -575,6 +590,9 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
         if args.command == "raumzuteilung":
             if selection.year is None or selection.year != settings["current_year"]:
                 raise ConfigurationError("Raumzuteilung nur für den aktuell registrierten Jahrgang zulässig")
+            if args.regeln_anlegen:
+                print(f"Angelegt: {create_year_rules(workspace, config_dir)}\nBitte die Raumcodes und Zuteilungen für diesen Jahrgang anpassen.")
+                return 0
             tables = load_tables(resolve_config_file(config_dir, "tables.ini"))
             if not args.extern and tables.get("orga_table", "").startswith("DEMO_"):
                 raise ConfigurationError("Für raumzuteilung muss in der privaten tables.ini eine echte orga_table stehen")
@@ -591,10 +609,11 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                         raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
                     if args.extern:
                         assign_extern_rooms(db, config_dir, tables, dry_run=not args.apply, overwrite=args.ueberschreiben,
-                                            plan_id=args.plan_id, report=room_report)
+                                            plan_id=args.plan_id, report=room_report, workspace=workspace)
                     else:
                         assign_rooms(db, config_dir, tables, dry_run=not args.apply, seed=seed,
-                                     overwrite=args.ueberschreiben, plan_id=args.plan_id, report=room_report)
+                                     overwrite=args.ueberschreiben, plan_id=args.plan_id, report=room_report,
+                                     workspace=workspace)
             except (RoomError, ExternError, ConfigurationError) as exc:
                 if str(exc) not in room_report["issues"]:
                     room_report["issues"].append(str(exc))

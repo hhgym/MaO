@@ -53,6 +53,37 @@ class RoomRules:
         return rooms
 
 
+RULES_FILE = "raumregeln.yaml"
+
+
+def resolve_rules_file(workspace: Path | None, config_dir: Path) -> Path:
+    """Regeln des Jahrgangs (Jahrgangsordner) haben Vorrang vor der zentralen Vorlage im Konfigurationsordner."""
+    if workspace is not None and (workspace / RULES_FILE).is_file():
+        return workspace / RULES_FILE
+    return config_dir / RULES_FILE
+
+
+def create_year_rules(workspace: Path, config_dir: Path) -> Path:
+    """Regeldatei für den Jahrgang aus der zentralen Vorlage anlegen (nie überschreiben)."""
+    target = workspace / RULES_FILE
+    if target.exists():
+        raise ConfigurationError(f"{target} existiert bereits")
+    source = config_dir / RULES_FILE
+    if not source.is_file():
+        raise ConfigurationError(f"Zentrale Vorlage fehlt: {source} (mao config init legt sie an)")
+    target.write_text(source.read_text(encoding="utf-8-sig"), encoding="utf-8")
+    return target
+
+
+def log_rules_source(path: Path, config_dir: Path) -> None:
+    if path.parent.resolve() == config_dir.resolve():
+        LOGGER.warning("Raumregeln | Für diesen Jahrgang gibt es keine eigene %s; verwendet wird die zentrale Vorlage %s. "
+                       "Teilnehmerzahlen ändern sich jedes Jahr: mit mao raumzuteilung --regeln-anlegen eine Jahrgangsdatei anlegen "
+                       "und anpassen.", RULES_FILE, path)
+    else:
+        LOGGER.info("Raumregeln | %s", path)
+
+
 def load_room_rules(path: Path) -> RoomRules:
     if not path.is_file():
         raise ConfigurationError(f"Raumregeln fehlen: {path} (mao config init legt eine Vorlage an)")
@@ -409,8 +440,12 @@ def review(rules: RoomRules, rooms: Mapping[str, Mapping[str, Any]], participant
 
 def assign_rooms(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_run: bool, seed: int,
                  overwrite: bool = False, plan_id: str | None = None,
-                 report: dict[str, Any] | None = None) -> dict[str, Any]:
-    rules = load_room_rules(config_dir / "raumregeln.yaml")
+                 report: dict[str, Any] | None = None, workspace: Path | None = None) -> dict[str, Any]:
+    rules_path = resolve_rules_file(workspace, config_dir)
+    log_rules_source(rules_path, config_dir)
+    if report is not None:
+        report["rules_file"] = str(rules_path)
+    rules = load_room_rules(rules_path)
     cnx = db.conn
     if cnx is None:
         raise RoomError("Keine Datenbankverbindung")
