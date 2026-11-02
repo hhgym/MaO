@@ -198,3 +198,25 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
 - Bei unvollständiger Antwort der Quelle (weniger als 100 Schulen, weniger als die Hälfte der
   bisher aktiven, abweichende Gesamtzahl) bricht der Befehl ab, ohne etwas zu schreiben.
 - `--url` ersetzt die Standardadresse (Schulverzeichnis Berlin, GeoJSON).
+
+
+## Externe Teilnehmende
+
+Anmeldungen von Kindern aus Grundschulen laufen über ein eigenes Gravity-Forms-Formular und landen
+in eigenen Tabellen, getrennt von Stammdaten und Organisationstabelle (`extern_personen_table`,
+`extern_teilnahmen_table` in tables.ini). Personen gelten jahrgangsübergreifend, Teilnahmen je Jahrgang;
+dadurch ist das Archiv bereits enthalten.
+
+- `mao import-extern --dry-run --report extern.json` liest das Formular (Nummern in `gf-extern.yaml`,
+  Zugangsdaten in `gf.config`) und zeigt, wer neu übernommen würde. Es wird nichts geschrieben.
+- `mao import-extern --apply` legt Person und Teilnahme im aktuellen Jahrgang an. Die Teilnehmernummer
+  (E01, E02, …) vergibt die Datenbank in der Reihenfolge der Anmeldung.
+- Der Befehl ist wiederholbar: Anmeldungen, deren GF-Eintrag schon importiert ist, werden übersprungen.
+- Gleicher Name und gleiche Schule im selben Jahrgang gilt als Doppelanmeldung und wird übersprungen
+  (steht im Bericht). Gleicher Name an anderer Schule wird übernommen, mit Hinweis.
+- Ein Kind, dessen Name schon aus einem früheren Jahrgang bekannt ist, wird nicht automatisch
+  zusammengeführt; der Bericht nennt unter `wiederkehrend` die möglichen `person_id`s.
+- Einträge mit fehlendem Namen, unzulässiger Klassenstufe (nur 3 bis 6) oder unbekannter Schulnummer
+  werden übersprungen und im Bericht aufgeführt; nach der Korrektur (z. B. `mao schulen-sync --apply`)
+  genügt ein erneuter Lauf.
+- Aus dem Formular werden nur Name des Kindes, Klassenstufe und Schule gespeichert, nicht die Daten der Eltern.

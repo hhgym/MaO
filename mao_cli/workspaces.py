@@ -343,6 +343,8 @@ def init_config(config_dir: Path, defaults_dir: Path) -> list[Path]:
         "current_groups_view": "DEMO_CURRENT_GROUP_VIEW",
         "points_last_year_view": "DEMO_POINTS_LAST_YEAR_VIEW",
         "schools_table": "DEMO_SCHOOLS",
+        "extern_personen_table": "DEMO_EXTERN_PERSONEN",
+        "extern_teilnahmen_table": "DEMO_EXTERN_TEILNAHMEN",
     }
     missing = {key: value for key, value in missing.items() if not tables_parser.has_option("table", key)}
     if missing:
@@ -391,6 +393,10 @@ def init_config(config_dir: Path, defaults_dir: Path) -> list[Path]:
     if not rules.exists():
         shutil.copyfile(defaults_dir / "raumregeln.yaml.example", rules)
         created.append(rules)
+    extern = config_dir / "gf-extern.yaml"
+    if not extern.exists():
+        shutil.copyfile(defaults_dir / "gf-extern.yaml.example", extern)
+        created.append(extern)
     return created
 
 
