@@ -9,6 +9,11 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Zertifikatsfehler bei Abrufen (Windows, Schulnetz)
+
+- `schulen-sync` und `mao update` prüfen HTTPS-Zertifikate jetzt über das Betriebssystem (Paket `truststore`). Das behebt „unable to get local issuer certificate", wenn Server ihre Zwischenzertifikate nicht mitliefern oder das Netz Zertifikate austauscht. Die Prüfung bleibt immer aktiv.
+- Neue Ausweichmöglichkeiten: Umgebungsvariable `MAO_CA_BUNDLE=<Datei.pem>` und `mao schulen-sync --file DATEI.json` (im Browser gespeichertes GeoJSON). Die Fehlermeldung nennt beides.
+
 ### Update: `mao update --run` und Versionshinweis
 
 - `mao update --run` führt `uv tool install --force --reinstall …` selbst aus (nur bei `uv tool`-Installation, nicht bei Quellinstallationen). Unter Linux/macOS läuft uv direkt; unter Windows startet mao ein neues PowerShell-Fenster, wartet dort, bis sich `mao.exe` beendet hat, und installiert dann. Ohne `--run` nennt der Befehl wie bisher nur die Befehlszeile.

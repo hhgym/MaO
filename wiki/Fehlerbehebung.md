@@ -33,3 +33,14 @@ Der Export bereinigt nur manifestgeführte Dateien, deren Erzeuger zum aktuell g
 ## Wiki wird nach Commit nicht aktualisiert
 
 Der Workflow `.github/workflows/publish-wiki.yml` synchronisiert Änderungen unter `wiki/` nach entsprechenden Pushes auf `develop`. Prüfe den Status in **Actions → Wiki veröffentlichen**. Bei der erstmaligen Einrichtung muss im GitHub-Wiki eine Seite (z. B. `Home`) angelegt sein, damit das separate `.wiki.git`-Repository existiert. Eine lokale Veröffentlichung über `scripts/publish_wiki.py` bleibt möglich.
+
+
+## „CERTIFICATE_VERIFY_FAILED" beim Schulabgleich oder bei `mao update`
+
+Ursache ist meist ein Server, der Zwischenzertifikate nicht mitliefert, oder ein Netzfilter (Schulnetz, Virenscanner), der Zertifikate austauscht. Browser lösen das über Windows, Python bisher nicht.
+
+1. MaO aktualisieren (`uv tool install --force --reinstall git+https://github.com/hhgym/MaO@develop`): neuere Versionen nutzen den Zertifikatspeicher von Windows.
+2. Hilft das nicht: ein Zertifikatsbündel (`.pem`, z. B. von der IT) angeben: `$env:MAO_CA_BUNDLE = "C:\\Pfad\\bundle.pem"`.
+3. Für den Schulabgleich zusätzlich möglich: die Adresse aus `mao schulen-sync --help` im Browser öffnen, die Seite als Datei speichern und mit `mao schulen-sync --file schulen.json` einlesen.
+
+Die Zertifikatsprüfung wird nie abgeschaltet.

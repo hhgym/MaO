@@ -26,7 +26,7 @@ from .workspaces import (resolve_config_dir, find_conflict_copies, write_pointer
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
 from .gf_import import import_participants, ImportErrorGF, write_import_report
-from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, sync_schools
+from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, read_file, sync_schools
 from .rooms import RoomError, assign_rooms, write_room_report
 from .validation import validate_online
 
@@ -182,6 +182,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     schools_mode.add_argument("--apply", action="store_true", help="Änderungen in die Datenbank schreiben")
     schools_mode.add_argument("--dry-run", action="store_true", help="Nur vergleichen und berichten (Standard)")
     schools.add_argument("--url", default=DEFAULT_SCHOOLS_URL, help="Adresse des GeoJSON (Standard: Schulverzeichnis Berlin)")
+    schools.add_argument("--file", type=Path, metavar="DATEI.json",
+                         help="Lokal gespeichertes GeoJSON statt des Abrufs verwenden (z. B. wenn das Netz den Abruf blockiert)")
     schools.add_argument("--report", type=Path, metavar="DATEI.json", help="Bericht im Workspace speichern")
 
     init_year = commands.add_parser("init-jahrgang", help="Jahrgangswechsel sicher vorprüfen (read-only)")
@@ -521,7 +523,8 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                                    "issues": [], "summary": {}}
             try:
                 with DB(db_config) as db:
-                    sync_schools(db, tables, url=args.url, dry_run=not args.apply, report=school_report)
+                    sync_schools(db, tables, url=args.url, dry_run=not args.apply, report=school_report,
+                                 **({"fetcher": lambda _url: read_file(str(args.file))} if args.file else {}))
             except (SchoolError, OSError) as exc:
                 school_report["issues"].append(str(exc))
                 if args.report:

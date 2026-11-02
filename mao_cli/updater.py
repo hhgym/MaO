@@ -23,6 +23,7 @@ from typing import Any, Callable, Sequence
 from packaging.version import InvalidVersion, Version
 
 from . import __version__
+from .netutil import CERTIFICATE_HINT, is_certificate_error, ssl_context
 from .workspaces import user_state_dir
 
 DEFAULT_REPOSITORY = "hhgym/MaO"
@@ -85,10 +86,11 @@ def _fetch_tags(repository: str, timeout: int = 10) -> list[str]:
         f"https://api.github.com/repos/{repository}/tags?per_page=100",
         headers={"Accept": "application/vnd.github+json", "User-Agent": "mao-cli"})  # anonym, ohne Token
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - feste https-URL
+        with urllib.request.urlopen(request, timeout=timeout, context=ssl_context()) as response:  # noqa: S310 - feste https-URL
             data = json.loads(response.read(2_000_000))
     except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
-        raise UpdateError(f"GitHub nicht erreichbar ({exc}); Version mit --version angeben") from exc
+        hint = f" {CERTIFICATE_HINT}" if is_certificate_error(exc) else ""
+        raise UpdateError(f"GitHub nicht erreichbar ({exc}); Version mit --version angeben.{hint}") from exc
     return [item["name"] for item in data if isinstance(item, dict) and isinstance(item.get("name"), str)]
 
 
@@ -208,7 +210,7 @@ def _fetch_head(repository: str, ref: str, timeout: int = 3) -> str:
     request = urllib.request.Request(
         f"https://api.github.com/repos/{repository}/commits/{ref}",
         headers={"Accept": "application/vnd.github.sha", "User-Agent": "mao-cli"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - feste https-URL
+    with urllib.request.urlopen(request, timeout=timeout, context=ssl_context()) as response:  # noqa: S310 - feste https-URL
         return response.read(200).decode("ascii", "replace").strip()
 
 
