@@ -14,6 +14,8 @@ from typing import Any, Callable, Mapping
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
+from .netutil import CERTIFICATE_HINT, is_certificate_error, ssl_context
+
 from .gf_import import IDENT
 
 LOGGER = logging.getLogger(__name__)
@@ -40,12 +42,29 @@ class SchoolError(ValueError):
 Fetcher = Callable[[str], bytes]
 
 
+def read_file(path: str) -> bytes:
+    """Lokal gespeichertes GeoJSON (z. B. im Browser heruntergeladen) lesen."""
+    try:
+        with open(path, "rb") as handle:
+            data = handle.read(MAX_BYTES + 1)
+    except OSError as exc:
+        raise SchoolError(f"Datei nicht lesbar: {exc}") from exc
+    if len(data) > MAX_BYTES:
+        raise SchoolError("Datei ist unerwartet groß")
+    return data
+
+
 def fetch_bytes(url: str, timeout: int = 60) -> bytes:
     if urlsplit(url).scheme != "https":
         raise SchoolError("Die Quelle muss eine https-Adresse sein")
     request = Request(url, headers={"User-Agent": "mao-cli", "Accept": "application/json"})
-    with urlopen(request, timeout=timeout) as response:  # noqa: S310 (https geprüft)
-        data = response.read(MAX_BYTES + 1)
+    try:
+        with urlopen(request, timeout=timeout, context=ssl_context()) as response:  # noqa: S310 (https geprüft)
+            data = response.read(MAX_BYTES + 1)
+    except OSError as exc:
+        if is_certificate_error(exc):
+            raise SchoolError(f"Schulverzeichnis nicht abrufbar: {exc}. {CERTIFICATE_HINT}") from exc
+        raise
     if len(data) > MAX_BYTES:
         raise SchoolError("Antwort der Quelle ist unerwartet groß")
     return data
