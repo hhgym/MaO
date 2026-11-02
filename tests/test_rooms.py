@@ -267,3 +267,35 @@ def test_fill_value_is_validated(tmp_path):
     path.write_text("rooms:\n  grade_rooms:\n    '5': [A]\nfill: halb\n", encoding="utf-8")
     with pytest.raises(ConfigurationError, match="fill"):
         r.load_room_rules(path)
+
+
+def test_year_rules_take_precedence_over_central_template(tmp_path):
+    central, year = tmp_path / "config", tmp_path / "Jahrgang" / "66_2026-27"
+    central.mkdir()
+    year.mkdir(parents=True)
+    (central / "raumregeln.yaml").write_text("rooms: {}\n", encoding="utf-8")
+    assert r.resolve_rules_file(year, central) == central / "raumregeln.yaml"
+    created = r.create_year_rules(year, central)
+    assert created == year / "raumregeln.yaml" and r.resolve_rules_file(year, central) == created
+    with pytest.raises(Exception, match="existiert bereits"):
+        r.create_year_rules(year, central)
+    with pytest.raises(Exception, match="Vorlage fehlt"):
+        r.create_year_rules(tmp_path, tmp_path / "leer")
+
+
+def test_new_year_folder_inherits_rules_of_latest_year(tmp_path):
+    from mao_cli.cli import _seed_year_rules
+    base, config = tmp_path / "Jahrgang", tmp_path / "config"
+    config.mkdir()
+    (config / "raumregeln.yaml").write_text("# zentral\n", encoding="utf-8")
+    for name, text in (("9_2019-20", "# alt\n"), ("10_2020-21", "# neuer\n")):
+        (base / name).mkdir(parents=True)
+        (base / name / "raumregeln.yaml").write_text(text, encoding="utf-8")
+    new = base / "11_2021-22"
+    new.mkdir()
+    _seed_year_rules(new, config)
+    assert (new / "raumregeln.yaml").read_text(encoding="utf-8") == "# neuer\n"
+    first = tmp_path / "x" / "1_2000-01"
+    first.mkdir(parents=True)
+    _seed_year_rules(first, config)
+    assert (first / "raumregeln.yaml").read_text(encoding="utf-8") == "# zentral\n"

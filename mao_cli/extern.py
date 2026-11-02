@@ -18,7 +18,7 @@ import yaml
 
 from .config import ConfigurationError
 from .gf_import import IDENT, gf_entries, load_gf_credentials
-from .rooms import RoomError, RoomPlan, RoomRules, load_room_rules, load_rooms
+from .rooms import RoomError, RoomPlan, RoomRules, load_room_rules, load_rooms, log_rules_source, resolve_rules_file
 
 LOGGER = logging.getLogger(__name__)
 FIELD_ID = re.compile(r"^\d+(\.\d+)?$")
@@ -351,8 +351,13 @@ def plan_extern_rooms(participants: list[dict[str, Any]], rooms: Mapping[str, Ma
 
 
 def assign_extern_rooms(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_run: bool, overwrite: bool = False,
-                        plan_id: str | None = None, report: dict[str, Any] | None = None) -> dict[str, Any]:
-    rules = load_room_rules(config_dir / "raumregeln.yaml")
+                        plan_id: str | None = None, report: dict[str, Any] | None = None,
+                        workspace: Path | None = None) -> dict[str, Any]:
+    rules_path = resolve_rules_file(workspace, config_dir)
+    log_rules_source(rules_path, config_dir)
+    if report is not None:
+        report["rules_file"] = str(rules_path)
+    rules = load_room_rules(rules_path)
     if not rules.extern_rooms:
         raise RoomError("In raumregeln.yaml fehlt der Abschnitt extern: {rooms: [...]}")
     cnx = db.conn

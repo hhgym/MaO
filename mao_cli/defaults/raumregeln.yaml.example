@@ -1,4 +1,7 @@
-# Wird von mao config init als raumregeln.yaml angelegt (Konfigurationsordner, nicht im Repository).
+# Wird von mao config init als zentrale Vorlage raumregeln.yaml angelegt (Konfigurationsordner, nicht im Repository).
+# Maßgeblich ist die Datei im Jahrgangsordner (Jahrgang/<Nr>_<Schuljahr>/raumregeln.yaml), weil sich die Teilnehmerzahlen
+# je Stufe jedes Jahr ändern. Anlegen: mao raumzuteilung --regeln-anlegen; neue Jahrgänge (mao jahrgang new) übernehmen
+# die Regeln des letzten Jahrgangs.
 # Raumcodes entsprechen der Spalte raumcode der Raumtabelle (tables.ini: rooms_table).
 # Befehl: mao raumzuteilung --dry-run --report raum.json   (prüfen)  /  --apply  (schreiben)
 rooms:

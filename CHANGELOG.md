@@ -9,6 +9,10 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Raumregeln je Jahrgang
+
+- `raumregeln.yaml` gilt jetzt je Jahrgang: Die Datei im Jahrgangsordner hat Vorrang vor der zentralen Vorlage im Konfigurationsordner (mit Warnung, wenn nur die Vorlage vorhanden ist). `mao raumzuteilung --regeln-anlegen` legt die Jahrgangsdatei aus der Vorlage an, `mao jahrgang new` übernimmt die Regeln des letzten Jahrgangs. Gilt auch für `--extern`; der Bericht nennt die verwendete Datei.
+
 ### Externe Teilnehmende (`mao import-extern`)
 
 - `mao raumzuteilung --extern` teilt Externe den Räumen aus `raumregeln.yaml` (Abschnitt `extern`) zu: Raum für Raum nach Teilnehmernummer, Dry-Run/`--apply`/`--plan-id`/`--ueberschreiben` wie sonst. Externe-Räume dürfen nicht mit Räumen des Hauptwettbewerbs übereinstimmen.
