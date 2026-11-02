@@ -24,7 +24,7 @@ uv tool install --force --reinstall git+https://github.com/hhgym/MaO@v0.6.0    #
 uv tool uninstall mao-cli                                                      # entfernen
 ```
 
-`mao update` ermittelt den passenden Befehl, **führt ihn aber nicht aus**, weil sich eine laufende `mao.exe` unter Windows nicht überschreiben lässt:
+`mao update` ermittelt den passenden Befehl und nennt ihn. Mit `--run` führt mao ihn selbst aus (siehe unten). Ohne `--run` wird nichts installiert:
 
 ```powershell
 mao update                       # neuester stabiler Release
@@ -32,6 +32,19 @@ mao update --channel rc          # inklusive Release Candidates
 mao update --channel develop     # Branch develop
 mao update --version 0.6.0       # bestimmte Version
 ```
+
+### Selbst aktualisieren: `--run`
+
+```powershell
+mao update --run                  # neuester stabiler Release, wird sofort installiert
+mao update --channel develop --run
+```
+
+`--run` funktioniert nur bei einer Installation mit `uv tool install` und wenn `uv` im PATH ist. Linux/macOS: mao ruft uv direkt auf und meldet das Ergebnis. **Windows:** Eine laufende `mao.exe` lässt sich nicht überschreiben. mao öffnet deshalb ein neues PowerShell-Fenster, beendet sich, das Fenster wartet auf das Ende von `mao.exe` und führt dann die Installation aus. Die Meldung am Ende steht in diesem Fenster; mit `mao --version` prüfst du den neuen Stand. Schlägt es fehl, hilft der ausgegebene Befehl in einem normalen Terminal. Quellinstallationen (`pip install -e`) werden nie automatisch aktualisiert.
+
+### Hinweis auf neue Versionen
+
+Nach jedem Befehl (außer `update`) zeigt mao in einem Terminal eine Zeile, wenn es eine neuere Version gibt (Tag-Installation: neuerer Release; `@develop`: neuerer Commit). Gefragt wird höchstens einmal in 24 Stunden bei GitHub; das Ergebnis liegt rechnerlokal im MaO-Statusordner (neben dem Verweis auf den MaO-Ordner). Fehler und fehlendes Netz bleiben still. Abschalten: Umgebungsvariable `MAO_NO_UPDATE_CHECK=1`. In Skripten und geplanten Läufen (keine Terminalausgabe) erscheint nichts.
 
 Konfiguration (`MaO/config`), Vorlagen und Jahrgangsordner liegen außerhalb der Programmumgebung und bleiben bei jedem Update unberührt. `--repository OWNER/REPO` oder `MAO_GITHUB_REPO` sind nur für ein abweichendes GitHub-Projekt nötig.
 

@@ -21,7 +21,7 @@ from .config import (
 from .db import DB, active_jahrgang_db, current_MaO_number_db, current_MaO_number_fallback, load_db_config
 from .exports import ExportPlan, load_datasets, render_plan, run_exports
 from .latex import run_latex_jobs
-from .updater import update_hint, UpdateError
+from .updater import UpdateError, plan_update, run_update, update_notice
 from .workspaces import (resolve_config_dir, find_conflict_copies, write_pointer, CONFIG_FOLDER, TEX_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
@@ -190,11 +190,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     init_year.add_argument("--dry-run", action="store_true", default=True,
                            help="Immer ohne Datenänderung (Standard)")
 
-    update = commands.add_parser("update", help="Hinweis zur Aktualisierung mit uv (MaO ersetzt sich nicht selbst)")
+    update = commands.add_parser("update", help="Aktualisierung mit uv: Befehl nennen, mit --run ausführen")
     update.add_argument("legacy", nargs="?", choices=("check", "download", "install", "status", "rollback"),
                         help=argparse.SUPPRESS)
     update.add_argument("--channel", choices=("stable", "rc", "develop"), default="stable")
     update.add_argument("--version", metavar="X.Y.Z", help="Bestimmte Version statt der neuesten")
+    update.add_argument("--run", action="store_true",
+                        help="Update selbst ausführen (uv tool install); unter Windows in einem neuen Fenster nach dem Beenden von mao")
     update.add_argument("--repository", metavar="OWNER/REPO", help="GitHub-Repository (alternativ MAO_GITHUB_REPO)")
     for ignored in ("--yes", "--home"):
         update.add_argument(ignored, nargs="?", const=True, default=None, help=argparse.SUPPRESS)
@@ -406,14 +408,38 @@ def _checked_plan_path(workspace: Path, dest: Path, protected: set[Path]) -> Pat
     return target
 
 
+_LAST_COMMAND: Optional[str] = None
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Befehl ausführen; danach (nur im Terminal) ein Hinweis auf neuere Versionen."""
+    global _LAST_COMMAND
+    _LAST_COMMAND = None
+    code = _main(argv)
+    if _LAST_COMMAND not in (None, "update") and sys.stderr.isatty():
+        try:
+            notice = update_notice()
+        except Exception:  # der Hinweis darf nie einen Befehl stören
+            notice = None
+        if notice:
+            print(notice, file=sys.stderr)
+    return code
+
+
+def _main(argv: Optional[Sequence[str]] = None) -> int:
+    global _LAST_COMMAND
     args = parse_args(argv)
+    _LAST_COMMAND = args.command
     if args.command == "update":
         try:
             if args.legacy:
                 print("Hinweis: Die Unterbefehle von 'mao update' entfallen; MaO wird jetzt mit uv aktualisiert.")
-            for line in update_hint(args.channel, args.repository, args.version):
+            update_target = plan_update(args.channel, args.repository, args.version)
+            for line in update_target.lines:
                 print(line)
+            if args.run:
+                for line in run_update(update_target):
+                    print(line)
             return 0
         except UpdateError as exc:
             print(f"Updatefehler: {exc}", file=sys.stderr)
