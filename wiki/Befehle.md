@@ -201,6 +201,19 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
   `--plan-id` und `--ueberschreiben` verhalten sich wie bei der normalen Zuteilung.
 
 
+## Aufsichten prüfen
+
+- `mao aufsichten --report aufsichten.json` vergleicht nach der Raumzuteilung die belegten Räume
+  (Hauptwettbewerb und Externe) mit der Aufsichtentabelle (`aufsichten_table` in tables.ini:
+  Jahrgang, Raum, Lehrkraft, Rolle). Der Befehl liest nur und schreibt nichts.
+- Gemeldet werden: Räume mit zu wenigen Aufsichten (`fehlt`), Plätze ohne Lehrkraft, eine Lehrkraft
+  in mehreren Räumen, nicht mehr aktive oder unbekannte Lehrkräfte (`fehler`) sowie Hinweise
+  (überzählige Aufsichten, Aufsicht in einem leeren Raum, Eintrag ohne Raum).
+- Regeln in `raumregeln.yaml` (je Jahrgang): `aufsichten: {lehrkraefte_pro_raum: 1, zaehlende_rollen: ["Standard"]}`.
+  Die Rolle `Reserve` darf ohne Raum bleiben und zählt standardmäßig nicht als Aufsicht des Raums.
+- Die Oberstufenschüler als Aufsicht folgen später.
+
+
 ## Schulabgleich
 
 - `mao schulen-sync --dry-run --report schulen.json` lädt das Schulverzeichnis Berlin und

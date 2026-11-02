@@ -25,6 +25,7 @@ from .gf_import import IDENT, grade, report_target
 LOGGER = logging.getLogger(__name__)
 OBER = "11/12"
 GRADES = tuple(str(n) for n in range(5, 13))
+SUPERVISOR_ROLES = ("Standard", "Reserve", "Fachaufsicht")  # enum der Aufsichtentabelle
 
 
 class RoomError(ValueError):
@@ -43,6 +44,8 @@ class RoomRules:
     db_capacity_rooms: tuple[str, ...] = ("Aula",)
     fill: str = "full"  # full: Raum für Raum auffüllen (wenige Aufsichten); even: gleichmäßig verteilen
     extern_rooms: tuple[str, ...] = ()  # Räume der externen Teilnehmenden (mao raumzuteilung --extern)
+    supervisors_per_room: int = 1  # Lehrkräfte je belegtem Raum (mao aufsichten)
+    supervisor_roles: tuple[str, ...] = ("Standard",)  # Rollen, die als Aufsicht des Raums zählen
 
     def all_rooms(self) -> set[str]:
         rooms = {r for values in self.grade_rooms.values() for r in values}
@@ -131,6 +134,14 @@ def load_room_rules(path: Path) -> RoomRules:
             or not all(isinstance(x, (str, int)) and not isinstance(x, bool) for x in extern_rooms)
             or len(set(map(str, extern_rooms))) != len(extern_rooms)):
         raise ConfigurationError(f"{path.name}: extern erwartet nur 'rooms' mit einer Liste verschiedener Raumcodes")
+    sup = data.get("aufsichten") or {}
+    sup_roles = sup.get("zaehlende_rollen", ["Standard"]) if isinstance(sup, dict) else None
+    sup_count = sup.get("lehrkraefte_pro_raum", 1) if isinstance(sup, dict) else None
+    if (not isinstance(sup, dict) or set(sup) - {"lehrkraefte_pro_raum", "zaehlende_rollen"}
+            or not isinstance(sup_count, int) or isinstance(sup_count, bool) or not 1 <= sup_count <= 10
+            or not isinstance(sup_roles, list) or not sup_roles or not set(sup_roles) <= set(SUPERVISOR_ROLES)):
+        raise ConfigurationError(f"{path.name}: aufsichten erwartet lehrkraefte_pro_raum (1–10) und zaehlende_rollen "
+                                 f"(Liste aus {', '.join(SUPERVISOR_ROLES)})")
     main_rooms = {r for values in grade_rooms.values() for r in values} | {str(v) for v in by_grade.values()}
     main_rooms |= {str(x) for x in (reserve, ober) if x not in (None, "")}
     shared = sorted(set(map(str, extern_rooms)) & main_rooms)
@@ -148,6 +159,8 @@ def load_room_rules(path: Path) -> RoomRules:
         db_capacity_rooms=tuple(str(x) for x in db_rooms),
         fill=fill,
         extern_rooms=tuple(str(x) for x in extern_rooms),
+        supervisors_per_room=sup_count,
+        supervisor_roles=tuple(str(x) for x in sup_roles),
     )
 
 
