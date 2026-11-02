@@ -42,6 +42,7 @@ class RoomRules:
     paired_capacity: int = 30
     db_capacity_rooms: tuple[str, ...] = ("Aula",)
     fill: str = "full"  # full: Raum für Raum auffüllen (wenige Aufsichten); even: gleichmäßig verteilen
+    extern_rooms: tuple[str, ...] = ()  # Räume der externen Teilnehmenden (mao raumzuteilung --extern)
 
     def all_rooms(self) -> set[str]:
         rooms = {r for values in self.grade_rooms.values() for r in values}
@@ -93,6 +94,18 @@ def load_room_rules(path: Path) -> RoomRules:
         raise ConfigurationError(f"{path.name}: fill muss 'full' oder 'even' sein")
     reserve = rooms.get("reserve")
     ober = top15.get("oberstufe")
+    extern = data.get("extern") or {}
+    extern_rooms = extern.get("rooms", []) if isinstance(extern, dict) else None
+    if (not isinstance(extern, dict) or set(extern) - {"rooms"} or not isinstance(extern_rooms, list)
+            or not all(isinstance(x, (str, int)) and not isinstance(x, bool) for x in extern_rooms)
+            or len(set(map(str, extern_rooms))) != len(extern_rooms)):
+        raise ConfigurationError(f"{path.name}: extern erwartet nur 'rooms' mit einer Liste verschiedener Raumcodes")
+    main_rooms = {r for values in grade_rooms.values() for r in values} | {str(v) for v in by_grade.values()}
+    main_rooms |= {str(x) for x in (reserve, ober) if x not in (None, "")}
+    shared = sorted(set(map(str, extern_rooms)) & main_rooms)
+    if shared:
+        raise ConfigurationError(f"{path.name}: Raum {', '.join(shared)} ist für Externe und Hauptwettbewerb vorgesehen; "
+                                 "Externe brauchen eigene Räume")
     return RoomRules(
         grade_rooms=grade_rooms,
         reserve=str(reserve) if reserve not in (None, "") else None,
@@ -103,6 +116,7 @@ def load_room_rules(path: Path) -> RoomRules:
         paired_capacity=number("paired_capacity", 30),
         db_capacity_rooms=tuple(str(x) for x in db_rooms),
         fill=fill,
+        extern_rooms=tuple(str(x) for x in extern_rooms),
     )
 
 
@@ -339,11 +353,8 @@ def _ident(name: str, label: str) -> str:
     return name
 
 
-def load_room_data(cur: Any, tables: Mapping[str, str]) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]],
-                                                                    dict[int, int]]:
-    orga = _ident(tables.get("orga_table", ""), "orga_table")
+def load_rooms(cur: Any, tables: Mapping[str, str]) -> dict[str, dict[str, Any]]:
     rooms_table = _ident(tables.get("rooms_table", ""), "rooms_table")
-    view = _ident(tables.get("points_last_year_view", ""), "points_last_year_view")
     cur.execute(f"SELECT id, raumcode, kapazitaet_wettbewerb, aktiv FROM `{rooms_table}`")
     rooms: dict[str, dict[str, Any]] = {}
     duplicates: set[str] = set()
@@ -355,6 +366,14 @@ def load_room_data(cur: Any, tables: Mapping[str, str]) -> tuple[list[dict[str, 
                        "active": active is None or bool(active)}
     if duplicates:
         raise RoomError("Raumcodes nicht eindeutig (mehrere Gebäude?): " + ", ".join(sorted(duplicates)))
+    return rooms
+
+
+def load_room_data(cur: Any, tables: Mapping[str, str]) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]],
+                                                                    dict[int, int]]:
+    orga = _ident(tables.get("orga_table", ""), "orga_table")
+    view = _ident(tables.get("points_last_year_view", ""), "points_last_year_view")
+    rooms = load_rooms(cur, tables)
     by_id = {info["id"]: code for code, info in rooms.items()}
     cur.execute(f"SELECT matrikelnummer, stufe, klasse, raum_id FROM `{orga}`")
     participants: list[dict[str, Any]] = []

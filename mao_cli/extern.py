@@ -18,6 +18,7 @@ import yaml
 
 from .config import ConfigurationError
 from .gf_import import IDENT, gf_entries, load_gf_credentials
+from .rooms import RoomError, RoomPlan, RoomRules, load_room_rules, load_rooms
 
 LOGGER = logging.getLogger(__name__)
 FIELD_ID = re.compile(r"^\d+(\.\d+)?$")
@@ -184,17 +185,21 @@ def _ident(tables: Mapping[str, str], key: str) -> str:
     return name
 
 
-def load_state(cur: Any, tables: Mapping[str, str]) -> tuple[int, dict[str, tuple[str, bool]],
-                                                            dict[int, tuple[str, str]], list[dict[str, Any]]]:
-    schools_t, persons_t = _ident(tables, "schools_table"), _ident(tables, "extern_personen_table")
-    part_t, years_t = _ident(tables, "extern_teilnahmen_table"), _ident(tables, "jahrgaenge_table")
-    sy_t = _ident(tables, "schuljahre_table")
+def load_state_year(cur: Any, tables: Mapping[str, str]) -> int:
+    years_t, sy_t = _ident(tables, "jahrgaenge_table"), _ident(tables, "schuljahre_table")
     cur.execute(f"SELECT j.id FROM `{years_t}` j JOIN `{sy_t}` s ON s.id = j.schuljahr_id "
                 "WHERE s.aktiv = 1 ORDER BY j.id DESC LIMIT 1")
     found = cur.fetchall()
     if not found:
         raise ExternError("Kein aktiver Jahrgang in der Datenbank gefunden")
-    jahrgang_id = int(found[0][0])
+    return int(found[0][0])
+
+
+def load_state(cur: Any, tables: Mapping[str, str]) -> tuple[int, dict[str, tuple[str, bool]],
+                                                            dict[int, tuple[str, str]], list[dict[str, Any]]]:
+    schools_t, persons_t = _ident(tables, "schools_table"), _ident(tables, "extern_personen_table")
+    part_t = _ident(tables, "extern_teilnahmen_table")
+    jahrgang_id = load_state_year(cur, tables)
     cur.execute(f"SELECT schulnummer, name, aktiv FROM `{schools_t}`")
     schools = {str(n).upper(): (str(name), bool(active)) for n, name, active in cur.fetchall()}
     cur.execute(f"SELECT id, vorname, nachname FROM `{persons_t}`")
@@ -296,4 +301,136 @@ def import_extern(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_r
                 cur.fetchall()
             except Exception:
                 LOGGER.warning("Konnte Sperre nicht regulär freigeben (DB-Disconnect gibt sie frei)")
+        cur.close()
+
+
+# ------------------------------------------------------------------ Raumzuteilung
+
+def plan_extern_rooms(participants: list[dict[str, Any]], rooms: Mapping[str, Mapping[str, Any]],
+                      rules: RoomRules, *, overwrite: bool = False) -> RoomPlan:
+    """Externe nach Teilnehmernummer in die Räume aus raumregeln.yaml/extern füllen (Raum für Raum).
+
+    participants: id, nr, raum (Code oder None). Vorhandene Zuordnungen bleiben erhalten und zählen zur Kapazität.
+    """
+    plan = RoomPlan()
+    capacity: dict[str, int] = {}
+    for code in rules.extern_rooms:
+        db_cap = rooms[code]["capacity"]
+        capacity[code] = rules.max_per_room if db_cap is None else min(rules.max_per_room, db_cap)
+        if db_cap is not None and db_cap < rules.max_per_room:
+            plan.warnings.append(f"Raum {code}: Datenbankkapazität {db_cap} unter max_per_room {rules.max_per_room}")
+    plan.capacities = dict(capacity)
+    usage = {code: 0 for code in rules.extern_rooms}
+    pending: list[dict[str, Any]] = []
+    for person in sorted(participants, key=lambda p: (p["nr"] is None, p["nr"], p["id"])):
+        room = None if overwrite else person["raum"]
+        if room is None:
+            pending.append(person)
+            continue
+        plan.kept += 1
+        if room in usage:
+            usage[room] += 1
+        else:
+            plan.warnings.append(f"Teilnahme {person['id']} sitzt in Raum {room}, der nicht zu den Räumen der Externen gehört; bleibt unverändert")
+    for person in pending:
+        target = next((code for code in rules.extern_rooms if usage[code] < capacity[code]), None)
+        if target is None:
+            plan.unassigned.append(person)
+            continue
+        usage[target] += 1
+        plan.assignments[person["id"]] = target
+    plan.per_room = {code: count for code, count in usage.items() if count}
+    for code in plan.per_room:
+        plan.per_room_grade[code] = {}
+    for person in participants:
+        room = plan.assignments.get(person["id"]) or (None if overwrite else person["raum"])
+        if room in plan.per_room_grade:
+            stufe = str(person["klassenstufe"])
+            plan.per_room_grade[room][stufe] = plan.per_room_grade[room].get(stufe, 0) + 1
+    return plan
+
+
+def assign_extern_rooms(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_run: bool, overwrite: bool = False,
+                        plan_id: str | None = None, report: dict[str, Any] | None = None) -> dict[str, Any]:
+    rules = load_room_rules(config_dir / "raumregeln.yaml")
+    if not rules.extern_rooms:
+        raise RoomError("In raumregeln.yaml fehlt der Abschnitt extern: {rooms: [...]}")
+    cnx = db.conn
+    if cnx is None:
+        raise RoomError("Keine Datenbankverbindung")
+    cur = cnx.cursor()
+    lock_name = ""
+    try:
+        part_t = _ident(tables, "extern_teilnahmen_table")
+        jahrgang_id = load_state_year(cur, tables)
+        rooms = load_rooms(cur, tables)
+        issues = [f"Raum {c} fehlt in der Raumtabelle" for c in rules.extern_rooms if c not in rooms]
+        issues += [f"Raum {c} ist inaktiv (aktiv = 0)" for c in rules.extern_rooms if c in rooms and not rooms[c]["active"]]
+        if report is not None:
+            report["issues"] = issues
+        if issues:
+            raise RoomError("; ".join(issues))
+        by_id = {info["id"]: code for code, info in rooms.items()}
+        cur.execute(f"SELECT id, nr, klassenstufe, raum_id FROM `{part_t}` WHERE mao_jahrgang_id = %s", (jahrgang_id,))
+        participants = [{"id": int(i), "nr": None if n is None else int(n), "klassenstufe": int(k),
+                         "raum": by_id.get(int(r)) if r is not None else None} for i, n, k, r in cur.fetchall()]
+        if not participants:
+            raise RoomError("Keine externen Teilnehmenden im aktuellen Jahrgang (erst import-extern ausführen)")
+        plan = plan_extern_rooms(participants, rooms, rules, overwrite=overwrite)
+        stats = {"participants": len(participants), "kept": plan.kept, "assigned": len(plan.assignments),
+                 "unassigned": len(plan.unassigned), "plan_id": plan.plan_id}
+        LOGGER.info("Raumzuteilung Externe | Teilnehmende: %d | bereits mit Raum: %d | neu zugeteilt: %d | offen: %d | Plan-ID: %s%s",
+                    stats["participants"], plan.kept, stats["assigned"], stats["unassigned"], plan.plan_id,
+                    " | alle Zuordnungen werden ersetzt" if overwrite else "")
+        for room, count in plan.per_room.items():
+            LOGGER.info("  Raum %-8s %3d / %d", room, count, plan.capacities[room])
+        for note in plan.warnings:
+            LOGGER.warning("Raumzuteilung Externe | %s", note)
+        for person in plan.unassigned:
+            LOGGER.warning("  Ohne Raum: E%02d (Stufe %s); weiteren Raum unter extern.rooms in raumregeln.yaml eintragen",
+                           person["nr"] or 0, person["klassenstufe"])
+        if report is not None:
+            report["summary"] = stats
+            report["rooms"] = [{"raum": c, "teilnehmende": n, "kapazitaet": plan.capacities[c],
+                                "stufen": plan.per_room_grade.get(c, {})} for c, n in sorted(plan.per_room.items())]
+            report["unassigned"] = [{"nr": p["nr"], "klassenstufe": p["klassenstufe"]} for p in plan.unassigned]
+            report["warnings"] = plan.warnings
+        if not dry_run and plan_id and plan_id != plan.plan_id:
+            raise RoomError(f"Plan-ID {plan.plan_id} weicht von der geprüften {plan_id} ab: Daten oder Regeln haben sich "
+                            "seit dem Dry-Run geändert. Dry-Run wiederholen und neu prüfen.")
+        stats["written"] = 0
+        if not dry_run and (plan.assignments or overwrite):
+            lock_name = f"mao-extern-rooms-{part_t}"
+            cur.execute("SELECT GET_LOCK(%s, 10)", (lock_name,))
+            if cur.fetchall()[0][0] != 1:
+                raise RoomError("Konkurrierende Raumzuteilung oder Sperr-Timeout")
+            if cnx.in_transaction:
+                cnx.rollback()
+            cnx.start_transaction()
+            try:
+                if overwrite:
+                    cur.execute(f"UPDATE `{part_t}` SET raum_id = NULL WHERE mao_jahrgang_id = %s", (jahrgang_id,))
+                guard = "" if overwrite else " AND raum_id IS NULL"
+                if plan.assignments:
+                    cur.executemany(f"UPDATE `{part_t}` SET raum_id = %s WHERE id = %s AND mao_jahrgang_id = %s{guard}",
+                                    [(rooms[room]["id"], pid, jahrgang_id) for pid, room in sorted(plan.assignments.items())])
+                cur.execute(f"SELECT COUNT(*) FROM `{part_t}` WHERE mao_jahrgang_id = %s AND raum_id IS NOT NULL", (jahrgang_id,))
+                total = int(cur.fetchall()[0][0])
+                if total != plan.kept + len(plan.assignments):
+                    raise RoomError(f"Zählabgleich fehlgeschlagen: {total} mit Raum, erwartet {plan.kept + len(plan.assignments)}")
+                cnx.commit()
+            except Exception:
+                cnx.rollback()
+                raise
+            stats["written"] = len(plan.assignments)
+        if report is not None:
+            report["status"] = "ready" if dry_run else "applied"
+        return stats
+    finally:
+        if lock_name:
+            try:
+                cur.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
+                cur.fetchall()
+            except Exception:
+                LOGGER.warning("Konnte Raumsperre nicht regulär freigeben (DB-Disconnect gibt sie frei)")
         cur.close()
