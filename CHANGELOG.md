@@ -9,6 +9,10 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Aufsichtenprüfung (`mao aufsichten`)
+
+- Neuer, nur lesender Befehl: prüft nach der Raumzuteilung, ob jeder belegte Raum (auch die der Externen) die vorgesehene Zahl Lehrkraft-Aufsichten hat, und meldet Plätze ohne Lehrkraft, Doppelbelegungen, nicht mehr aktive Lehrkräfte und Einträge in leeren Räumen. Regeln im Abschnitt `aufsichten` der `raumregeln.yaml`; neuer tables.ini-Schlüssel `aufsichten_table`.
+
 ### Raumregeln je Jahrgang
 
 - `raumregeln.yaml` gilt jetzt je Jahrgang: Die Datei im Jahrgangsordner hat Vorrang vor der zentralen Vorlage im Konfigurationsordner (mit Warnung, wenn nur die Vorlage vorhanden ist). `mao raumzuteilung --regeln-anlegen` legt die Jahrgangsdatei aus der Vorlage an, `mao jahrgang new` übernimmt die Regeln des letzten Jahrgangs. Gilt auch für `--extern`; der Bericht nennt die verwendete Datei.

@@ -25,6 +25,7 @@ from .updater import UpdateError, plan_update, run_update, update_notice
 from .workspaces import (resolve_config_dir, find_conflict_copies, write_pointer, CONFIG_FOLDER, TEX_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
+from .aufsichten import check_aufsichten
 from .extern import ExternError, assign_extern_rooms, import_extern
 from .gf_import import import_participants, ImportErrorGF, write_import_report
 from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, read_file, sync_schools
@@ -181,6 +182,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     rooms.add_argument("--report", type=Path, metavar="DATEI.json|DATEI.csv",
                        help="Bericht im Workspace speichern (ohne vorhandene Datei zu überschreiben)")
 
+    sup = commands.add_parser("aufsichten", help="Aufsichten der Lehrkräfte nach der Raumzuteilung prüfen (nur lesend)")
+    common(sup)
+    sup.add_argument("--report", type=Path, metavar="DATEI.json", help="Bericht im Workspace speichern")
+
     extern = commands.add_parser("import-extern", help="Anmeldungen externer Teilnehmender (Grundschulen) übernehmen")
     common(extern)
     extern_mode = extern.add_mutually_exclusive_group()
@@ -219,6 +224,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.command == "schulen-sync" and args.report and args.report.suffix.lower() != ".json":
         parser.error("--report benötigt für schulen-sync einen Dateinamen mit .json")
+    if args.command == "aufsichten" and args.report and args.report.suffix.lower() != ".json":
+        parser.error("--report benötigt für aufsichten einen Dateinamen mit .json")
     if args.command == "import-extern" and args.report and args.report.suffix.lower() != ".json":
         parser.error("--report benötigt für import-extern einen Dateinamen mit .json")
     if args.command == "raumzuteilung" and args.plan_id and not args.apply:
@@ -561,6 +568,28 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                 raise ConnectionError(f"Schulverzeichnis nicht abrufbar: {exc}") from exc
             if args.report:
                 LOGGER.info("Schulbericht: %s", write_import_report(workspace, config_dir, args.report, school_report))
+            return 0
+        if args.command == "aufsichten":
+            if selection.year is None or selection.year != settings["current_year"]:
+                raise ConfigurationError("aufsichten nur für den aktuell registrierten Jahrgang zulässig")
+            tables = load_tables(resolve_config_file(config_dir, "tables.ini"))
+            db_config = load_db_config(config_dir)
+            if not can_reach(db_config.host, db_config.port, timeout=3):
+                raise ConnectionError("Datenbank für die Aufsichtenprüfung nicht erreichbar")
+            sup_report: dict = {"schema_version": 1, "status": "blocked", "mode": "check", "issues": [], "summary": {}}
+            try:
+                with DB(db_config) as db:
+                    db_mao = current_MaO_number_db(db, tables)
+                    if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
+                        raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
+                    check_aufsichten(db, config_dir, tables, workspace=workspace, report=sup_report)
+            except (RoomError, ExternError, ConfigurationError) as exc:
+                sup_report["issues"].append(str(exc))
+                if args.report:
+                    LOGGER.info("Blockierter Bericht: %s", write_import_report(workspace, config_dir, args.report, sup_report))
+                raise
+            if args.report:
+                LOGGER.info("Aufsichtenbericht: %s", write_import_report(workspace, config_dir, args.report, sup_report))
             return 0
         if args.command == "import-extern":
             if selection.year is None or selection.year != settings["current_year"]:

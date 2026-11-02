@@ -35,3 +35,9 @@ db_capacity_rooms: ["Aula"]  # Räume, für die nur die Datenbankkapazität gilt
 # Zuteilung mit: mao raumzuteilung --extern --dry-run   /   --apply. Weiterer Raum = weiterer Eintrag (je max_per_room Plätze).
 extern:
   rooms: ["R18"]
+
+# Aufsichten (mao aufsichten prüft nach der Raumzuteilung): Lehrkräfte je belegtem Raum.
+# Zählende Rollen aus der Aufsichtentabelle: Standard, Reserve, Fachaufsicht.
+aufsichten:
+  lehrkraefte_pro_raum: 1
+  zaehlende_rollen: ["Standard"]
