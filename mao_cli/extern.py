@@ -22,9 +22,11 @@ from .gf_import import IDENT, gf_entries, load_gf_credentials
 LOGGER = logging.getLogger(__name__)
 FIELD_ID = re.compile(r"^\d+(\.\d+)?$")
 FIELD_KEYS = ("vorname", "nachname", "klassenstufe", "schule")
+OPTIONAL_KEYS = ("geschlecht",)
+GENDERS = ("m", "w", "d")
 STUFEN = range(3, 7)
 NAME_MAX = 255
-WRITE_PERSON = ("vorname", "nachname")
+WRITE_PERSON = ("vorname", "nachname", "geschlecht")
 WRITE_PARTICIPATION = ("mao_jahrgang_id", "person_id", "schulnummer", "klassenstufe", "gf_eintrag_id")
 
 
@@ -50,9 +52,9 @@ def load_extern_settings(path: Path) -> ExternSettings:
     if not isinstance(raw, dict) or set(raw) - {"form_id", "page_size", "timeout", "fields"}:
         raise ConfigurationError("gf-extern.yaml: ungültige oder unbekannte Schlüssel")
     fields = raw.get("fields")
-    if (not isinstance(fields, dict) or set(fields) != set(FIELD_KEYS)
+    if (not isinstance(fields, dict) or not set(FIELD_KEYS) <= set(fields) or set(fields) - set(FIELD_KEYS + OPTIONAL_KEYS)
             or not all(isinstance(v, str) and FIELD_ID.fullmatch(v) for v in fields.values())):
-        raise ConfigurationError("gf-extern.yaml: fields benötigt genau " + ", ".join(FIELD_KEYS)
+        raise ConfigurationError("gf-extern.yaml: fields benötigt " + ", ".join(FIELD_KEYS) + " (optional: geschlecht)"
                                  + " (Feldnummern als Zeichenketten, z. B. \"3.3\")")
 
     def number(key: str, default: int, maximum: int) -> int:
@@ -94,6 +96,10 @@ def parse_entries(entries: Iterable[Mapping[str, Any]], fields: Mapping[str, str
             level = int(str(entry.get(fields["klassenstufe"]) or "").strip())
         except ValueError:
             level = 0
+        gender_raw = str(entry.get(fields["geschlecht"]) or "").strip().lower() if "geschlecht" in fields else ""
+        gender = gender_raw if gender_raw in GENDERS else None
+        if gender_raw and gender is None:
+            issues.append(f"GF-Eintrag {entry_id}: Geschlecht '{gender_raw[:10]}' unbekannt (ohne Angabe übernommen)")
         problems = []
         if not first or not last:
             problems.append("Name des Kindes unvollständig")
@@ -107,7 +113,7 @@ def parse_entries(entries: Iterable[Mapping[str, Any]], fields: Mapping[str, str
             issues.append(f"GF-Eintrag {entry_id}: " + ", ".join(problems) + " (übersprungen)")
             continue
         rows.append({"gf_eintrag_id": int(entry_id), "vorname": first, "nachname": last,
-                     "klassenstufe": level, "schulnummer": school})
+                     "klassenstufe": level, "schulnummer": school, "geschlecht": gender})
     return rows, issues, inactive
 
 
@@ -232,7 +238,7 @@ def import_extern(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_r
                            ", ".join(map(str, hint["moegliche_person_ids"])))
         if report is not None:
             report["summary"] = stats
-            report["neu"] = [{k: r[k] for k in ("gf_eintrag_id", "vorname", "nachname", "klassenstufe", "schulnummer", "schule")}
+            report["neu"] = [{k: r[k] for k in ("gf_eintrag_id", "vorname", "nachname", "geschlecht", "klassenstufe", "schulnummer", "schule")}
                              for r in plan.new]
             report["uebersprungen"] = problems
             report["warnings"] = plan.warnings
@@ -262,8 +268,8 @@ def import_extern(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_r
             if persons_before != len(persons) or part_before != len(participations):
                 raise ExternError("Die Tabellen haben sich während der Prüfung geändert; bitte erneut ausführen")
             for row in plan.new:
-                cur.execute(f"INSERT INTO `{persons_t}` (`vorname`, `nachname`) VALUES (%s, %s)",
-                            (row["vorname"], row["nachname"]))
+                cur.execute(f"INSERT INTO `{persons_t}` (`vorname`, `nachname`, `geschlecht`) VALUES (%s, %s, %s)",
+                            (row["vorname"], row["nachname"], row.get("geschlecht")))
                 person_id = cur.lastrowid
                 if not person_id:
                     raise ExternError("Keine Personen-ID erhalten")
