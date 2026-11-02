@@ -8,7 +8,7 @@ import pytest
 from mao_cli import extern as e
 from mao_cli.config import ConfigurationError
 
-FIELDS = {"vorname": "3.3", "nachname": "3.6", "klassenstufe": "5", "schule": "6"}
+FIELDS = {"vorname": "3.3", "nachname": "3.6", "klassenstufe": "5", "schule": "6", "geschlecht": "9"}
 TABLES = {"schools_table": "sch", "extern_personen_table": "pers", "extern_teilnahmen_table": "teiln",
           "jahrgaenge_table": "jg", "schuljahre_table": "sj"}
 
@@ -77,7 +77,7 @@ class Cur:
         if "GET_LOCK" in s:
             return [(1,)]
         if "SHOW COLUMNS FROM `pers`" in s:
-            return [("id",), ("vorname",), ("nachname",)]
+            return [("id",), ("vorname",), ("nachname",), ("geschlecht",)]
         if "SHOW COLUMNS" in s:
             return [(c,) for c in e.WRITE_PARTICIPATION]
         if "FROM `jg`" in s:
@@ -113,7 +113,7 @@ class Conn:
 @pytest.fixture
 def config_dir(tmp_path):
     (tmp_path / "gf-extern.yaml").write_text(
-        'form_id: 57\nfields: {vorname: "3.3", nachname: "3.6", klassenstufe: "5", schule: "6"}\n', encoding="utf-8")
+        'form_id: 57\nfields: {vorname: "3.3", nachname: "3.6", klassenstufe: "5", schule: "6", geschlecht: "9"}\n', encoding="utf-8")
     return tmp_path
 
 
@@ -129,10 +129,10 @@ def test_dry_run_reports_without_writing(config_dir):
 
 def test_apply_inserts_person_then_participation_in_one_transaction(config_dir):
     cnx = Conn(Cur())
-    e.import_extern(SimpleNamespace(conn=cnx), config_dir, TABLES, dry_run=False, entries=[entry(2), entry(1, "Ben", "Muster")])
+    e.import_extern(SimpleNamespace(conn=cnx), config_dir, TABLES, dry_run=False, entries=[entry(2), entry(1, "Ben", "Muster", **{"9": "W"})])
     inserts = [(q, p) for q, p in cnx.c.executed if q.startswith("INSERT")]
     assert cnx.commits == 1 and len(inserts) == 4
-    assert inserts[0][1] == ("Ben", "Muster") and inserts[1][1][1] == 101 and inserts[1][1][4] == 1  # nach GF-ID sortiert
+    assert inserts[0][1] == ("Ben", "Muster", "w") and inserts[1][1][1] == 101 and inserts[1][1][4] == 1  # nach GF-ID sortiert
     assert inserts[1][1][0] == 7
 
 
@@ -161,3 +161,10 @@ def test_demo_tables_and_bad_config_are_refused(config_dir, tmp_path):
         e.load_extern_settings(tmp_path / "bad.yaml")
     with pytest.raises(ConfigurationError, match="fehlt"):
         e.load_extern_settings(tmp_path / "gibt-es-nicht.yaml")
+
+
+def test_gender_is_optional_and_validated():
+    rows, issues, _ = e.parse_entries([entry(1, **{"9": "d"}), entry(2, **{"9": "x"}), entry(3)], FIELDS)
+    assert [r["geschlecht"] for r in rows] == ["d", None, None] and len(issues) == 1
+    rows, issues, _ = e.parse_entries([entry(1)], {k: v for k, v in FIELDS.items() if k != "geschlecht"})
+    assert rows[0]["geschlecht"] is None and not issues

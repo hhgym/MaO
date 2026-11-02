@@ -9,3 +9,4 @@ fields:
   nachname: "3.6"      # Name des Kindes, Teilfeld Nachname
   klassenstufe: "5"    # Auswahl 3 bis 6
   schule: "6"          # Auswahl der Grundschule; der Wert ist die Schulnummer (bsn)
+  geschlecht: "9"      # optional: Auswahl mit den Werten m, w, d

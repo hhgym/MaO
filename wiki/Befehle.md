@@ -219,4 +219,4 @@ dadurch ist das Archiv bereits enthalten.
 - Einträge mit fehlendem Namen, unzulässiger Klassenstufe (nur 3 bis 6) oder unbekannter Schulnummer
   werden übersprungen und im Bericht aufgeführt; nach der Korrektur (z. B. `mao schulen-sync --apply`)
   genügt ein erneuter Lauf.
-- Aus dem Formular werden nur Name des Kindes, Klassenstufe und Schule gespeichert, nicht die Daten der Eltern.
+- Aus dem Formular werden nur Name des Kindes, Klassenstufe, Schule und optional das Geschlecht (`geschlecht` in `gf-extern.yaml`, Werte m, w, d) gespeichert, nicht die Daten der Eltern.

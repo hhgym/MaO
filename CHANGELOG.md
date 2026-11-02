@@ -12,7 +12,7 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 ### Externe Teilnehmende (`mao import-extern`)
 
 - Neuer Befehl: übernimmt die Anmeldungen externer Grundschulkinder aus dem Gravity-Forms-Formular in die Tabellen `extern_personen_table` und `extern_teilnahmen_table` (tables.ini). Standard ist `--dry-run`; `--apply` schreibt in einer Transaktion mit Sperre und Zählabgleich. Wiederholbar über die GF-Eintrags-ID; Doppelanmeldungen werden übersprungen, mögliche wiederkehrende Kinder nur gemeldet, nie automatisch zusammengeführt.
-- Neue Konfigurationsdatei `gf-extern.yaml` (Formular-ID und Feldnummern), von `mao config init` angelegt. Übernommen werden nur Name des Kindes, Klassenstufe und Schule.
+- Neue Konfigurationsdatei `gf-extern.yaml` (Formular-ID und Feldnummern), von `mao config init` angelegt. Übernommen werden nur Name des Kindes, Klassenstufe, Schule und (optional, Feld `geschlecht`, Werte m/w/d) das Geschlecht.
 
 ### Zertifikatsfehler bei Abrufen (Windows, Schulnetz)
 
