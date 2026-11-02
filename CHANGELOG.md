@@ -9,6 +9,11 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Update: `mao update --run` und Versionshinweis
+
+- `mao update --run` führt `uv tool install --force --reinstall …` selbst aus (nur bei `uv tool`-Installation, nicht bei Quellinstallationen). Unter Linux/macOS läuft uv direkt; unter Windows startet mao ein neues PowerShell-Fenster, wartet dort, bis sich `mao.exe` beendet hat, und installiert dann. Ohne `--run` nennt der Befehl wie bisher nur die Befehlszeile.
+- Nach jedem Befehl (außer `update`) weist mao in einem Terminal in einer Zeile auf eine neuere Version hin: bei Tag-Installationen auf neuere Release-Versionen (Kanal je nach Installation stable/rc), bei Branch-Installationen (`@develop`) auf einen neueren Commit. Höchstens eine Abfrage je 24 Stunden, Ergebnis rechnerlokal gespeichert, Fehler und Offline-Betrieb bleiben still. Abschalten mit der Umgebungsvariable `MAO_NO_UPDATE_CHECK=1`.
+
 ### Schulabgleich (`mao schulen-sync`)
 
 - Neuer Befehl: lädt das Schulverzeichnis Berlin (GeoJSON, öffentlich) und gleicht es mit der Tabelle aus `schools_table` (tables.ini) ab. Standard ist `--dry-run`; `--apply` legt neue Schulen an, aktualisiert geänderte und setzt weggefallene auf `aktiv = 0`. Es wird nie gelöscht, und manuell gepflegte Spalten bleiben unberührt.

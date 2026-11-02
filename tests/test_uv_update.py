@@ -69,3 +69,113 @@ def test_cli_update_network_failure_is_exit_5(monkeypatch, capsys):
     monkeypatch.setattr(u, "_fetch_tags", boom)
     assert cli.main(["update"]) == 5
     assert "nicht erreichbar" in capsys.readouterr().err
+
+
+# ---------------------------------------------------------------- --run und Versionshinweis
+
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+
+UV_TOOL = u.Installation("uv-tool", "0.6.0", "url@abc", requested="v0.6.0", commit="a" * 40)
+
+
+def target(kind="uv-tool", ref="v0.7.0"):
+    inst = u.Installation(kind, "0.6.0")
+    return u.UpdateTarget(["x"], "hhgym/MaO", ref, inst)
+
+
+def test_run_on_posix_runs_uv_and_reports_failure():
+    calls = []
+    def ok(argv, check):
+        calls.append(argv)
+        return SimpleNamespace(returncode=0)
+    msg = u.run_update(target(), platform="linux", which=lambda n: "/bin/uv", run=ok)
+    assert calls == [["/bin/uv", "tool", "install", "--force", "--reinstall", "git+https://github.com/hhgym/MaO@v0.7.0"]]
+    assert "aktualisiert" in msg[0]
+    with pytest.raises(u.UpdateError, match="Code 2"):
+        u.run_update(target(), platform="linux", which=lambda n: "/bin/uv", run=lambda a, check: SimpleNamespace(returncode=2))
+
+
+def test_run_on_windows_spawns_detached_powershell_instead_of_running_uv():
+    spawned = []
+    def fake_spawn(argv, **kw):
+        spawned.append((argv, kw))
+    def no_run(*a, **k):
+        raise AssertionError("uv darf unter Windows nicht im laufenden Prozess starten")
+    msg = u.run_update(target(), platform="win32", pid=4242, which=lambda n: r"C:\\Tools\\uv.exe", run=no_run, spawn=fake_spawn)
+    argv, kw = spawned[0]
+    script = argv[-1]
+    assert argv[0] == "powershell.exe" and "Wait-Process -Id 4242" in script
+    assert "tool install --force --reinstall 'git+https://github.com/hhgym/MaO@v0.7.0'" in script
+    assert kw["creationflags"] and "neuen Fenster" in msg[0]
+
+
+def test_run_refuses_source_installs_missing_uv_and_current_version():
+    with pytest.raises(u.UpdateError, match="uv tool install"):
+        u.run_update(target(kind="editable"), which=lambda n: "/bin/uv")
+    with pytest.raises(u.UpdateError, match="uv wurde nicht gefunden"):
+        u.run_update(target(), which=lambda n: None)
+    assert u.run_update(target(ref=None), which=lambda n: None) == []
+
+
+def test_windows_script_escapes_quotes_and_rejects_bad_refs():
+    assert "O''Brien" in u.windows_update_script(1, r"C:\\O'Brien\\uv.exe", "git+https://x@v1")
+    with pytest.raises(u.UpdateError, match="Ungültige"):
+        u.plan_update("stable", None, "1.0; calc")
+
+
+def test_cli_update_run_executes_only_with_flag(monkeypatch, capsys):
+    ran = []
+    monkeypatch.setattr(u, "detect_installation", lambda: UV_TOOL)
+    monkeypatch.setattr(u, "_fetch_tags", lambda repo: ["v0.7.0"])
+    monkeypatch.setattr(cli, "run_update", lambda t: ran.append(t.ref) or ["ok"])
+    assert cli.main(["update"]) == 0 and ran == []
+    assert cli.main(["update", "--run"]) == 0 and ran == ["v0.7.0"]
+
+
+def notice_env(monkeypatch, tmp_path, inst=UV_TOOL):
+    monkeypatch.delenv(u.NOTICE_ENV, raising=False)
+    monkeypatch.setattr(u, "detect_installation", lambda: inst)
+    monkeypatch.setattr(u, "_state_file", lambda: tmp_path / "state.json")
+
+
+def test_notice_reports_newer_tag_once_per_day(monkeypatch, tmp_path):
+    notice_env(monkeypatch, tmp_path)
+    calls = []
+    monkeypatch.setattr(u, "_fetch_tags", lambda repo, timeout=10: calls.append(1) or ["v0.6.0", "v0.7.0"])
+    now = datetime(2026, 11, 2, 12, tzinfo=timezone.utc)
+    assert "v0.7.0" in u.update_notice(now) and "mao update --run" in u.update_notice(now)
+    assert len(calls) == 1  # zweiter Aufruf aus dem Zwischenspeicher
+    assert u.update_notice(now + timedelta(hours=25)) and len(calls) == 2
+
+
+def test_notice_silent_when_current_offline_or_disabled(monkeypatch, tmp_path):
+    notice_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(u, "_fetch_tags", lambda repo, timeout=10: ["v0.6.0"])
+    assert u.update_notice() is None
+    notice_env(monkeypatch, tmp_path / "x")
+    def boom(repo, timeout=10):
+        raise u.UpdateError("offline")
+    monkeypatch.setattr(u, "_fetch_tags", boom)
+    assert u.update_notice() is None and (tmp_path / "x" / "state.json").exists()
+    monkeypatch.setenv(u.NOTICE_ENV, "1")
+    assert u.update_notice() is None
+
+
+def test_notice_for_branch_installs_and_dev_sources(monkeypatch, tmp_path):
+    branch = u.Installation("uv-tool", "0.6.0.dev0", requested="develop", commit="a" * 40)
+    notice_env(monkeypatch, tmp_path, branch)
+    monkeypatch.setattr(u, "_fetch_head", lambda repo, ref, timeout=3: "b" * 40)
+    assert "develop" in u.update_notice()
+    notice_env(monkeypatch, tmp_path / "y", u.Installation("editable", "0.6.0"))
+    assert u.update_notice() is None
+
+
+def test_cli_prints_notice_only_in_terminals_and_not_for_update(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "update_notice", lambda: "NEUE VERSION")
+    monkeypatch.setattr(u, "_fetch_tags", lambda repo: ["v1.0.0"])
+    monkeypatch.setattr("sys.stderr.isatty", lambda: True, raising=False)
+    cli.main(["profiles", "--config-dir", "/nonexistent"])
+    assert "NEUE VERSION" in capsys.readouterr().err
+    cli.main(["update", "--channel", "develop"])
+    assert "NEUE VERSION" not in capsys.readouterr().err
