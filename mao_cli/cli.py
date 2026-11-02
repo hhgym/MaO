@@ -25,6 +25,7 @@ from .updater import UpdateError, plan_update, run_update, update_notice
 from .workspaces import (resolve_config_dir, find_conflict_copies, write_pointer, CONFIG_FOLDER, TEX_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
+from .extern import ExternError, import_extern
 from .gf_import import import_participants, ImportErrorGF, write_import_report
 from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, read_file, sync_schools
 from .rooms import RoomError, assign_rooms, write_room_report
@@ -176,6 +177,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     rooms.add_argument("--report", type=Path, metavar="DATEI.json|DATEI.csv",
                        help="Bericht im Workspace speichern (ohne vorhandene Datei zu überschreiben)")
 
+    extern = commands.add_parser("import-extern", help="Anmeldungen externer Teilnehmender (Grundschulen) übernehmen")
+    common(extern)
+    extern_mode = extern.add_mutually_exclusive_group()
+    extern_mode.add_argument("--apply", action="store_true", help="Neue Anmeldungen in die Datenbank schreiben")
+    extern_mode.add_argument("--dry-run", action="store_true", help="Nur prüfen und berichten (Standard)")
+    extern.add_argument("--report", type=Path, metavar="DATEI.json", help="Bericht im Workspace speichern")
+
     schools = commands.add_parser("schulen-sync", help="Schulverzeichnis Berlin in die Schulen-Tabelle übernehmen")
     common(schools)
     schools_mode = schools.add_mutually_exclusive_group()
@@ -207,6 +215,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.command == "schulen-sync" and args.report and args.report.suffix.lower() != ".json":
         parser.error("--report benötigt für schulen-sync einen Dateinamen mit .json")
+    if args.command == "import-extern" and args.report and args.report.suffix.lower() != ".json":
+        parser.error("--report benötigt für import-extern einen Dateinamen mit .json")
     if args.command == "raumzuteilung" and args.plan_id and not args.apply:
         parser.error("--plan-id gehört zu --apply")
     if args.command == "import-gf" and args.apply and args.report:
@@ -534,6 +544,31 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                 raise ConnectionError(f"Schulverzeichnis nicht abrufbar: {exc}") from exc
             if args.report:
                 LOGGER.info("Schulbericht: %s", write_import_report(workspace, config_dir, args.report, school_report))
+            return 0
+        if args.command == "import-extern":
+            if selection.year is None or selection.year != settings["current_year"]:
+                raise ConfigurationError("import-extern nur für den aktuell registrierten Jahrgang zulässig")
+            tables = load_tables(resolve_config_file(config_dir, "tables.ini"))
+            db_config = load_db_config(config_dir)
+            if not can_reach(db_config.host, db_config.port, timeout=3):
+                raise ConnectionError("Datenbank für den Import der Externen nicht erreichbar")
+            extern_report: dict = {"schema_version": 1, "status": "blocked", "mode": "apply" if args.apply else "dry-run",
+                                   "issues": [], "summary": {}}
+            try:
+                with DB(db_config) as db:
+                    db_mao = current_MaO_number_db(db, tables)
+                    if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
+                        raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
+                    import_extern(db, config_dir, tables, dry_run=not args.apply, report=extern_report)
+            except (ExternError, ImportErrorGF, ConfigurationError) as exc:
+                extern_report["issues"].append(str(exc))
+                if args.report:
+                    LOGGER.info("Blockierter Bericht: %s", write_import_report(workspace, config_dir, args.report, extern_report))
+                raise
+            if args.report:
+                LOGGER.info("Bericht Externe: %s", write_import_report(workspace, config_dir, args.report, extern_report))
+            if not args.apply:
+                LOGGER.info("DRY-RUN: nichts geschrieben. Übernehmen mit: mao import-extern --apply")
             return 0
         if args.command == "raumzuteilung":
             if selection.year is None or selection.year != settings["current_year"]:

@@ -1,0 +1,11 @@
+# Wird von mao config init als gf-extern.yaml angelegt (Anmeldeformular der externen Teilnehmenden).
+# Zugangsdaten stehen wie beim Import der eigenen Schülerinnen und Schüler in gf.config.
+# Übernommen werden nur Name des Kindes, Klassenstufe und Schule; Daten der Eltern bleiben im Formular.
+form_id: 57
+page_size: 100
+timeout: 60
+fields:
+  vorname: "3.3"       # Name des Kindes, Teilfeld Vorname
+  nachname: "3.6"      # Name des Kindes, Teilfeld Nachname
+  klassenstufe: "5"    # Auswahl 3 bis 6
+  schule: "6"          # Auswahl der Grundschule; der Wert ist die Schulnummer (bsn)
