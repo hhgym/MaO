@@ -45,6 +45,7 @@ class RoomRules:
     db_capacity_rooms: tuple[str, ...] = ("Aula",)
     fill: str = "full"  # full: Raum für Raum auffüllen (wenige Aufsichten); even: gleichmäßig verteilen
     extern_rooms: tuple[str, ...] = ()  # Räume der externen Teilnehmenden (mao raumzuteilung --extern)
+    flex_style: str = "rein_zuerst"  # rein_zuerst: volle Räume je Stufe, Reste gemeinsam; nachbarn: Stufenblöcke nebeneinander
     flex_rooms: tuple[str, ...] = ()  # Sammelräume: nehmen den Rest aller Stufen mit möglichst wenigen Räumen und Mischungen auf
     supervisors_per_room: int = 1  # Lehrkräfte je belegtem Raum (mao aufsichten)
     supervisor_roles: tuple[str, ...] = ("Standard",)  # Rollen, die als Aufsicht des Raums zählen
@@ -150,6 +151,9 @@ def load_room_rules(path: Path) -> RoomRules:
         raise ConfigurationError(f"{path.name}: rooms.sammel erwartet eine Liste verschiedener Raumcodes")
     main_rooms = {r for values in grade_rooms.values() for r in values} | {str(v) for v in by_grade.values()}
     main_rooms |= {str(x) for x in (reserve, ober) if x not in (None, "")}
+    flex_style = str(rooms.get("sammel_stil", "rein_zuerst"))
+    if flex_style not in ("rein_zuerst", "nachbarn"):
+        raise ConfigurationError(f"{path.name}: rooms.sammel_stil muss 'rein_zuerst' oder 'nachbarn' sein")
     empty = sorted(k for k, v in grade_rooms.items() if not v)
     if empty and not flex:
         raise ConfigurationError(f"{path.name}: grade_rooms.{', '.join(empty)} ist leer; ohne rooms.sammel gäbe es für diese Stufen keinen Raum")
@@ -173,6 +177,7 @@ def load_room_rules(path: Path) -> RoomRules:
         fill=fill,
         extern_rooms=tuple(str(x) for x in extern_rooms),
         flex_rooms=tuple(str(x) for x in flex),
+        flex_style=flex_style,
         supervisors_per_room=sup_count,
         supervisor_roles=tuple(str(x) for x in sup_roles),
     )
@@ -279,18 +284,23 @@ def _flex_segments(order: tuple[int, ...], counts: Mapping[int, int], rooms: lis
 
 
 def plan_flex(counts: Mapping[int, int], rooms: list[tuple[str, int]],
-              existing: Mapping[str, set[int]] | None = None) -> tuple[list[tuple[str, dict[int, int]]], dict[int, int]]:
+              existing: Mapping[str, set[int]] | None = None, *,
+              pure_first: bool = True) -> tuple[list[tuple[str, dict[int, int]]], dict[int, int]]:
     """Rest der Teilnehmenden auf die Sammelräume verteilen.
 
     counts: Stufe -> Anzahl; rooms: (Raumcode, freie Plätze); existing: Raumcode -> Stufen, die dort schon sitzen.
     1. Es werden so wenige Räume wie möglich gewählt (größte freie Kapazität zuerst).
-    2. Die Stufenblöcke werden der Reihe nach in die Räume gelegt; unter allen Reihenfolgen gewinnt die mit den
-       wenigsten Mischungen (zusätzliche Stufen je Raum), danach die mit der geringsten Stufenspanne je Raum.
+    2. pure_first (Standard): Jeder Raum, den eine Stufe allein füllen kann, wird mit genau dieser Stufe gefüllt.
+       Die übrig gebliebenen Reste aller Stufen kommen zusammen in die verbleibenden Räume (Sammelraum).
+       Unter den Reihenfolgen der Reste gewinnt die mit den wenigsten gemischten Räumen, dann den wenigsten
+       zusätzlichen Stufen, dann der geringsten Stufenspanne.
+       Ohne pure_first liegen alle Stufenblöcke hintereinander; gewonnen hat die Reihenfolge mit den wenigsten
+       zusätzlichen Stufen je Raum und danach der geringsten Spanne (gemischt wird nur mit Nachbarstufen).
     Rückgabe: Belegung je genutztem Raum, nicht untergebrachte Teilnehmende je Stufe.
     """
     existing = existing or {}
-    stufen = sorted(s for s, n in counts.items() if n > 0)
-    total = sum(counts[s] for s in stufen)
+    remaining = {s: n for s, n in counts.items() if n > 0}
+    total = sum(remaining.values())
     ranked = sorted((r for r in rooms if r[1] > 0), key=lambda r: -r[1])  # stabil: Reihenfolge der Regeldatei bleibt bei Gleichstand
     chosen: list[tuple[str, int]] = []
     capacity = 0
@@ -299,23 +309,38 @@ def plan_flex(counts: Mapping[int, int], rooms: list[tuple[str, int]],
             break
         chosen.append(room)
         capacity += room[1]
+    pure: dict[str, dict[int, int]] = {}
+    rest_rooms: list[tuple[str, int]] = []
+    for code, free in chosen:
+        levels = set(existing.get(code, ()))
+        candidates = [s for s in sorted(remaining) if pure_first and remaining[s] >= free and levels <= {s}]
+        if candidates:
+            level = max(candidates, key=lambda s: (remaining[s], -s))
+            pure[code] = {level: free}
+            remaining[level] -= free
+            if remaining[level] == 0:
+                del remaining[level]
+        else:
+            rest_rooms.append((code, free))
+    stufen = sorted(remaining)
     orders = itertools.permutations(stufen) if len(stufen) <= 8 else iter([tuple(stufen)])
-    best: tuple[tuple[int, int], list[dict[int, int]], dict[int, int]] | None = None
+    best: tuple[tuple[int, int, int], list[dict[int, int]], dict[int, int]] | None = None
     for order in orders:
-        layout, left = _flex_segments(order, counts, chosen)
-        mixes = spread = 0
-        for (code, _free), seg in zip(chosen, layout):
+        layout, left = _flex_segments(order, remaining, rest_rooms)
+        mixed = mixes = spread = 0
+        for (code, _free), seg in zip(rest_rooms, layout):
             if not seg:
                 continue
             levels = set(seg) | set(existing.get(code, ()))
+            mixed += len(levels) > 1
             mixes += len(levels) - 1
             spread += max(levels) - min(levels)
-        cost = (mixes, spread)
+        cost = (mixed if pure_first else 0, mixes, spread)
         if best is None or cost < best[0]:
             best = (cost, layout, left)
-    if best is None:
-        return [], {}
-    return [(code, seg) for (code, _free), seg in zip(chosen, best[1]) if seg], best[2]
+    segments = dict(zip((code for code, _ in rest_rooms), best[1])) if best else {}
+    result = [(code, pure.get(code) or segments.get(code) or {}) for code, _free in chosen]
+    return [(code, seg) for code, seg in result if seg], (best[2] if best else {})
 
 
 def plan_rooms(participants: list[dict[str, Any]], capacities: Mapping[str, int | None], rules: RoomRules,
@@ -470,7 +495,8 @@ def plan_rooms(participants: list[dict[str, Any]], capacities: Mapping[str, int 
             by_level.setdefault(int(person["stufe"]), []).append(person)
         flex_free = [(room, cap(room, "7") - usage.get(room, 0)) for room in rules.flex_rooms]
         existing = {room: {int(s) for s in plan.per_room_grade.get(room, {})} for room in rules.flex_rooms}
-        layout, not_placed = plan_flex({s: len(m) for s, m in by_level.items()}, flex_free, existing)
+        layout, not_placed = plan_flex({s: len(m) for s, m in by_level.items()}, flex_free, existing,
+                                        pure_first=rules.flex_style == "rein_zuerst")
         queues = {}
         for level, members in by_level.items():
             buckets = buckets_of(members)

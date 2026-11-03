@@ -11,6 +11,8 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ### Raumzuteilung: Sammelräume
 
+- Neuer Standard `sammel_stil: rein_zuerst`: Jeder Sammelraum, den eine Stufe allein füllen kann, wird mit genau dieser Stufe gefüllt; nur die Reste aller Stufen kommen gemeinsam in die übrigen Räume (wenn möglich in einen einzigen Sammelraum). `sammel_stil: nachbarn` behält das bisherige Verhalten (Stufenblöcke nebeneinander, gemischt nur mit Nachbarstufen).
+
 - `grade_rooms` darf für einzelne Stufen leer sein (`"8": []`), wenn `rooms.sammel` gesetzt ist; die Kapazitätswarnung vergleicht dann den Gesamtrest mit den Sammelräumen statt je Stufe.
 
 - Neu: `rooms.sammel` in `raumregeln.yaml`. Alle, die nicht in ihre festen Räume passen, kommen mit möglichst wenigen Räumen und möglichst wenig Stufenmischung in die Sammelräume (Stufenblöcke nebeneinander, volle Räume rein, Reihenfolge der Stufen optimiert). Ohne Eintrag bleibt das Verhalten unverändert.

@@ -381,3 +381,39 @@ def test_capacity_check_with_sammel_rooms_only_warns_when_pool_is_too_small():
     small = r.RoomRules(grade_rooms={"5": ["A"], "8": []}, flex_rooms=("S1",))
     plan = r.plan_rooms(people, {}, small, {}, seed=1)
     assert any("Engpass" in w for w in plan.warnings) and len(plan.unassigned) == 25
+
+
+def test_pure_first_fills_whole_rooms_per_level_and_collects_remainders():
+    # Zahlen aus der Praxis: 32 + 32 + 23 + 3 = 90 Rest in 6 Räumen zu 15
+    rooms_ = [(f"S{i}", 15) for i in range(8)]
+    layout, left = r.plan_flex({7: 32, 8: 32, 9: 23, 10: 3}, rooms_)
+    assert not left and len(layout) == 6
+    mixed = [seg for _, seg in layout if len(seg) > 1]
+    assert len(mixed) == 1 and mixed[0] == {7: 2, 8: 2, 9: 8, 10: 3}
+    assert sum(1 for _, seg in layout if len(seg) == 1 and sum(seg.values()) == 15) == 5
+    # Stil „nachbarn“: gleiche Raumzahl, aber mehrere Räume mit je zwei Nachbarstufen
+    layout, _ = r.plan_flex({7: 32, 8: 32, 9: 23, 10: 3}, rooms_, pure_first=False)
+    assert len(layout) == 6 and sum(1 for _, seg in layout if len(seg) > 1) == 3
+
+
+def test_pure_first_respects_existing_levels_and_big_rooms():
+    layout, _ = r.plan_flex({7: 15, 8: 15}, [("a", 15), ("b", 15)], existing={"a": {8}})
+    assert dict(layout) == {"a": {8: 15}, "b": {7: 15}}
+    layout, left = r.plan_flex({7: 40, 8: 10}, [("aula", 50), ("k", 15)])
+    assert dict(layout) == {"aula": {7: 40, 8: 10}} and not left
+
+
+def test_remainder_larger_than_a_room_is_split_between_neighbours():
+    layout, left = r.plan_flex({5: 10, 6: 10, 7: 10}, [("a", 15), ("b", 15)])
+    assert not left and all(max(seg) - min(seg) == 1 for _, seg in layout)
+
+
+def test_sammel_style_is_validated(tmp_path):
+    path = tmp_path / "raumregeln.yaml"
+    path.write_text('rooms:\n  grade_rooms: {"5": [R1]}\n  sammel: [S1]\n  sammel_stil: nachbarn\n', encoding="utf-8")
+    assert r.load_room_rules(path).flex_style == "nachbarn"
+    path.write_text('rooms:\n  grade_rooms: {"5": [R1]}\n  sammel: [S1]\n  sammel_stil: bunt\n', encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="sammel_stil"):
+        r.load_room_rules(path)
+    path.write_text('rooms:\n  grade_rooms: {"5": [R1]}\n', encoding="utf-8")
+    assert r.load_room_rules(path).flex_style == "rein_zuerst"
