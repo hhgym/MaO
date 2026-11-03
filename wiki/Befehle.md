@@ -202,6 +202,10 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
     gemischten Sammelraum.
   - `nachbarn`: Die Stufen liegen als Blöcke hintereinander; gemischt wird nur mit benachbarten Stufen, dafür
     können mehrere Räume gemischt sein.
+  - `sammel_max_spanne: N` (zusätzlich zu `rein_zuerst`): gemischte Räume enthalten nur Stufen innerhalb von N
+    Stufen Abstand (1 = nur Nachbarstufen). Dann bleiben so viele reine Räume wie möglich, ohne die Raumzahl zu erhöhen.
+    Beispiel (Rest 7: 32, 8: 32, 9: 23, 10: 3 in sechs Räumen): ohne Begrenzung 5 reine Räume und 1 Sammelraum mit
+    vier Stufen; Spanne 2 gibt 4 reine und 2 gemischte Räume; Spanne 1 gibt 3 reine und 3 Räume mit je zwei Nachbarstufen.
   Klassen werden innerhalb einer Stufe weiter gemischt. Die Verteilung steht im Log und im Bericht (`sammelraeume`).
   Ohne `sammel` bleibt das bisherige Verhalten.
 - `mao raumzuteilung --extern` teilt stattdessen die externen Teilnehmenden zu. Die Räume stehen in

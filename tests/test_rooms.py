@@ -417,3 +417,34 @@ def test_sammel_style_is_validated(tmp_path):
         r.load_room_rules(path)
     path.write_text('rooms:\n  grade_rooms: {"5": [R1]}\n', encoding="utf-8")
     assert r.load_room_rules(path).flex_style == "rein_zuerst"
+
+
+def test_max_span_keeps_pure_rooms_and_mixes_only_neighbours():
+    rooms_ = [(f"S{i}", 15) for i in range(8)]
+    counts = {7: 32, 8: 32, 9: 23, 10: 3}
+    layout, left = r.plan_flex(counts, rooms_, max_span=1)
+    assert not left and len(layout) == 6
+    assert all(max(seg) - min(seg) <= 1 for _, seg in layout)
+    assert sum(1 for _, seg in layout if len(seg) == 1) >= 3 and sum(sum(seg.values()) for _, seg in layout) == 90
+    free, _ = r.plan_flex(counts, rooms_)
+    assert sum(1 for _, seg in free if len(seg) > 1) == 1
+    wide, _ = r.plan_flex(counts, rooms_, max_span=3)
+    assert sorted(map(str, (s for _, s in wide))) == sorted(map(str, (s for _, s in free)))
+
+
+def test_max_span_with_neighbours_available():
+    layout, left = r.plan_flex({6: 16, 7: 14}, [("a", 15), ("b", 15)], max_span=1)
+    assert not left and sorted(len(seg) for _, seg in layout) == [1, 2]
+
+
+def test_max_span_is_validated_and_warns_when_not_achievable(tmp_path):
+    path = tmp_path / "raumregeln.yaml"
+    path.write_text('rooms:\n  grade_rooms: {"5": [R1]}\n  sammel: [S1]\n  sammel_max_spanne: 1\n', encoding="utf-8")
+    assert r.load_room_rules(path).flex_max_span == 1
+    path.write_text('rooms:\n  grade_rooms: {"5": [R1]}\n  sammel: [S1]\n  sammel_max_spanne: -1\n', encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="sammel_max_spanne"):
+        r.load_room_rules(path)
+    people = [person(i, 8, "8-1") for i in range(5)] + [person(100 + i, 10, "10-1") for i in range(5)]
+    rule = r.RoomRules(grade_rooms={"5": ["A"]}, flex_rooms=("S1",), flex_max_span=1)
+    plan = r.plan_rooms(people, {}, rule, {}, seed=1)
+    assert any("erlaubte Spanne" in w for w in plan.warnings) and not plan.unassigned
