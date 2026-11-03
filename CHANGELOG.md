@@ -14,6 +14,7 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 - `mao raumzuteilung` zeigt am Ende zusätzlich „Räume je Stufe“ (Raum und Anzahl je Stufe); der Bericht enthält `raeume_je_stufe`. Bleiben Teilnehmende ohne Raum, nennt das Log den Befehl zum Nachtragen.
 - Neuer Befehl `mao raum-setzen --raum CODE --matrikel NUMMER [...]`: weist einzelnen Teilnehmenden von Hand einen Raum zu. Dry-Run ist Standard, `--apply` schreibt (Transaktion, Sperre, Zählabgleich). Er prüft Raum (vorhanden, aktiv), Matrikelnummern und vorhandene Zuordnungen (`--ueberschreiben`); die Kapazität wird bei Handzuteilung nur gemeldet, nicht erzwungen (`--trotzdem` ohne Wirkung). Von Hand gesetzte Räume bleiben bei der nächsten Raumzuteilung erhalten.
 - `mao raum-setzen --interaktiv`: Schritt für Schritt durch alle Teilnehmenden ohne Raum, mit Raumvorschlägen (Stufe schon im Raum, wenig Mischung, schon genutzte Räume zuerst), Überspringen (Enter), `u` = zurück, `r` = Raumübersicht, `q` = Ende. Ohne `--apply` nur Zusammenfassung; mit `--apply` nach Rückfrage `[j/N]` geprüftes Schreiben je Raum. Braucht ein Terminal.
+  Alle aktiven Räume stehen zur Wahl; volle erscheinen am Ende der Vorschläge mit „VOLL“, Überbelegung ist ausdrücklich möglich.
 
 ### Raumzuteilung: Sammelräume
 
