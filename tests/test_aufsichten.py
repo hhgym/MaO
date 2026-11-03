@@ -134,6 +134,10 @@ class SCur(Cur):
             return [(1,)]
         if "SELECT id, kuerzel, aktiv" in s:
             return [(1, "AB", 1), (2, "CD", 1), (3, "EF", 0)]
+        if "MAX(COALESCE" in s:
+            return getattr(self, "short", [(1, 5)])
+        if "SELECT a.lehrkraft_id, j.jahrgang_nr" in s:
+            return getattr(self, "hist", [(1, 7)])
         if "SELECT l.kuerzel" in s:
             return [("AB", "Anna", "Alpha", 1), ("CD", "Carl", "Beta", 0)]
         if "SELECT kuerzel, vorname" in s:
@@ -188,37 +192,6 @@ def test_set_supervision_roomless_remove_and_double_booking_warning():
         a.set_supervision(sdb(SCur(sups=())), TABLES, room="R1", kuerzel=["AB"], remove=True)
 
 
-def run_ia(tmp_path, inputs, apply, cur=None):
-    (tmp_path / "raumregeln.yaml").write_text('rooms:\n  grade_rooms: {"5": [R1]}\n', encoding="utf-8")
-    cur, lines, answers = cur or SCur(extern=((2, 12),), sups=()), [], iter(inputs)
-    result = a.interactive_supervision(sdb(cur), tmp_path, TABLES, apply=apply, workspace=tmp_path,
-                                       ask=lambda _p: next(answers), out=lines.append)
-    return cur, result, lines
-
-
-def test_interactive_lists_math_first_when_subjects_configured(tmp_path):
-    full = {**TABLES, "teacher_subjects_table": "lf", "subjects_table": "fa"}
-    (tmp_path / "raumregeln.yaml").write_text('rooms:\n  grade_rooms: {"5": [R1]}\n', encoding="utf-8")
-    lines, answers = [], iter(["l", "la", "q"])
-    a.interactive_supervision(sdb(SCur(sups=())), tmp_path, full, apply=False, workspace=tmp_path,
-                              ask=lambda _p: next(answers), out=lines.append)
-    shown = [x for x in lines if "Alpha" in x]
-    assert "Beta" not in shown[0] and "Beta" in shown[1]
-
-
-def test_interactive_supervision_steps(tmp_path):
-    cur, result, lines = run_ia(tmp_path, ["AB", "ZZ", "CD", "l", "", "q"], apply=False)
-    assert result["eintraege"] == 2 and not cur.writes
-    assert any("Unbekannte" in x for x in lines) and any("Alpha" in x for x in lines)
-
-
-def test_interactive_supervision_apply_asks(tmp_path):
-    cur, result, _ = run_ia(tmp_path, ["AB", "CD", "", "", "n"], apply=True)
-    assert not cur.writes and result["eintraege"] == 0
-    cur, result, _ = run_ia(tmp_path, ["AB", "CD", "AB", "", "j"], apply=True)
-    assert len(cur.writes) == 3
-
-
 def pdb(cur):
     return sdb(cur)
 
@@ -266,3 +239,57 @@ def test_apply_plan_scope_validation_and_warnings(tmp_path):
     stats = a.apply_plan(pdb(SCur(sups=())), tmp_path / "cfg", TABLES, tmp_path,
                          write_plan(tmp_path, "raeume:\n  R1: [AB]\n  X1: [AB]\n"), dry_run=True)
     assert stats["hinweise"] and "mehreren Räumen" in stats["hinweise"][0]
+
+
+def test_rotation_proposal_swaps_least_recent_into_short_room():
+    rooms = {"R1": ["AB"], "R2": ["CD"], "R3": ["EF"]}
+    prop = a.rotation_proposal(["R1"], rooms, {"AB": [5, 7], "EF": [3]})
+    assert prop["rang"] == ["CD", "EF", "AB"]
+    assert prop["raeume"] == {"R1": ["CD"], "R2": ["AB"], "R3": ["EF"]}
+    assert prop["wechsel"] == ["CD: R2 → Kurzraum, AB: Kurzraum → R2"]
+    keep = a.rotation_proposal(["R1"], {"R1": ["CD"], "R2": ["AB"]}, {"AB": [7]})
+    assert keep["raeume"] == {"R1": ["CD"], "R2": ["AB"]} and "bleibt" in keep["wechsel"][0]
+    assert a.rotation_proposal(["R1", "R2"], {"R1": ["AB"]}, {})["hinweise"]
+
+
+TABLES_IA = {**TABLES, "archive_table": "arch", "teacher_subjects_table": "lf", "subjects_table": "fa"}
+
+
+def session(tmp_path, inputs, apply=False, cur=None, tables=None):
+    (tmp_path / "raumregeln.yaml").write_text('rooms:\n  grade_rooms: {"5": [R1]}\n', encoding="utf-8")
+    cur = cur or SCur(extern=((2, 12),), sups=((1, 1, "Standard"), (2, 2, "Standard")))
+    lines, answers = [], iter(inputs)
+    result = a.interactive_supervision(sdb(cur), tmp_path, tables or TABLES_IA, apply=apply, workspace=tmp_path,
+                                       ask=lambda _p: next(answers), out=lines.append)
+    return cur, result, "\n".join(lines)
+
+
+def test_session_shows_table_with_short_room_and_math_list(tmp_path):
+    _cur, result, text = session(tmp_path, ["l", "la", "q"])
+    assert any(x.startswith("R1") and " K " in x for x in text.splitlines()) and "X1" in text and "Fachaufsicht: -" in text and "Alpha" in text and result["eintraege"] == 0
+
+
+def test_session_kurz_proposal_and_apply_in_one_go(tmp_path):
+    cur, result, text = session(tmp_path, ["kurz", "kurz ok", "fertig"])
+    assert "noch nie" in text and result["eintraege"] == 4 and not cur.writes
+    cur, result, _ = session(tmp_path, ["kurz ok", "fertig", "n", "q"], apply=True)
+    assert not cur.writes
+    cur, result, _ = session(tmp_path, ["kurz ok", "fertig", "j"], apply=True)
+    assert [w[0].split()[0] for w in cur.writes] == ["DELETE", "DELETE", "INSERT", "INSERT"]
+
+
+def test_session_edit_swap_undo_and_errors(tmp_path):
+    _cur, result, text = session(tmp_path, ["R1 AB CD", "R1 -CD", "tausch R1 X1", "tausch AB CD", "u", "u", "u",
+                                           "X1 ZZ", "fach EF", "fach MEI", "qqq", "fertig", "q"])
+    assert "Unbekannte Kürzel: ZZ" in text and "Unbekannter Befehl" in text and "Kürzel doppelt" not in text
+    assert "ist auch in einem anderen Raum" in text
+    assert "nicht aktiv" in text  # EF ist inaktiv: fertig meldet es, nichts wird geschrieben
+    assert result["eintraege"] == 0
+
+
+def test_session_without_rooms_or_history_still_works(tmp_path):
+    cur = SCur(sups=())
+    cur.short, cur.hist = [], []
+    _cur, result, text = session(tmp_path, ["kurz", "R1 AB", "fach CD", "reserve AB", "fertig"], cur=cur,
+                                 tables={**TABLES, "archive_table": "DEMO_ARCHIVE"})
+    assert "Keine Kurzräume" in text and result["eintraege"] == 3

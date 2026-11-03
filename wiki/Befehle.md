@@ -236,9 +236,16 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
   - `mao aufsichten --rolle Fachaufsicht --lehrkraft MEI [--apply]` (ebenso `Reserve`) trägt Lehrkräfte ohne Raum ein.
   - `--entfernen` löscht die genannten Einträge. Eingetragen werden können alle aktiven Lehrkräfte, nicht nur Mathematik.
     Ist jemand schon in einem anderen Raum eingeteilt, gibt es eine Warnung (Eintrag erfolgt trotzdem).
-  - `mao aufsichten --interaktiv [--apply]` geht alle Räume ohne volle Aufsicht der Reihe nach durch
-    (danach Fachaufsicht und Reserve, falls noch keine eingetragen ist). Eingabe: Kürzel (mehrere mit Leerzeichen oder Komma),
-    Enter überspringt, `l` zeigt die Mathematik-Lehrkräfte, `la` alle, `q` beendet. Geschrieben wird erst nach der Zusammenfassung und `j`.
+  - **Alles auf einmal in der Konsole:** `mao aufsichten --interaktiv [--apply]` zeigt eine Tabelle aller belegten Räume
+    mit der Aufsicht und bearbeitet sie in einer Sitzung; abgeschickt wird erst am Ende:
+    `105 GER NIX` besetzt einen Raum neu (`+KÜ`/`-KÜ` ändert nur, `-` leert), `fach MEI` und `reserve KRE` setzen
+    Fachaufsicht und Reserve, `tausch 105 204` tauscht zwei Raum-Teams, `tausch GER NIX` zwei Personen, `u` nimmt zurück,
+    `z` zeigt die Tabelle, `l`/`la` listen die Lehrkräfte (Mathematik zuerst/alle). `fertig` zeigt die Änderungen (`+`/`−`)
+    und schreibt mit `--apply` nach `j` alles in einer Transaktion; `q` bricht ab.
+  - **Kurzräume rotieren:** Räume, in denen nur Stufe 5/6 schreibt (2 statt 4 Stunden, in der Tabelle mit `K`), besetzt
+    `kurz` per Vorschlag: aus den eingeteilten Lehrkräften kommt zuerst, wer in früheren Jahrgängen am seltensten und
+    am längsten nicht in einem Kurzraum war (Grundlage: `archive_table` und frühere Aufsichten). Wer in den Kurzraum
+    rückt, tauscht mit jemandem aus dem Kurzraum. `kurz ok` übernimmt den Vorschlag (mit `u` rückgängig).
   - **Alles auf einmal (Plandatei):** `mao aufsichten --plan-exportieren` legt `aufsichten-plan.yaml` im Jahrgangsordner an
     (nie überschreibend): je Raum eine Kürzelliste, dazu `fachaufsicht` und `reserve`. Die Datei im Editor bearbeiten
     (Tausche, Lücken füllen), dann `mao aufsichten --plan aufsichten-plan.yaml` (Dry-Run: zeigt `+`/`−`/Warnungen) und

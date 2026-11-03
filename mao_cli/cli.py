@@ -208,7 +208,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                      help="Aktuellen Stand als Plandatei im Workspace anlegen (überschreibt nie); zum Bearbeiten aller Aufsichten auf einmal")
     sup.add_argument("--plan", type=Path, metavar="DATEI.yaml",
                      help="Plandatei mit der Datenbank abgleichen (Dry-Run, --apply schreibt alle Änderungen in einer Transaktion)")
-    sup.add_argument("--interaktiv", action="store_true", help="Räume ohne Aufsicht Schritt für Schritt besetzen (Terminal nötig)")
+    sup.add_argument("--interaktiv", action="store_true", help="Alle Aufsichten in einer Konsolensitzung bearbeiten und gesammelt abschicken (Terminal nötig)")
     sup.add_argument("--report", type=Path, metavar="DATEI.json", help="Bericht im Workspace speichern")
 
     extern = commands.add_parser("import-extern", help="Anmeldungen externer Teilnehmender (Grundschulen) übernehmen")
