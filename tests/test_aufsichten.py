@@ -24,7 +24,7 @@ def kinds(findings):
 
 
 def test_complete_plan_has_no_findings():
-    rows, findings = a.check_supervision({"R1": 15, "R2": 10}, [sup("R1", 1), sup("R2", 2)], TEACHERS, RULES, date(2026, 11, 11))
+    rows, findings = a.check_supervision({"R1": 15, "R2": 10}, [sup("R1", 1), sup("R2", 2), sup(None, 2, "Fachaufsicht")], TEACHERS, RULES, date(2026, 11, 11))
     assert not findings and rows[0]["lehrkraefte"] == ["AB"]
 
 
@@ -36,10 +36,10 @@ def test_missing_surplus_and_open_slots():
 
 def test_reserve_does_not_count_and_roles_are_configurable():
     _, findings = a.check_supervision({"R1": 5}, [sup("R1", 1, "Reserve")], TEACHERS, RULES)
-    assert kinds(findings) == ["fehlt"]
+    assert "fehlt" in kinds(findings)
     both = r.RoomRules(grade_rooms={"5": ["R1"]}, supervisor_roles=("Standard", "Fachaufsicht"))
     _, findings = a.check_supervision({"R1": 5}, [sup("R1", 1, "Fachaufsicht")], TEACHERS, both)
-    assert not findings
+    assert "fehlt" not in kinds(findings)
 
 
 def test_double_booking_inactive_unknown_and_orphans():
@@ -52,6 +52,15 @@ def test_double_booking_inactive_unknown_and_orphans():
     assert any("99" in t and "existiert nicht" in t for t in texts)
     assert any("niemand schreibt" in t for t in texts) and any("ohne Raum" in t for t in texts)
     assert sum("ohne Raum" in t for t in texts) == 1  # Reserve ohne Raum ist normal
+
+
+def test_fachaufsicht_is_the_roomless_competition_management():
+    _, findings = a.check_supervision({"R1": 5}, [sup("R1", 1), sup(None, 2, "Fachaufsicht")], TEACHERS, RULES)
+    assert not findings
+    _, findings = a.check_supervision({"R1": 5}, [sup("R1", 1)], TEACHERS, RULES)
+    assert [f["text"] for f in findings] == ["Keine Fachaufsicht (Wettkampfleitung) eingetragen"]
+    _, findings = a.check_supervision({"R1": 5}, [sup("R1", 1), sup("R1", 2, "Fachaufsicht")], TEACHERS, RULES)
+    assert any("gehört keinem Raum an" in f["text"] for f in findings) and not any(f["art"] == "fehler" for f in findings)
 
 
 def test_rules_section_is_validated(tmp_path):
