@@ -194,6 +194,12 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
   Der Bericht nennt die verwendete Datei (`rules_file`).
 
 
+- **Sammelräume (optional):** `rooms.sammel: [...]` in `raumregeln.yaml` nimmt alle auf, die nicht in ihre festen
+  Räume (`grade_rooms`, Top-15-Räume) passen oder dafür keinen Raum haben. Es werden so wenige Räume wie möglich
+  genutzt (größte freie Kapazität zuerst). Die Stufen liegen als Blöcke hintereinander; unter allen Reihenfolgen
+  gewinnt die mit den wenigsten gemischten Räumen und danach der geringsten Stufenspanne, sodass ein Raum höchstens
+  benachbarte Stufen enthält und volle Räume rein bleiben. Klassen werden innerhalb einer Stufe weiter gemischt. Die
+  Verteilung steht im Log und im Bericht (`sammelraeume`). Ohne `sammel` bleibt das bisherige Verhalten.
 - `mao raumzuteilung --extern` teilt stattdessen die externen Teilnehmenden zu. Die Räume stehen in
   `raumregeln.yaml` unter `extern: {rooms: [...]}` und dürfen nicht zugleich im Hauptwettbewerb vorkommen.
   Gefüllt wird nach Teilnehmernummer Raum für Raum bis `max_per_room` (bzw. Datenbankkapazität). Wer

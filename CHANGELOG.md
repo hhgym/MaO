@@ -9,6 +9,11 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Raumzuteilung: Sammelräume
+
+- Neu: `rooms.sammel` in `raumregeln.yaml`. Alle, die nicht in ihre festen Räume passen, kommen mit möglichst wenigen Räumen und möglichst wenig Stufenmischung in die Sammelräume (Stufenblöcke nebeneinander, volle Räume rein, Reihenfolge der Stufen optimiert). Ohne Eintrag bleibt das Verhalten unverändert.
+- `mao aufsichten`: die Fachaufsicht ist die Wettkampfleitung und gehört keinem Raum an (Hinweis, wenn keine eingetragen ist).
+
 ### Aufsichtenprüfung (`mao aufsichten`)
 
 - Neuer, nur lesender Befehl: prüft nach der Raumzuteilung, ob jeder belegte Raum (auch die der Externen) die vorgesehene Zahl Lehrkraft-Aufsichten hat, und meldet Plätze ohne Lehrkraft, Doppelbelegungen, nicht mehr aktive Lehrkräfte und Einträge in leeren Räumen. Regeln im Abschnitt `aufsichten` der `raumregeln.yaml`; neuer tables.ini-Schlüssel `aufsichten_table`.

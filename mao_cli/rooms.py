@@ -11,6 +11,7 @@ import csv
 import hashlib
 import json
 import logging
+import itertools
 import random
 import re
 from dataclasses import dataclass, field
@@ -44,6 +45,7 @@ class RoomRules:
     db_capacity_rooms: tuple[str, ...] = ("Aula",)
     fill: str = "full"  # full: Raum für Raum auffüllen (wenige Aufsichten); even: gleichmäßig verteilen
     extern_rooms: tuple[str, ...] = ()  # Räume der externen Teilnehmenden (mao raumzuteilung --extern)
+    flex_rooms: tuple[str, ...] = ()  # Sammelräume: nehmen den Rest aller Stufen mit möglichst wenigen Räumen und Mischungen auf
     supervisors_per_room: int = 1  # Lehrkräfte je belegtem Raum (mao aufsichten)
     supervisor_roles: tuple[str, ...] = ("Standard",)  # Rollen, die als Aufsicht des Raums zählen
 
@@ -53,7 +55,7 @@ class RoomRules:
         for extra in (self.reserve, self.top15_oberstufe):
             if extra:
                 rooms.add(extra)
-        return rooms
+        return rooms | set(self.flex_rooms)
 
 
 RULES_FILE = "raumregeln.yaml"
@@ -142,8 +144,16 @@ def load_room_rules(path: Path) -> RoomRules:
             or not isinstance(sup_roles, list) or not sup_roles or not set(sup_roles) <= set(SUPERVISOR_ROLES)):
         raise ConfigurationError(f"{path.name}: aufsichten erwartet lehrkraefte_pro_raum (1–10) und zaehlende_rollen "
                                  f"(Liste aus {', '.join(SUPERVISOR_ROLES)})")
+    flex = rooms.get("sammel", [])
+    if (not isinstance(flex, list) or not all(isinstance(x, (str, int)) and not isinstance(x, bool) for x in flex)
+            or len(set(map(str, flex))) != len(flex)):
+        raise ConfigurationError(f"{path.name}: rooms.sammel erwartet eine Liste verschiedener Raumcodes")
     main_rooms = {r for values in grade_rooms.values() for r in values} | {str(v) for v in by_grade.values()}
     main_rooms |= {str(x) for x in (reserve, ober) if x not in (None, "")}
+    clash = sorted(set(map(str, flex)) & main_rooms)
+    if clash:
+        raise ConfigurationError(f"{path.name}: Sammelraum {', '.join(clash)} ist zugleich ein fester Raum (grade_rooms, top15, reserve)")
+    main_rooms |= set(map(str, flex))
     shared = sorted(set(map(str, extern_rooms)) & main_rooms)
     if shared:
         raise ConfigurationError(f"{path.name}: Raum {', '.join(shared)} ist für Externe und Hauptwettbewerb vorgesehen; "
@@ -159,6 +169,7 @@ def load_room_rules(path: Path) -> RoomRules:
         db_capacity_rooms=tuple(str(x) for x in db_rooms),
         fill=fill,
         extern_rooms=tuple(str(x) for x in extern_rooms),
+        flex_rooms=tuple(str(x) for x in flex),
         supervisors_per_room=sup_count,
         supervisor_roles=tuple(str(x) for x in sup_roles),
     )
@@ -176,6 +187,7 @@ class RoomPlan:
     warnings: list[str] = field(default_factory=list)
     capacity_check: list[dict[str, Any]] = field(default_factory=list)
     kept: int = 0
+    flex: list[dict[str, Any]] = field(default_factory=list)  # Sammelräume mit Stufenverteilung
 
     @property
     def plan_id(self) -> str:
@@ -233,6 +245,66 @@ def capacity_check(by_stufe: Mapping[str, list[dict[str, Any]]], rules: RoomRule
                                  f"{row['freie_plaetze']} freie Plätze in den Zielräumen (Reserve: {reserve_free} frei, "
                                  f"{missing} fehlen)")
     return rows
+
+
+def _flex_segments(order: tuple[int, ...], counts: Mapping[int, int], rooms: list[tuple[str, int]]
+                   ) -> tuple[list[dict[int, int]], dict[int, int]]:
+    """Stufenblöcke in der gegebenen Reihenfolge Raum für Raum einsortieren. Rückgabe: Belegung je Raum, nicht Untergebrachte."""
+    remaining = {s: counts[s] for s in order}
+    queue = list(order)
+    layout: list[dict[int, int]] = []
+    for _code, free in rooms:
+        seg: dict[int, int] = {}
+        while free > 0 and queue:
+            stufe = queue[0]
+            take = min(free, remaining[stufe])
+            seg[stufe] = seg.get(stufe, 0) + take
+            remaining[stufe] -= take
+            free -= take
+            if remaining[stufe] == 0:
+                queue.pop(0)
+        layout.append(seg)
+    return layout, {s: n for s, n in remaining.items() if n > 0}
+
+
+def plan_flex(counts: Mapping[int, int], rooms: list[tuple[str, int]],
+              existing: Mapping[str, set[int]] | None = None) -> tuple[list[tuple[str, dict[int, int]]], dict[int, int]]:
+    """Rest der Teilnehmenden auf die Sammelräume verteilen.
+
+    counts: Stufe -> Anzahl; rooms: (Raumcode, freie Plätze); existing: Raumcode -> Stufen, die dort schon sitzen.
+    1. Es werden so wenige Räume wie möglich gewählt (größte freie Kapazität zuerst).
+    2. Die Stufenblöcke werden der Reihe nach in die Räume gelegt; unter allen Reihenfolgen gewinnt die mit den
+       wenigsten Mischungen (zusätzliche Stufen je Raum), danach die mit der geringsten Stufenspanne je Raum.
+    Rückgabe: Belegung je genutztem Raum, nicht untergebrachte Teilnehmende je Stufe.
+    """
+    existing = existing or {}
+    stufen = sorted(s for s, n in counts.items() if n > 0)
+    total = sum(counts[s] for s in stufen)
+    ranked = sorted((r for r in rooms if r[1] > 0), key=lambda r: -r[1])  # stabil: Reihenfolge der Regeldatei bleibt bei Gleichstand
+    chosen: list[tuple[str, int]] = []
+    capacity = 0
+    for room in ranked:
+        if capacity >= total:
+            break
+        chosen.append(room)
+        capacity += room[1]
+    orders = itertools.permutations(stufen) if len(stufen) <= 8 else iter([tuple(stufen)])
+    best: tuple[tuple[int, int], list[dict[int, int]], dict[int, int]] | None = None
+    for order in orders:
+        layout, left = _flex_segments(order, counts, chosen)
+        mixes = spread = 0
+        for (code, _free), seg in zip(chosen, layout):
+            if not seg:
+                continue
+            levels = set(seg) | set(existing.get(code, ()))
+            mixes += len(levels) - 1
+            spread += max(levels) - min(levels)
+        cost = (mixes, spread)
+        if best is None or cost < best[0]:
+            best = (cost, layout, left)
+    if best is None:
+        return [], {}
+    return [(code, seg) for (code, _free), seg in zip(chosen, best[1]) if seg], best[2]
 
 
 def plan_rooms(participants: list[dict[str, Any]], capacities: Mapping[str, int | None], rules: RoomRules,
@@ -346,7 +418,7 @@ def plan_rooms(participants: list[dict[str, Any]], capacities: Mapping[str, int 
         members = [p for p in by_stufe[stufe] if not assigned(p)]
         targets = [r for r in rules.grade_rooms.get(stufe, []) if not (r in paired and stufe not in ("5", "6"))]
         if not targets:
-            if members:
+            if members and not rules.flex_rooms:
                 plan.warnings.append(f"Stufe {stufe}: keine Zielräume in den Raumregeln, {len(members)} Teilnehmende offen")
             leftovers_all.extend(members)
             continue
@@ -379,6 +451,31 @@ def plan_rooms(participants: list[dict[str, Any]], capacities: Mapping[str, int 
             for key in classes:
                 left.extend(buckets.get(key, []))
         leftovers_all.extend(left)
+
+    # 3b) Sammelräume: Rest aller Stufen mit möglichst wenigen Räumen und möglichst wenig Stufenmischung
+    if rules.flex_rooms and leftovers_all:
+        by_level: dict[int, list[dict[str, Any]]] = {}
+        for person in leftovers_all:
+            by_level.setdefault(int(person["stufe"]), []).append(person)
+        flex_free = [(room, cap(room, "7") - usage.get(room, 0)) for room in rules.flex_rooms]
+        existing = {room: {int(s) for s in plan.per_room_grade.get(room, {})} for room in rules.flex_rooms}
+        layout, not_placed = plan_flex({s: len(m) for s, m in by_level.items()}, flex_free, existing)
+        queues = {}
+        for level, members in by_level.items():
+            buckets = buckets_of(members)
+            queues[level] = take_round_robin(buckets, len(members))
+        leftovers_all = []
+        for room, segment in layout:
+            for level, number in segment.items():
+                for _ in range(number):
+                    person = queues[level].pop(0)
+                    if not place(person, room, str(level)):
+                        leftovers_all.append(person)
+        for level in queues:
+            leftovers_all.extend(queues[level])
+        plan.flex = [{"raum": room, "stufen": {str(s): n for s, n in segment.items()}} for room, segment in layout]
+        if not_placed:
+            plan.warnings.append("Sammelräume reichen nicht aus: " + ", ".join(f"{n}× Stufe {s}" for s, n in sorted(not_placed.items())))
 
     # 4) Überlauf in den Reserveraum
     for person in leftovers_all:
@@ -490,6 +587,7 @@ def assign_rooms(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_ru
             report["warnings"] = plan.warnings
             report["top15"] = {key: len(values) for key, values in plan.top15.items()}
             report["capacity_check"] = plan.capacity_check
+            report["sammelraeume"] = plan.flex
         for note in plan.warnings:
             LOGGER.warning("Raumzuteilung | %s", note)
         _log_plan(plan, stats, overwrite)
@@ -523,6 +621,9 @@ def _log_plan(plan: RoomPlan, stats: Mapping[str, Any], overwrite: bool) -> None
         LOGGER.info("  Stufe %-3s %3d Teilnehmende, %3d freie Plätze", row["stufe"], row["teilnehmende"], row["freie_plaetze"])
     for key in sorted(plan.top15):
         LOGGER.info("  Top-%d Stufe %s: %d Personen", len(plan.top15[key]), key, len(plan.top15[key]))
+    if plan.flex:
+        mixed = sum(1 for item in plan.flex if len(item["stufen"]) > 1)
+        LOGGER.info("  Sammelräume: %d Räume genutzt, davon %d mit gemischten Stufen", len(plan.flex), mixed)
     for room in sorted(plan.per_room, key=lambda r: (_floor(r), r)):
         parts = ", ".join(f"{count}× Stufe {stufe}" for stufe, count in sorted(
             plan.per_room_grade.get(room, {}).items(), key=lambda item: int(item[0])))
