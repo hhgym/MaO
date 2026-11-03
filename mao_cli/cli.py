@@ -25,7 +25,7 @@ from .updater import UpdateError, plan_update, run_update, update_notice
 from .workspaces import (resolve_config_dir, find_conflict_copies, write_pointer, CONFIG_FOLDER, TEX_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
-from .aufsichten import check_aufsichten
+from .aufsichten import check_aufsichten, interactive_supervision, set_supervision
 from .extern import ExternError, assign_extern_rooms, import_extern
 from .gf_import import import_participants, ImportErrorGF, write_import_report
 from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, read_file, sync_schools
@@ -194,8 +194,17 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     setroom.add_argument("--ueberschreiben", action="store_true", help="Auch Teilnehmende umsetzen, die schon einen anderen Raum haben")
     setroom.add_argument("--trotzdem", action="store_true", help="Ohne Wirkung (Handzuteilung ignoriert die Kapazität ohnehin; nur noch aus Kompatibilität)")
 
-    sup = commands.add_parser("aufsichten", help="Aufsichten der Lehrkräfte nach der Raumzuteilung prüfen (nur lesend)")
+    sup = commands.add_parser("aufsichten", help="Aufsichten der Lehrkräfte prüfen (Standard) oder setzen (--lehrkraft / --interaktiv)")
     common(sup)
+    sup_mode = sup.add_mutually_exclusive_group()
+    sup_mode.add_argument("--apply", action="store_true", help="Beim Setzen in die Datenbank schreiben")
+    sup_mode.add_argument("--dry-run", action="store_true", help="Beim Setzen nur prüfen und berichten (Standard)")
+    sup.add_argument("--lehrkraft", nargs="+", metavar="KÜRZEL", help="Aufsicht(en) für diese Lehrkräfte setzen")
+    sup.add_argument("--raum", metavar="CODE", help="Raumcode (nur Rolle Standard)")
+    sup.add_argument("--rolle", default="Standard", choices=["Standard", "Reserve", "Fachaufsicht"],
+                     help="Rolle; Reserve und Fachaufsicht gehören zu keinem Raum")
+    sup.add_argument("--entfernen", action="store_true", help="Die genannten Einträge entfernen statt eintragen")
+    sup.add_argument("--interaktiv", action="store_true", help="Räume ohne Aufsicht Schritt für Schritt besetzen (Terminal nötig)")
     sup.add_argument("--report", type=Path, metavar="DATEI.json", help="Bericht im Workspace speichern")
 
     extern = commands.add_parser("import-extern", help="Anmeldungen externer Teilnehmender (Grundschulen) übernehmen")
@@ -614,6 +623,23 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
             db_config = load_db_config(config_dir)
             if not can_reach(db_config.host, db_config.port, timeout=3):
                 raise ConnectionError("Datenbank für die Aufsichtenprüfung nicht erreichbar")
+            if args.interaktiv or args.lehrkraft:
+                with DB(db_config) as db:
+                    db_mao = current_MaO_number_db(db, tables)
+                    if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
+                        raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
+                    if args.interaktiv:
+                        if not sys.stdin.isatty():
+                            raise ConfigurationError("--interaktiv braucht ein Terminal")
+                        interactive_supervision(db, config_dir, tables, apply=args.apply, workspace=workspace)
+                    else:
+                        set_supervision(db, tables, room=args.raum, kuerzel=args.lehrkraft, role=args.rolle,
+                                        remove=args.entfernen, dry_run=not args.apply)
+                        if not args.apply:
+                            LOGGER.info("DRY-RUN: nichts geschrieben. Eintragen mit --apply")
+                return 0
+            if args.raum or args.entfernen:
+                raise ConfigurationError("--raum/--entfernen gehören zu --lehrkraft")
             sup_report: dict = {"schema_version": 1, "status": "blocked", "mode": "check", "issues": [], "summary": {}}
             try:
                 with DB(db_config) as db:

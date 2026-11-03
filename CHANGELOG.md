@@ -25,6 +25,7 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 - `grade_rooms` darf für einzelne Stufen leer sein (`"8": []`), wenn `rooms.sammel` gesetzt ist; die Kapazitätswarnung vergleicht dann den Gesamtrest mit den Sammelräumen statt je Stufe.
 
 - Neu: `rooms.sammel` in `raumregeln.yaml`. Alle, die nicht in ihre festen Räume passen, kommen mit möglichst wenigen Räumen und möglichst wenig Stufenmischung in die Sammelräume (Stufenblöcke nebeneinander, volle Räume rein, Reihenfolge der Stufen optimiert). Ohne Eintrag bleibt das Verhalten unverändert.
+- `mao aufsichten` kann jetzt auch setzen: `--raum CODE --lehrkraft KÜRZEL…` (`--rolle Reserve|Fachaufsicht` ohne Raum, `--entfernen`), Dry-Run/`--apply`; `--interaktiv` besetzt Räume ohne Aufsicht Schritt für Schritt (Mathematik-Lehrkräfte zuerst gelistet, wenn `teacher_subjects_table`/`subjects_table` gesetzt sind). Neue optionale tables.ini-Schlüssel: `teacher_subjects_table`, `subjects_table`.
 - `mao aufsichten`: die Fachaufsicht ist die Wettkampfleitung und gehört keinem Raum an (Hinweis, wenn keine eingetragen ist).
 
 ### Aufsichtenprüfung (`mao aufsichten`)
