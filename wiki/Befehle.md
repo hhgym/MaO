@@ -231,6 +231,15 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
   (überzählige Aufsichten, Aufsicht in einem leeren Raum, Eintrag ohne Raum).
 - Regeln in `raumregeln.yaml` (je Jahrgang): `aufsichten: {lehrkraefte_pro_raum: 1, zaehlende_rollen: ["Standard"]}`.
   Die Rollen `Reserve` (Springer) und `Fachaufsicht` (Wettkampfleitung: beantwortet Fragen zu den Aufgaben) gehören keinem Raum an und zählen standardmäßig nicht als Raumaufsicht. Fehlt eine Fachaufsicht, gibt es einen Hinweis; ist sie einem Raum zugeordnet, ebenfalls.
+- **Aufsichten setzen** (Dry-Run ist Standard, `--apply` schreibt):
+  - `mao aufsichten --raum 105 --lehrkraft GER NIX [--apply]` trägt Lehrkräfte per Kürzel als Raumaufsicht ein.
+  - `mao aufsichten --rolle Fachaufsicht --lehrkraft MEI [--apply]` (ebenso `Reserve`) trägt Lehrkräfte ohne Raum ein.
+  - `--entfernen` löscht die genannten Einträge. Eingetragen werden können alle aktiven Lehrkräfte, nicht nur Mathematik.
+    Ist jemand schon in einem anderen Raum eingeteilt, gibt es eine Warnung (Eintrag erfolgt trotzdem).
+  - `mao aufsichten --interaktiv [--apply]` geht alle Räume ohne volle Aufsicht der Reihe nach durch
+    (danach Fachaufsicht und Reserve, falls noch keine eingetragen ist). Eingabe: Kürzel (mehrere mit Leerzeichen oder Komma),
+    Enter überspringt, `l` zeigt die Mathematik-Lehrkräfte, `la` alle, `q` beendet. Geschrieben wird erst nach der Zusammenfassung und `j`.
+  - Für die Mathematik-Auswahl `teacher_subjects_table` und `subjects_table` in tables.ini setzen (optional; sonst zeigt `l` alle).
 - Die Oberstufenschüler als Aufsicht folgen später.
 
 

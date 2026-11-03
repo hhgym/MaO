@@ -124,3 +124,95 @@ def test_database_check_requires_assigned_rooms(tmp_path):
     with pytest.raises(r.RoomError, match="aufsichten_table"):
         a.check_aufsichten(SimpleNamespace(conn=SimpleNamespace(cursor=lambda: Cur())), tmp_path,
                            {**TABLES, "aufsichten_table": "DEMO_AUFSICHTEN"})
+
+
+class SCur(Cur):
+    def fetchall(self):
+        s = self.sql
+        if "GET_LOCK" in s or "RELEASE_LOCK" in s:
+            return [(1,)]
+        if "SELECT id, kuerzel, aktiv" in s:
+            return [(1, "AB", 1), (2, "CD", 1), (3, "EF", 0)]
+        if "SELECT l.kuerzel" in s:
+            return [("AB", "Anna", "Alpha", 1), ("CD", "Carl", "Beta", 0)]
+        if "SELECT kuerzel, vorname" in s:
+            return [("AB", "Anna", "Alpha"), ("CD", "Carl", "Beta")]
+        if "SELECT raum_id, rolle" in s:
+            return [(r_, ro) for r_, _lk, ro in self.sups]
+        return super().fetchall()
+    def execute(self, sql, params=None):
+        super().execute(sql, params)
+        if sql.startswith(("INSERT", "DELETE")):
+            self.writes[-1] = (sql, params)
+
+
+def sdb(cur):
+    return SimpleNamespace(conn=SimpleNamespace(cursor=lambda: cur, in_transaction=False, start_transaction=lambda: None,
+                                                commit=lambda: None, rollback=lambda: None))
+
+
+def test_set_supervision_dry_run_apply_and_guards():
+    cur = SCur(sups=())
+    stats = a.set_supervision(sdb(cur), TABLES, room="R1", kuerzel=["ab", "cd"])
+    assert stats["betroffen"] == ["AB", "CD"] and not cur.writes
+    cur = SCur(sups=())
+    a.set_supervision(sdb(cur), TABLES, room="R1", kuerzel=["AB"], dry_run=False)
+    assert cur.writes[0][1] == (7, 1, 1, "Standard")
+    cur = SCur(sups=((1, 1, "Standard"),))
+    stats = a.set_supervision(sdb(cur), TABLES, room="R1", kuerzel=["AB"], dry_run=False)
+    assert stats["bereits_so"] == ["AB"] and not cur.writes
+    with pytest.raises(r.RoomError, match="Unbekannte"):
+        a.set_supervision(sdb(SCur()), TABLES, room="R1", kuerzel=["ZZ"])
+    with pytest.raises(r.RoomError, match="nicht aktiv"):
+        a.set_supervision(sdb(SCur()), TABLES, room="R1", kuerzel=["EF"])
+    with pytest.raises(r.RoomError, match="Raum"):
+        a.set_supervision(sdb(SCur()), TABLES, room="NOPE", kuerzel=["AB"])
+    with pytest.raises(r.RoomError, match="keinem Raum"):
+        a.set_supervision(sdb(SCur()), TABLES, room="R1", kuerzel=["AB"], role="Reserve")
+    with pytest.raises(r.RoomError, match="Raum nötig"):
+        a.set_supervision(sdb(SCur()), TABLES, room=None, kuerzel=["AB"])
+
+
+def test_set_supervision_roomless_remove_and_double_booking_warning():
+    cur = SCur(sups=())
+    a.set_supervision(sdb(cur), TABLES, room=None, kuerzel=["CD"], role="Fachaufsicht", dry_run=False)
+    assert cur.writes[0][1] == (7, None, 2, "Fachaufsicht")
+    cur = SCur(sups=((1, 1, "Standard"),))
+    stats = a.set_supervision(sdb(cur), TABLES, room="X1", kuerzel=["AB"])
+    assert stats["hinweise"] and "R1" in stats["hinweise"][0]
+    cur = SCur(sups=((1, 1, "Standard"),))
+    a.set_supervision(sdb(cur), TABLES, room="R1", kuerzel=["AB"], remove=True, dry_run=False)
+    assert cur.writes[0][0].startswith("DELETE") and cur.writes[0][1] == (7, 1, "Standard", 1)
+    with pytest.raises(r.RoomError, match="Nichts zu entfernen"):
+        a.set_supervision(sdb(SCur(sups=())), TABLES, room="R1", kuerzel=["AB"], remove=True)
+
+
+def run_ia(tmp_path, inputs, apply, cur=None):
+    (tmp_path / "raumregeln.yaml").write_text('rooms:\n  grade_rooms: {"5": [R1]}\n', encoding="utf-8")
+    cur, lines, answers = cur or SCur(extern=((2, 12),), sups=()), [], iter(inputs)
+    result = a.interactive_supervision(sdb(cur), tmp_path, TABLES, apply=apply, workspace=tmp_path,
+                                       ask=lambda _p: next(answers), out=lines.append)
+    return cur, result, lines
+
+
+def test_interactive_lists_math_first_when_subjects_configured(tmp_path):
+    full = {**TABLES, "teacher_subjects_table": "lf", "subjects_table": "fa"}
+    (tmp_path / "raumregeln.yaml").write_text('rooms:\n  grade_rooms: {"5": [R1]}\n', encoding="utf-8")
+    lines, answers = [], iter(["l", "la", "q"])
+    a.interactive_supervision(sdb(SCur(sups=())), tmp_path, full, apply=False, workspace=tmp_path,
+                              ask=lambda _p: next(answers), out=lines.append)
+    shown = [x for x in lines if "Alpha" in x]
+    assert "Beta" not in shown[0] and "Beta" in shown[1]
+
+
+def test_interactive_supervision_steps(tmp_path):
+    cur, result, lines = run_ia(tmp_path, ["AB", "ZZ", "CD", "l", "", "q"], apply=False)
+    assert result["eintraege"] == 2 and not cur.writes
+    assert any("Unbekannte" in x for x in lines) and any("Alpha" in x for x in lines)
+
+
+def test_interactive_supervision_apply_asks(tmp_path):
+    cur, result, _ = run_ia(tmp_path, ["AB", "CD", "", "", "n"], apply=True)
+    assert not cur.writes and result["eintraege"] == 0
+    cur, result, _ = run_ia(tmp_path, ["AB", "CD", "AB", "", "j"], apply=True)
+    assert len(cur.writes) == 3

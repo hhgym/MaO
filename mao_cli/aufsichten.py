@@ -90,6 +90,21 @@ def check_supervision(rooms: Mapping[str, int], supervisions: list[dict[str, Any
     return rows, findings
 
 
+def _room_counts(cur: Any, tables: Mapping[str, str], by_id: Mapping[int, str], jahrgang_id: int) -> dict[str, int]:
+    """Teilnehmende je belegtem Raum (Hauptwettbewerb und Externe)."""
+    orga, extern = _ident(tables, "orga_table"), _ident(tables, "extern_teilnahmen_table")
+    counts: dict[str, int] = {}
+    for sql, params in ((f"SELECT raum_id, COUNT(*) FROM `{orga}` WHERE raum_id IS NOT NULL GROUP BY raum_id", None),
+                        (f"SELECT raum_id, COUNT(*) FROM `{extern}` WHERE raum_id IS NOT NULL AND mao_jahrgang_id = %s "
+                         "GROUP BY raum_id", (jahrgang_id,))):
+        cur.execute(sql, params)
+        for room_id, number in cur.fetchall():
+            code = by_id.get(int(room_id))
+            if code is not None:
+                counts[code] = counts.get(code, 0) + int(number)
+    return counts
+
+
 def check_aufsichten(db: Any, config_dir: Path, tables: Mapping[str, str], *, workspace: Path | None = None,
                      report: dict[str, Any] | None = None) -> dict[str, int]:
     rules_path = resolve_rules_file(workspace, config_dir)
@@ -100,7 +115,6 @@ def check_aufsichten(db: Any, config_dir: Path, tables: Mapping[str, str], *, wo
         raise RoomError("Keine Datenbankverbindung")
     cur = cnx.cursor()
     try:
-        orga, extern = _ident(tables, "orga_table"), _ident(tables, "extern_teilnahmen_table")
         sup_t, teachers_t = _ident(tables, "aufsichten_table"), _ident(tables, "teachers_table")
         try:
             jahrgang_id = load_state_year(cur, tables)
@@ -108,15 +122,7 @@ def check_aufsichten(db: Any, config_dir: Path, tables: Mapping[str, str], *, wo
             raise RoomError(str(exc)) from exc
         rooms = load_rooms(cur, tables)
         by_id = {info["id"]: code for code, info in rooms.items()}
-        counts: dict[str, int] = {}
-        for sql, params in ((f"SELECT raum_id, COUNT(*) FROM `{orga}` WHERE raum_id IS NOT NULL GROUP BY raum_id", None),
-                            (f"SELECT raum_id, COUNT(*) FROM `{extern}` WHERE raum_id IS NOT NULL AND mao_jahrgang_id = %s "
-                             "GROUP BY raum_id", (jahrgang_id,))):
-            cur.execute(sql, params)
-            for room_id, number in cur.fetchall():
-                code = by_id.get(int(room_id))
-                if code is not None:
-                    counts[code] = counts.get(code, 0) + int(number)
+        counts = _room_counts(cur, tables, by_id, jahrgang_id)
         cur.execute(f"SELECT raum_id, lehrkraft_id, rolle FROM `{sup_t}` WHERE mao_jahrgang_id = %s", (jahrgang_id,))
         supervisions = [{"raum": by_id.get(int(r)) if r is not None else None,
                          "lehrkraft_id": None if lk is None else int(lk), "rolle": str(role)} for r, lk, role in cur.fetchall()]
@@ -145,3 +151,201 @@ def check_aufsichten(db: Any, config_dir: Path, tables: Mapping[str, str], *, wo
         report.update({"summary": stats, "wettkampfleitung": leitung, "rooms": rows, "findings": findings, "rules_file": str(rules_path),
                        "status": "ok" if not errors else "probleme"})
     return stats
+
+
+ROLES = ("Standard", "Reserve", "Fachaufsicht")
+
+
+PREFERRED_SUBJECT = "Mathematik"
+
+
+def _teacher_list(cur: Any, tables: Mapping[str, str]) -> list[tuple[str, str, str, bool]]:
+    """Aktive Lehrkräfte (Kürzel, Vorname, Nachname, unterrichtet Mathematik); Fächer sind optional konfiguriert."""
+    teachers_t = _ident(tables, "teachers_table")
+    try:
+        links, subjects = _ident(tables, "teacher_subjects_table"), _ident(tables, "subjects_table")
+    except RoomError:
+        cur.execute(f"SELECT kuerzel, vorname, nachname FROM `{teachers_t}` WHERE aktiv = 1 OR aktiv IS NULL ORDER BY kuerzel")
+        return [(str(k), str(v or ""), str(n or ""), False) for k, v, n in cur.fetchall() if k]
+    cur.execute(f"SELECT l.kuerzel, l.vorname, l.nachname, MAX(f.Fach = %s) FROM `{teachers_t}` l "
+                f"LEFT JOIN `{links}` lf ON lf.lehrkraft_id = l.id LEFT JOIN `{subjects}` f ON f.id = lf.fach_id "
+                "WHERE l.aktiv = 1 OR l.aktiv IS NULL GROUP BY l.id ORDER BY l.kuerzel", (PREFERRED_SUBJECT,))
+    return [(str(k), str(v or ""), str(n or ""), bool(m)) for k, v, n, m in cur.fetchall() if k]
+
+
+def set_supervision(db: Any, tables: Mapping[str, str], *, room: str | None, kuerzel: list[str], role: str = "Standard",
+                    remove: bool = False, dry_run: bool = True) -> dict[str, Any]:
+    """Aufsichten eintragen (oder entfernen). Dry-Run ist Standard; Reserve und Fachaufsicht gehören zu keinem Raum."""
+    if role not in ROLES:
+        raise RoomError(f"Unbekannte Rolle {role} (erlaubt: {', '.join(ROLES)})")
+    roomless = role in ROOMLESS_ROLES
+    if roomless and room:
+        raise RoomError(f"Rolle {role} gehört zu keinem Raum (--raum weglassen)")
+    if not roomless and not room:
+        raise RoomError("Für die Rolle Standard ist ein Raum nötig")
+    names = [k.strip().upper() for k in kuerzel if k.strip()]
+    if not names or len(set(names)) != len(names):
+        raise RoomError("Lehrkräfte-Kürzel fehlen oder kommen doppelt vor")
+    cnx = db.conn
+    if cnx is None:
+        raise RoomError("Keine Datenbankverbindung")
+    cur = cnx.cursor()
+    lock_name = ""
+    try:
+        sup_t, teachers_t = _ident(tables, "aufsichten_table"), _ident(tables, "teachers_table")
+        try:
+            jahrgang_id = load_state_year(cur, tables)
+        except ExternError as exc:
+            raise RoomError(str(exc)) from exc
+        rooms = load_rooms(cur, tables)
+        room_id = None
+        if room:
+            info = rooms.get(room)
+            if info is None or not info["active"]:
+                raise RoomError(f"Raum {room} fehlt in der Raumtabelle oder ist inaktiv")
+            room_id = info["id"]
+        cur.execute(f"SELECT id, kuerzel, aktiv FROM `{teachers_t}`")
+        by_kuerzel = {str(k).upper(): (int(i), a) for i, k, a in cur.fetchall() if k}
+        unknown = [n for n in names if n not in by_kuerzel]
+        if unknown:
+            raise RoomError("Unbekannte Lehrkräfte-Kürzel: " + ", ".join(unknown))
+        inactive = [n for n in names if by_kuerzel[n][1] is not None and not int(by_kuerzel[n][1])]
+        if inactive and not remove:
+            raise RoomError("Lehrkräfte nicht aktiv: " + ", ".join(inactive))
+        ids = {n: by_kuerzel[n][0] for n in names}
+        cur.execute(f"SELECT raum_id, lehrkraft_id, rolle FROM `{sup_t}` WHERE mao_jahrgang_id = %s", (jahrgang_id,))
+        existing = {(None if r is None else int(r), int(lk), str(ro)) for r, lk, ro in cur.fetchall()}
+        elsewhere: dict[int, set[str]] = {}
+        for r, lk, ro in existing:
+            if ro == "Standard" and r != room_id:
+                elsewhere.setdefault(lk, set()).add(next((c for c, i in rooms.items() if i["id"] == r), "?"))
+        todo: list[str] = []
+        skipped: list[str] = []
+        warnings: list[str] = []
+        for n in names:
+            key = (room_id, ids[n], role)
+            if remove:
+                (todo if key in existing else skipped).append(n)
+            elif key in existing:
+                skipped.append(n)
+            else:
+                todo.append(n)
+                if role == "Standard" and ids[n] in elsewhere:
+                    warnings.append(f"{n} ist schon in Raum {', '.join(sorted(elsewhere[ids[n]]))} eingeteilt")
+        if remove and not todo:
+            raise RoomError("Nichts zu entfernen: " + ", ".join(skipped))
+        stats = {"raum": room, "rolle": role, "aktion": "entfernen" if remove else "eintragen", "betroffen": todo,
+                 "bereits_so": skipped, "hinweise": warnings}
+        LOGGER.info("Aufsicht setzen | %s %s %s: %s | schon so: %s | Modus: %s", role, f"Raum {room}" if room else "(ohne Raum)",
+                    stats["aktion"], ", ".join(todo) or "-", ", ".join(skipped) or "-", "DRY-RUN" if dry_run else "APPLY")
+        for note in warnings:
+            LOGGER.warning("Aufsicht setzen | %s", note)
+        if dry_run or not todo:
+            return stats
+        lock_name = f"mao-aufsichten-{sup_t}"
+        cur.execute("SELECT GET_LOCK(%s, 10)", (lock_name,))
+        if cur.fetchall()[0][0] != 1:
+            raise RoomError("Konkurrierende Änderung oder Sperr-Timeout")
+        if cnx.in_transaction:
+            cnx.rollback()
+        cnx.start_transaction()
+        try:
+            for n in todo:
+                if remove:
+                    cur.execute(f"DELETE FROM `{sup_t}` WHERE mao_jahrgang_id = %s AND lehrkraft_id = %s AND rolle = %s AND "
+                                + ("raum_id IS NULL" if room_id is None else "raum_id = %s"),
+                                (jahrgang_id, ids[n], role) + (() if room_id is None else (room_id,)))
+                else:
+                    cur.execute(f"INSERT INTO `{sup_t}` (mao_jahrgang_id, raum_id, lehrkraft_id, rolle) VALUES (%s, %s, %s, %s)",
+                                (jahrgang_id, room_id, ids[n], role))
+            cnx.commit()
+        except Exception:
+            cnx.rollback()
+            raise
+        return stats
+    finally:
+        if lock_name:
+            try:
+                cur.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
+                cur.fetchall()
+            except Exception:
+                LOGGER.warning("Konnte Sperre nicht regulär freigeben (DB-Disconnect gibt sie frei)")
+        cur.close()
+
+
+def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str], *, apply: bool,
+                            workspace: Path | None = None, ask: Any = input, out: Any = print) -> dict[str, Any]:
+    """Räume ohne volle Aufsicht der Reihe nach besetzen; am Ende Reserve und Fachaufsicht."""
+    rules = load_room_rules(resolve_rules_file(workspace, config_dir))
+    cnx = db.conn
+    if cnx is None:
+        raise RoomError("Keine Datenbankverbindung")
+    cur = cnx.cursor()
+    try:
+        sup_t = _ident(tables, "aufsichten_table")
+        try:
+            jahrgang_id = load_state_year(cur, tables)
+        except ExternError as exc:
+            raise RoomError(str(exc)) from exc
+        rooms = load_rooms(cur, tables)
+        by_id = {info["id"]: code for code, info in rooms.items()}
+        counts = _room_counts(cur, tables, by_id, jahrgang_id)
+        cur.execute(f"SELECT raum_id, rolle FROM `{sup_t}` WHERE mao_jahrgang_id = %s", (jahrgang_id,))
+        have: dict[str | None, int] = {}
+        roles_present = set()
+        for r, ro in cur.fetchall():
+            roles_present.add(str(ro))
+            if str(ro) == "Standard" and r is not None:
+                have[by_id.get(int(r))] = have.get(by_id.get(int(r)), 0) + 1
+        teachers = _teacher_list(cur, tables)
+    finally:
+        cur.close()
+    if not counts:
+        raise RoomError("Keine Teilnehmenden mit Raum (erst raumzuteilung ausführen)")
+    need = rules.supervisors_per_room
+    steps: list[tuple[str | None, str, str]] = [(code, "Standard", f"Raum {code} ({counts[code]} Teilnehmende, "
+                                                                    f"{have.get(code, 0)}/{need} Aufsichten)")
+                                                for code in sorted(counts) if have.get(code, 0) < need]
+    steps += [(None, ro, f"{ro} (ohne Raum)") for ro in ("Fachaufsicht", "Reserve") if ro not in roles_present]
+    has_math = any(t[3] for t in teachers)
+    out(f"{len(steps)} Schritte. Eingabe: Kürzel (durch Leerzeichen/Komma getrennt), Enter = überspringen, "
+        f"l = {'Mathematik-Lehrkräfte' if has_math else 'Lehrkräfte'}, la = alle Lehrkräfte, q = Ende")
+    chosen: list[tuple[str | None, str, list[str]]] = []
+    index = 0
+    while index < len(steps):
+        room, role, label = steps[index]
+        out(f"\n[{index + 1}/{len(steps)}] {label}")
+        answer = str(ask("> ")).strip()
+        if answer.lower() == "q":
+            break
+        if answer.lower() in ("l", "la"):
+            shown = [t for t in teachers if answer.lower() == "la" or t[3] or not has_math]
+            out("  " + "; ".join(f"{k} {v} {n}".replace("  ", " ").strip() for k, v, n, _m in shown))
+            continue
+        index += 1
+        names = [x for x in answer.replace(",", " ").split() if x]
+        if not names:
+            continue
+        try:
+            set_supervision(db, tables, room=room, kuerzel=names, role=role, dry_run=True)
+        except RoomError as exc:
+            out(f"  {exc}")
+            index -= 1
+            continue
+        chosen.append((room, role, names))
+    out(f"\nZusammenfassung: {len(chosen)} Einträge")
+    for room, role, names in chosen:
+        out(f"  {role} {room or '(ohne Raum)'}: {', '.join(n.upper() for n in names)}")
+    result: dict[str, Any] = {"eintraege": len(chosen)}
+    if not chosen:
+        return result
+    if not apply:
+        out("DRY-RUN: nichts geschrieben. Schreiben mit --apply")
+        return result
+    if str(ask("In die Datenbank schreiben? [j/N] ")).strip().lower() != "j":
+        out("Abgebrochen, nichts geschrieben")
+        result["eintraege"] = 0
+        return result
+    for room, role, names in chosen:
+        set_supervision(db, tables, room=room, kuerzel=names, role=role, dry_run=False)
+    return result
