@@ -7,6 +7,7 @@ oder nicht mehr aktive Lehrkräfte. Es wird nichts geschrieben.
 """
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date
 from pathlib import Path
@@ -522,9 +523,122 @@ def _short_rooms_and_history(cur: Any, tables: Mapping[str, str], by_id: Mapping
     return short, history
 
 
-def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str], *, apply: bool,
-                            workspace: Path | None = None, ask: Any = input, out: Any = print) -> dict[str, Any]:
-    """Alle Aufsichten in einer Konsolensitzung bearbeiten (Tabelle, Tausch, Rotationsvorschlag), dann gesammelt abschicken."""
+class SupervisionModel:
+    """Bearbeitungsstand aller Aufsichten (Räume, Fachaufsicht, Reserve) mit Rückgängig; unabhängig von der Oberfläche."""
+
+    ROLE_KEYS = ("fachaufsicht", "reserve")
+
+    def __init__(self, state: dict[str, Any], known: set[str], counts: Mapping[str, int], short: list[str],
+                 history: Mapping[str, list[int]], need: int, teachers: list[tuple[str, str, str, bool]]) -> None:
+        self.state, self.known, self.counts, self.short = state, known, dict(counts), list(short)
+        self.history, self.need, self.teachers = dict(history), need, teachers
+        self.stack: list[str] = []
+        self.original = json.dumps(state, sort_keys=True)
+
+    @property
+    def changed(self) -> bool:
+        return json.dumps(self.state, sort_keys=True) != self.original
+
+    def rows(self) -> list[str]:
+        return sorted(self.state["raeume"]) + list(self.ROLE_KEYS)
+
+    def team(self, row: str) -> list[str]:
+        return self.state[row] if row in self.ROLE_KEYS else self.state["raeume"][row]
+
+    def _push(self) -> None:
+        self.stack.append(json.dumps(self.state))
+
+    def undo(self) -> bool:
+        if not self.stack:
+            return False
+        self.state = json.loads(self.stack.pop())
+        return True
+
+    def parse(self, tokens: list[str]) -> tuple[list[str] | None, str]:
+        found = [t.upper() for t in tokens]
+        bad = [t for t in found if t not in self.known]
+        return (None, "Unbekannte Kürzel: " + ", ".join(bad)) if bad else (found, "")
+
+    def edit(self, row: str, tokens: list[str]) -> str:
+        """Zeile neu besetzen (KÜRZEL…), ändern (+KÜ/-KÜ) oder leeren ('-'); liefert eine Meldung ('' = ok)."""
+        if row not in self.state["raeume"] and row not in self.ROLE_KEYS:
+            return f"Unbekannter Raum {row}"
+        current = self.team(row)
+        if tokens == ["-"] or not tokens:
+            new: list[str] = []
+        elif all(t[:1] in "+-" and len(t) > 1 for t in tokens):
+            new = list(current)
+            for t in tokens:
+                parsed, err = self.parse([t[1:]])
+                if parsed is None:
+                    return err
+                if t[0] == "+" and parsed[0] not in new:
+                    new.append(parsed[0])
+                elif t[0] == "-":
+                    new = [x for x in new if x != parsed[0]]
+        else:
+            parsed, err = self.parse(tokens)
+            if parsed is None:
+                return err
+            if len(set(parsed)) != len(parsed):
+                return "Kürzel doppelt"
+            new = parsed
+        self._push()
+        if row in self.ROLE_KEYS:
+            self.state[row] = new
+            return ""
+        self.state["raeume"][row] = new
+        dup = sorted({k for k in new for c, t in self.state["raeume"].items() if c != row and k in t})
+        return f"Hinweis: {', '.join(dup)} ist auch in einem anderen Raum eingeteilt" if dup else ""
+
+    def swap_rows(self, a: str, b: str) -> str:
+        if a == b:
+            return "Zwei verschiedene Zeilen wählen"
+        self._push()
+        ta, tb = list(self.team(a)), list(self.team(b))
+        for row, new in ((a, tb), (b, ta)):
+            if row in self.ROLE_KEYS:
+                self.state[row] = new
+            else:
+                self.state["raeume"][row] = new
+        return ""
+
+    def where(self, k: str) -> list[str]:
+        return [r for r in self.rows() if k in self.team(r)]
+
+    def swap_people(self, x: str, y: str) -> str:
+        parsed, err = self.parse([x, y])
+        if parsed is None:
+            return err
+        x, y = parsed
+        if not self.where(x) or not self.where(y):
+            return "Beide Lehrkräfte müssen schon eingeteilt sein"
+        self._push()
+        for row in set(self.where(x)) | set(self.where(y)):
+            team = self.team(row)
+            team[:] = [y if t == x else x if t == y else t for t in team]
+        return ""
+
+    def proposal(self) -> dict[str, Any]:
+        return rotation_proposal(self.short, self.state["raeume"], self.history, self.need)
+
+    def adopt(self, prop: Mapping[str, Any]) -> None:
+        self._push()
+        self.state["raeume"] = {c: list(t) for c, t in prop["raeume"].items()}
+
+    def plan(self) -> dict[str, Any]:
+        return {"raeume": self.state["raeume"], "fachaufsicht": self.state["fachaufsicht"], "reserve": self.state["reserve"]}
+
+    def gap(self, row: str) -> bool:
+        return row not in self.ROLE_KEYS and bool(self.counts.get(row)) and len(self.team(row)) < self.need
+
+    def history_text(self, k: str) -> str:
+        past = self.history.get(k, [])
+        return "noch nie" if not past else f"{len(past)}× (zuletzt Jahrgang {max(past)})"
+
+
+def load_supervision_model(db: Any, config_dir: Path, tables: Mapping[str, str],
+                           workspace: Path | None = None) -> SupervisionModel:
     rules = load_room_rules(resolve_rules_file(workspace, config_dir))
     cnx = db.conn
     if cnx is None:
@@ -536,9 +650,9 @@ def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str]
         short, history_ids = _short_rooms_and_history(cur, tables, ctx["by_id"], ctx["jahrgang_id"])
     finally:
         cur.close()
+    if not ctx["counts"]:
+        raise RoomError("Keine Teilnehmenden mit Raum (erst raumzuteilung ausführen)")
     names = ctx["teachers"]
-    known = {k.upper() for k, _a in names.values()}
-    history = {names[i][0].upper(): sorted(nrs) for i, nrs in history_ids.items() if i in names}
     state: dict[str, Any] = {"raeume": {}, "fachaufsicht": [], "reserve": []}
     for room_id, lk, role in sorted(ctx["current"], key=lambda t: (str(t[0]), t[1])):
         who = names.get(lk, (str(lk), None))[0].upper()
@@ -550,65 +664,62 @@ def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str]
             state["reserve"].append(who)
     for code in ctx["counts"]:
         state["raeume"].setdefault(code, [])
-    if not ctx["counts"]:
-        raise RoomError("Keine Teilnehmenden mit Raum (erst raumzuteilung ausführen)")
-    need = rules.supervisors_per_room
-    has_math = any(t[3] for t in teachers)
-    stack: list[str] = []
-    import json
+    history = {names[i][0].upper(): sorted(nrs) for i, nrs in history_ids.items() if i in names}
+    return SupervisionModel(state, {k.upper() for k, _a in names.values()}, ctx["counts"], short, history,
+                            rules.supervisors_per_room, teachers)
+
+
+def finish_supervision(db: Any, tables: Mapping[str, str], model: SupervisionModel, *, apply: bool,
+                       confirm: Any, out: Any) -> tuple[str, int]:
+    """Diff anzeigen und (mit apply und Bestätigung) schreiben. Liefert (status, Änderungen); status: fehler|leer|dry|nein|ok."""
+    try:
+        stats = apply_plan_data(db, tables, model.plan(), dry_run=True)
+    except RoomError as exc:
+        out(f"  {exc}")
+        return "fehler", 0
+    out(f"\nÄnderungen: +{len(stats['hinzu'])} −{len(stats['entfernt'])}")
+    for x in stats["entfernt"]:
+        out(f"  − {x}")
+    for x in stats["hinzu"]:
+        out(f"  + {x}")
+    for x in stats["hinweise"]:
+        out(f"  Hinweis: {x}")
+    changes = len(stats["hinzu"]) + len(stats["entfernt"])
+    if not changes:
+        out("Keine Änderungen")
+        return "leer", 0
+    if not apply:
+        out("DRY-RUN: nichts geschrieben. Schreiben mit --apply")
+        return "dry", changes
+    if not confirm():
+        return "nein", changes
+    apply_plan_data(db, tables, model.plan(), dry_run=False)
+    return "ok", changes
+
+
+def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str], *, apply: bool,
+                            workspace: Path | None = None, ask: Any = input, out: Any = print) -> dict[str, Any]:
+    """Alle Aufsichten in einer zeilenweisen Konsolensitzung bearbeiten (Tabelle, Tausch, Rotation), dann gesammelt abschicken."""
+    model = load_supervision_model(db, config_dir, tables, workspace)
+    has_math = any(t[3] for t in model.teachers)
 
     def table() -> None:
         out("\nRaum   Teilnehmende  Aufsicht")
-        for code in sorted(state["raeume"]):
-            team = state["raeume"][code]
-            flag = " K" if code in short else "  "
-            gap = "   <-- fehlt" if len(team) < need and ctx["counts"].get(code) else ""
-            out(f"{code:<6}{flag} {ctx['counts'].get(code, 0):>5}      {' '.join(team) or '-'}{gap}")
-        out(f"Fachaufsicht: {' '.join(state['fachaufsicht']) or '-'} | Reserve: {' '.join(state['reserve']) or '-'}")
-        if short:
+        for code in sorted(model.state["raeume"]):
+            flag = " K" if code in model.short else "  "
+            gap = "   <-- fehlt" if model.gap(code) else ""
+            out(f"{code:<6}{flag} {model.counts.get(code, 0):>5}      {' '.join(model.team(code)) or '-'}{gap}")
+        out(f"Fachaufsicht: {' '.join(model.state['fachaufsicht']) or '-'} | Reserve: {' '.join(model.state['reserve']) or '-'}")
+        if model.short:
             out("(K = Kurzraum, Stufe ≤ 6: 2 Stunden Aufsicht)")
-
-    def parse_names(tokens: list[str]) -> list[str] | None:
-        found = [t.upper() for t in tokens]
-        bad = [t for t in found if t not in known]
-        if bad:
-            out("  Unbekannte Kürzel: " + ", ".join(bad))
-            return None
-        return found
-
-    def edit(current: list[str], tokens: list[str]) -> list[str] | None:
-        if tokens == ["-"]:
-            return []
-        if all(t[:1] in "+-" and len(t) > 1 for t in tokens):
-            result = list(current)
-            for t in tokens:
-                parsed = parse_names([t[1:]])
-                if parsed is None:
-                    return None
-                if t[0] == "+" and parsed[0] not in result:
-                    result.append(parsed[0])
-                elif t[0] == "-":
-                    result = [x for x in result if x != parsed[0]]
-            return result
-        parsed = parse_names(tokens)
-        if parsed is None:
-            return None
-        if len(set(parsed)) != len(parsed):
-            out("  Kürzel doppelt")
-            return None
-        return parsed
-
-    def where_is(k: str) -> list[tuple[str, str | None]]:
-        spots = [("raeume", c) for c, team in state["raeume"].items() if k in team]
-        spots += [(sec, None) for sec in ("fachaufsicht", "reserve") if k in state[sec]]
-        return spots
 
     out("Alle Aufsichten bearbeiten. Befehle:\n"
         "  <Raum> KÜRZEL...   Raum neu besetzen (+KÜ / -KÜ ändert nur, '-' leert)   z. B. 105 GER NIX\n"
         "  fach KÜRZEL... | reserve KÜRZEL...   Fachaufsicht / Reserve setzen\n"
         "  tausch <Raum> <Raum> | tausch KÜ KÜ   Teams bzw. Personen tauschen\n"
         "  kurz   Rotationsvorschlag für Kurzräume zeigen, 'kurz ok' übernimmt ihn\n"
-        f"  l = {'Mathematik-Lehrkräfte' if has_math else 'Lehrkräfte'}, la = alle, z = Tabelle, u = zurück, fertig = prüfen und abschicken, q = abbrechen")
+        f"  l = {'Mathematik-Lehrkräfte' if has_math else 'Lehrkräfte'}, la = alle, z = Tabelle, u = zurück, "
+        "fertig = prüfen und abschicken, q = abbrechen")
     table()
     result: dict[str, Any] = {"eintraege": 0}
     while True:
@@ -622,54 +733,31 @@ def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str]
             return result
         if low in ("z", "zeige"):
             table()
-            continue
-        if low in ("l", "la"):
-            shown = [t for t in teachers if low == "la" or t[3] or not has_math]
+        elif low in ("l", "la"):
+            shown = [t for t in model.teachers if low == "la" or t[3] or not has_math]
             out("  " + "; ".join(f"{k} {v} {n}".replace("  ", " ").strip() for k, v, n, _m in shown))
-            continue
-        if low == "u":
-            if not stack:
-                out("  Nichts zum Zurücknehmen")
-            else:
-                state = json.loads(stack.pop())
+        elif low == "u":
+            if model.undo():
                 table()
-            continue
-        snapshot = json.dumps(state)
-        if low == "fertig":
-            plan = {"raeume": state["raeume"], "fachaufsicht": state["fachaufsicht"], "reserve": state["reserve"]}
-            try:
-                stats = apply_plan_data(db, tables, plan, dry_run=True)
-            except RoomError as exc:
-                out(f"  {exc}")
-                continue
-            out(f"\nÄnderungen: +{len(stats['hinzu'])} −{len(stats['entfernt'])}")
-            for x in stats["entfernt"]:
-                out(f"  − {x}")
-            for x in stats["hinzu"]:
-                out(f"  + {x}")
-            for x in stats["hinweise"]:
-                out(f"  Hinweis: {x}")
-            result["eintraege"] = len(stats["hinzu"]) + len(stats["entfernt"])
-            if not result["eintraege"]:
-                out("Keine Änderungen")
-                return result
-            if not apply:
-                out("DRY-RUN: nichts geschrieben. Schreiben mit --apply")
-                return result
-            if str(ask("In die Datenbank schreiben? [j/N] ")).strip().lower() != "j":
+            else:
+                out("  Nichts zum Zurücknehmen")
+        elif low == "fertig":
+            status, changes = finish_supervision(
+                db, tables, model, apply=apply, out=out,
+                confirm=lambda: str(ask("In die Datenbank schreiben? [j/N] ")).strip().lower() == "j")
+            result["eintraege"] = changes
+            if status == "nein":
                 out("Nicht geschrieben (weiter bearbeiten mit Befehlen, q = abbrechen)")
-                continue
-            apply_plan_data(db, tables, plan, dry_run=False)
-            return result
-        if low == "kurz":
-            prop = rotation_proposal(short, state["raeume"], history, need)
-            if not short:
+            elif status != "fehler":
+                return result
+        elif low == "kurz":
+            if not model.short:
                 out("  Keine Kurzräume (Stufe ≤ 6) in der Raumzuteilung")
                 continue
+            prop = model.proposal()
             out("  Vorschlag (wer am seltensten/längsten nicht im Kurzraum war, kommt zuerst):")
-            for k in prop["rang"][:max(len(short) * need + 3, 6)]:
-                past = history.get(k, [])
-                out(f"    {k}: {'noch nie' if not past else f'{len(past)}× (zuletzt Jahrgang {max(past)})'}")
+            for k in prop["rang"][:max(len(model.short) * model.need + 3, 6)]:
+                out(f"    {k}: {model.history_text(k)}")
             for code, team in sorted(prop["zuteilung"].items()):
                 out(f"  Kurzraum {code}: {' '.join(team) or '-'}")
             for m in prop["wechsel"]:
@@ -677,55 +765,33 @@ def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str]
             for h in prop["hinweise"]:
                 out(f"  Hinweis: {h}")
             if args[:1] == ["ok"]:
-                stack.append(snapshot)
-                state["raeume"] = prop["raeume"]
+                model.adopt(prop)
                 out("  Vorschlag übernommen (u = zurück)")
                 table()
             else:
                 out("  Übernehmen mit: kurz ok")
-            continue
-        if low == "tausch" and len(args) == 2:
+        elif low == "tausch" and len(args) == 2:
             a, b = args
-            rooms_ = state["raeume"]
-            if a in rooms_ and b in rooms_:
-                stack.append(snapshot)
-                rooms_[a], rooms_[b] = rooms_[b], rooms_[a]
+            msg = (model.swap_rows(a, b) if a in model.state["raeume"] and b in model.state["raeume"]
+                   else model.swap_people(a, b))
+            if msg:
+                out(f"  {msg}")
             else:
-                parsed = parse_names(args)
-                if parsed is None:
-                    continue
-                x, y = parsed
-                if not where_is(x) or not where_is(y):
-                    out("  Beide Lehrkräfte müssen schon eingeteilt sein")
-                    continue
-                stack.append(snapshot)
-                for sec, code in where_is(x) + where_is(y):
-                    team = state[sec][code] if code else state[sec]
-                    team[:] = [y if t == x else x if t == y else t for t in team]
-            table()
-            continue
-        if low in ("fach", "fachaufsicht", "reserve"):
-            key = "reserve" if low == "reserve" else "fachaufsicht"
-            new = edit(state[key], args) if args else None
-            if new is None:
+                table()
+        elif low in ("fach", "fachaufsicht", "reserve"):
+            if not args:
                 out("  Kürzel angeben (z. B. fach MEI)")
                 continue
-            stack.append(snapshot)
-            state[key] = new
-            out(f"  {key}: {' '.join(new) or '-'}")
-            continue
-        if cmd in state["raeume"] and args:
-            new = edit(state["raeume"][cmd], args)
-            if new is None:
+            msg = model.edit("reserve" if low == "reserve" else "fachaufsicht", args)
+            out(f"  {msg}" if msg else f"  {low}: {' '.join(model.state['reserve' if low == 'reserve' else 'fachaufsicht']) or '-'}")
+        elif cmd in model.state["raeume"]:
+            if not args:
+                out(f"  {cmd}: {' '.join(model.team(cmd)) or '-'}")
                 continue
-            stack.append(snapshot)
-            state["raeume"][cmd] = new
-            dup = [k for k in new for c, t in state["raeume"].items() if c != cmd and k in t]
-            if dup:
-                out(f"  Hinweis: {', '.join(sorted(set(dup)))} ist auch in einem anderen Raum eingeteilt")
-            out(f"  {cmd}: {' '.join(new) or '-'}")
-            continue
-        if cmd in state["raeume"]:
-            out(f"  {cmd}: {' '.join(state['raeume'][cmd]) or '-'}")
-            continue
-        out("  Unbekannter Befehl oder Raum (Räume ohne Teilnehmende gibt es hier nicht)")
+            msg = model.edit(cmd, args)
+            if msg.startswith("Hinweis") or not msg:
+                out(f"  {msg}" if msg else f"  {cmd}: {' '.join(model.team(cmd)) or '-'}")
+            else:
+                out(f"  {msg}")
+        else:
+            out("  Unbekannter Befehl oder Raum (Räume ohne Teilnehmende gibt es hier nicht)")

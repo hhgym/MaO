@@ -293,3 +293,92 @@ def test_session_without_rooms_or_history_still_works(tmp_path):
     _cur, result, text = session(tmp_path, ["kurz", "R1 AB", "fach CD", "reserve AB", "fertig"], cur=cur,
                                  tables={**TABLES, "archive_table": "DEMO_ARCHIVE"})
     assert "Keine Kurzräume" in text and result["eintraege"] == 3
+
+
+from mao_cli import aufsichten_tui as tui  # noqa: E402
+
+
+def make_model(tmp_path, **kw):
+    (tmp_path / "raumregeln.yaml").write_text('rooms:\n  grade_rooms: {"5": [R1]}\n', encoding="utf-8")
+    cur = kw.pop("cur", None) or SCur(extern=((2, 12),), sups=((1, 1, "Standard"), (2, 2, "Standard")))
+    db = sdb(cur)
+    return db, cur, a.load_supervision_model(db, tmp_path, TABLES_IA, tmp_path)
+
+
+def drive(model, db, keys, apply=False):
+    frames, seq = [], iter(keys)
+    result = tui.run_tui(model, db, TABLES_IA, apply=apply, read=lambda: next(seq), write=frames.append, size=lambda: (30, 100))
+    return result, frames
+
+
+def typed(text):
+    return ["space" if c == " " else c for c in text]
+
+
+def test_model_edit_swap_undo_and_proposal(tmp_path):
+    _db, _cur, m = make_model(tmp_path)
+    assert m.rows() == ["R1", "X1", "fachaufsicht", "reserve"] and not m.changed
+    assert m.edit("R1", ["zz"]).startswith("Unbekannte") and m.edit("R1", ["ab", "AB"]) == "Kürzel doppelt"
+    assert m.edit("X1", ["+AB"]).startswith("Hinweis") and m.team("X1") == ["CD", "AB"]
+    assert m.swap_rows("R1", "X1") == "" and m.team("R1") == ["CD", "AB"] and m.swap_rows("R1", "R1")
+    assert m.swap_people("AB", "CD") == "" and m.edit("fachaufsicht", ["CD"]) == "" and m.changed
+    assert m.swap_people("AB", "EF").startswith("Beide")
+    while m.undo():
+        pass
+    assert not m.changed and m.history_text("AB").startswith("1×") and m.history_text("CD") == "noch nie"
+    m.adopt(m.proposal())
+    assert m.team("R1") == ["CD"] and m.team("X1") == ["AB"] and m.gap("R1") is False
+
+
+def test_tui_cursor_edit_complete_and_dry_run(tmp_path):
+    db, cur, m = make_model(tmp_path)
+    keys = ["down", "enter"] + ["backspace"] * 2 + typed("a") + ["tab", "enter", "s", "q", "j"]
+    result, frames = drive(m, db, keys)
+    assert m.team("X1") == ["AB"] and not cur.writes and not result["geschrieben"]
+    text = "".join(frames)
+    assert "Änderungen: +1 −1" in text and "DRY-RUN" in text and "\x1b[7m" in text and "K = Kurzraum" in text
+
+
+def test_tui_apply_swap_rotation_and_confirm(tmp_path):
+    db, cur, m = make_model(tmp_path)
+    keys = ["space", "down", "space", "s", "j"]  # R1 <-> X1 tauschen, schreiben
+    result, _ = drive(m, db, keys, apply=True)
+    assert result["geschrieben"] and [w[0].split()[0] for w in cur.writes] == ["DELETE", "DELETE", "INSERT", "INSERT"]
+    db, cur, m = make_model(tmp_path)
+    result, frames = drive(m, db, ["r", "n", "r", "j", "s", "n", "q", "j"], apply=True)
+    assert m.team("R1") == ["CD"] and not cur.writes and not result["geschrieben"] and "noch nie" in "".join(frames)
+
+
+def test_tui_quit_asks_when_changed_and_errors_stay_in_edit(tmp_path):
+    db, cur, m = make_model(tmp_path)
+    result, frames = drive(m, db, ["enter"] + typed(" zz") + ["enter", "esc", "q"])
+    assert "Unbekannte Kürzel: ZZ" in "".join(frames) and not m.changed and result["eintraege"] == 0
+    db, cur, m = make_model(tmp_path)
+    drive(m, db, ["enter", "backspace", "backspace", "backspace", "enter", "q", "n", "l", "L", "u", "u", "q"])
+    assert m.team("R1") == ["AB"]
+
+
+def test_tui_scrolls_marks_and_unmarks(tmp_path):
+    db, cur, m = make_model(tmp_path)
+    for n in range(40):
+        m.state["raeume"][f"Z{n:02d}"] = []
+    result, frames = drive(m, db, ["end", "pgup", "home", "pgdn", "up", "space", "space", "q", "j"])
+    assert "Reserve" in frames[1] and "\x1b[H" in frames[0]
+
+
+def test_read_key_posix_maps_escape_sequences():
+    import os
+    r, w = os.pipe()
+    try:
+        os.write(w, b"\x1b[A\x1b[3~\xc3\xa4a\x7f\r\x1b")
+        got = [tui.read_key_posix(r) for _ in range(6)]
+    finally:
+        os.close(r)
+        os.close(w)
+    assert got == ["up", "delete", "ä", "a", "backspace", "enter"]
+
+
+def test_tui_supervision_needs_terminal(tmp_path):
+    db, cur, m = make_model(tmp_path)
+    with pytest.raises(r.RoomError, match="Terminal"):
+        tui.tui_supervision(m, db, TABLES_IA, apply=False)
