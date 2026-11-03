@@ -239,6 +239,11 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
   - `mao aufsichten --interaktiv [--apply]` geht alle Räume ohne volle Aufsicht der Reihe nach durch
     (danach Fachaufsicht und Reserve, falls noch keine eingetragen ist). Eingabe: Kürzel (mehrere mit Leerzeichen oder Komma),
     Enter überspringt, `l` zeigt die Mathematik-Lehrkräfte, `la` alle, `q` beendet. Geschrieben wird erst nach der Zusammenfassung und `j`.
+  - **Alles auf einmal (Plandatei):** `mao aufsichten --plan-exportieren` legt `aufsichten-plan.yaml` im Jahrgangsordner an
+    (nie überschreibend): je Raum eine Kürzelliste, dazu `fachaufsicht` und `reserve`. Die Datei im Editor bearbeiten
+    (Tausche, Lücken füllen), dann `mao aufsichten --plan aufsichten-plan.yaml` (Dry-Run: zeigt `+`/`−`/Warnungen) und
+    `--apply` schreibt alle Änderungen in einer Transaktion. Die Datei ist der Zielzustand der darin genannten Abschnitte
+    und Räume; fehlende Abschnitte/Räume bleiben unverändert. Eine Lehrkraft in mehreren Räumen ergibt eine Warnung.
   - Für die Mathematik-Auswahl `teacher_subjects_table` und `subjects_table` in tables.ini setzen (optional; sonst zeigt `l` alle).
 - Die Oberstufenschüler als Aufsicht folgen später.
 

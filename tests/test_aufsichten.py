@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -216,3 +217,52 @@ def test_interactive_supervision_apply_asks(tmp_path):
     assert not cur.writes and result["eintraege"] == 0
     cur, result, _ = run_ia(tmp_path, ["AB", "CD", "AB", "", "j"], apply=True)
     assert len(cur.writes) == 3
+
+
+def pdb(cur):
+    return sdb(cur)
+
+
+def test_export_plan_writes_editable_file_and_never_overwrites(tmp_path):
+    cur = SCur(extern=((2, 12),), sups=((1, 1, "Standard"), (None, 2, "Fachaufsicht")))
+    path = a.export_plan(pdb(cur), tmp_path / "cfg", TABLES, tmp_path)
+    import yaml
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert data["raeume"] == {"R1": ["AB"], "X1": []} and data["fachaufsicht"] == ["CD"] and data["reserve"] == []
+    with pytest.raises(r.RoomError, match="existiert bereits"):
+        a.export_plan(pdb(cur), tmp_path / "cfg", TABLES, tmp_path)
+    with pytest.raises(r.RoomError, match="Endung"):
+        a.export_plan(pdb(cur), tmp_path / "cfg", TABLES, tmp_path, Path("x.txt"))
+    with pytest.raises(r.RoomError, match="Workspace"):
+        a.export_plan(pdb(cur), tmp_path / "cfg", TABLES, tmp_path, Path("../x.yaml"))
+
+
+def write_plan(tmp_path, text):
+    (tmp_path / "plan.yaml").write_text(text, encoding="utf-8")
+    return Path("plan.yaml")
+
+
+def test_apply_plan_diff_swap_and_single_transaction(tmp_path):
+    plan = write_plan(tmp_path, 'raeume:\n  R1: [CD]\n  X1: [AB]\nfachaufsicht: [AB]\n')
+    cur = SCur(sups=((1, 1, "Standard"),))
+    stats = a.apply_plan(pdb(cur), tmp_path / "cfg", TABLES, tmp_path, plan, dry_run=True)
+    assert stats["hinzu"] == ["Fachaufsicht ohne Raum: AB", "Standard R1: CD", "Standard X1: AB"]
+    assert stats["entfernt"] == ["Standard R1: AB"] and not cur.writes
+    cur = SCur(sups=((1, 1, "Standard"),))
+    a.apply_plan(pdb(cur), tmp_path / "cfg", TABLES, tmp_path, plan, dry_run=False)
+    kinds_ = [w[0].split()[0] for w in cur.writes]
+    assert kinds_ == ["DELETE", "INSERT", "INSERT", "INSERT"]
+
+
+def test_apply_plan_scope_validation_and_warnings(tmp_path):
+    plan = write_plan(tmp_path, "raeume:\n  R1: [AB]\n")
+    cur = SCur(sups=((2, 2, "Standard"), (None, 1, "Reserve")))
+    stats = a.apply_plan(pdb(cur), tmp_path / "cfg", TABLES, tmp_path, plan, dry_run=True)
+    assert stats["entfernt"] == [] and stats["hinzu"] == ["Standard R1: AB"]  # X1 und Reserve nicht im Plan: unverändert
+    for text, msg in (("raeume:\n  ZZ: [AB]\n", "Raum ZZ"), ("raeume:\n  R1: [QQ]\n", "Unbekanntes"), ("raeume:\n  R1: [EF]\n", "nicht aktiv"),
+                      ("raeume:\n  R1: [AB, ab]\n", "doppelt"), ("foo: 1\n", "erlaubt"), ("raeume: 5\n", "Zuordnung")):
+        with pytest.raises(r.RoomError, match=msg):
+            a.apply_plan(pdb(SCur()), tmp_path / "cfg", TABLES, tmp_path, write_plan(tmp_path, text), dry_run=True)
+    stats = a.apply_plan(pdb(SCur(sups=())), tmp_path / "cfg", TABLES, tmp_path,
+                         write_plan(tmp_path, "raeume:\n  R1: [AB]\n  X1: [AB]\n"), dry_run=True)
+    assert stats["hinweise"] and "mehreren Räumen" in stats["hinweise"][0]
