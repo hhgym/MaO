@@ -29,7 +29,8 @@ from .aufsichten import check_aufsichten
 from .extern import ExternError, assign_extern_rooms, import_extern
 from .gf_import import import_participants, ImportErrorGF, write_import_report
 from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, read_file, sync_schools
-from .rooms import RoomError, assign_rooms, create_year_rules, set_room, write_room_report
+from .rooms import (RoomError, assign_rooms, create_year_rules, interactive_assign, load_room_rules,
+                    resolve_rules_file, set_room, write_room_report)
 from .validation import validate_online
 
 DEFAULTS = Path(__file__).resolve().parent / "defaults"
@@ -187,8 +188,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     set_mode = setroom.add_mutually_exclusive_group()
     set_mode.add_argument("--apply", action="store_true", help="Zuordnung in die Datenbank schreiben")
     set_mode.add_argument("--dry-run", action="store_true", help="Nur prüfen und berichten (Standard)")
-    setroom.add_argument("--raum", required=True, metavar="CODE", help="Raumcode (wie in der Raumtabelle)")
-    setroom.add_argument("--matrikel", required=True, nargs="+", type=int, metavar="NUMMER", help="Matrikelnummer(n)")
+    setroom.add_argument("--interaktiv", action="store_true", help="Teilnehmende ohne Raum Schritt für Schritt zuteilen (Terminal nötig)")
+    setroom.add_argument("--raum", metavar="CODE", help="Raumcode (wie in der Raumtabelle)")
+    setroom.add_argument("--matrikel", nargs="+", type=int, metavar="NUMMER", help="Matrikelnummer(n)")
     setroom.add_argument("--ueberschreiben", action="store_true", help="Auch Teilnehmende umsetzen, die schon einen anderen Raum haben")
     setroom.add_argument("--trotzdem", action="store_true", help="Auch bei Überschreitung der Raumkapazität zuteilen")
 
@@ -592,6 +594,14 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                 db_mao = current_MaO_number_db(db, tables)
                 if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
                     raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
+                if args.interaktiv:
+                    if not sys.stdin.isatty():
+                        raise ConfigurationError("--interaktiv braucht ein Terminal")
+                    rules_path = resolve_rules_file(workspace, config_dir)
+                    interactive_assign(db, tables, apply=args.apply, max_per_room=load_room_rules(rules_path).max_per_room)
+                    return 0
+                if not args.raum or not args.matrikel:
+                    raise ConfigurationError("raum-setzen braucht --raum und --matrikel (oder --interaktiv)")
                 set_room(db, tables, args.raum, args.matrikel, dry_run=not args.apply, overwrite=args.ueberschreiben,
                          allow_over_capacity=args.trotzdem)
             if not args.apply:

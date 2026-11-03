@@ -897,3 +897,125 @@ def set_room(db: Any, tables: Mapping[str, str], room_code: str, matrikels: list
             except Exception:
                 LOGGER.warning("Konnte Raumsperre nicht regulär freigeben (DB-Disconnect gibt sie frei)")
         cur.close()
+
+
+def suggest_rooms(level: int | None, rooms: Mapping[str, Mapping[str, Any]], occupancy: Mapping[str, Mapping[int, int]],
+                  max_per_room: int, *, limit: int = 5) -> list[str]:
+    """Räume mit freier Kapazität, sortiert: Stufe schon da, wenig andere Stufen, schon genutzt, meiste Plätze frei."""
+    scored: list[tuple[tuple[int, int, int, int, str], str]] = []
+    for code, info in rooms.items():
+        if not info["active"]:
+            continue
+        counts = occupancy.get(code, {})
+        used = sum(counts.values())
+        cap = info["capacity"] if info["capacity"] is not None else max_per_room
+        cap = min(cap, max_per_room)
+        free = cap - used
+        if free <= 0:
+            continue
+        others = len([s for s in counts if s != level])
+        key = (0 if level in counts else 1, others, 0 if used else 1, -free, code)
+        scored.append((key, code))
+    return [code for _key, code in sorted(scored)[:limit]]
+
+
+def interactive_assign(db: Any, tables: Mapping[str, str], *, apply: bool, max_per_room: int = 15,
+                       ask: Any = input, out: Any = print) -> dict[str, Any]:
+    """Teilnehmende ohne Raum Schritt für Schritt zuteilen (Vorschläge, Überspringen, Rückgängig, Ende)."""
+    cnx = db.conn
+    if cnx is None:
+        raise RoomError("Keine Datenbankverbindung")
+    cur = cnx.cursor()
+    try:
+        participants, rooms, _points = load_room_data(cur, tables)
+    finally:
+        cur.close()
+    occupancy: dict[str, dict[int, int]] = {}
+    for p in participants:
+        if p["raum"] is not None and p["stufe"] is not None:
+            counts = occupancy.setdefault(p["raum"], {})
+            counts[p["stufe"]] = counts.get(p["stufe"], 0) + 1
+        elif p["raum"] is not None:
+            occupancy.setdefault(p["raum"], {})
+    open_people = sorted((p for p in participants if p["raum"] is None), key=lambda p: (p["stufe"] or 0, p["matrikelnummer"]))
+    chosen: list[tuple[dict[str, Any], str]] = []
+    skipped = 0
+    out(f"{len(open_people)} Teilnehmende ohne Raum. Eingabe: Nummer/Raumcode, Enter = überspringen, u = zurück, r = Räume, q = Ende")
+
+    def add(p: dict[str, Any], code: str, delta: int) -> None:
+        counts = occupancy.setdefault(code, {})
+        if p["stufe"] is not None:
+            counts[p["stufe"]] = counts.get(p["stufe"], 0) + delta
+            if counts[p["stufe"]] <= 0:
+                del counts[p["stufe"]]
+
+    index = 0
+    history: list[tuple[int, str | None]] = []
+    while index < len(open_people):
+        p = open_people[index]
+        options = suggest_rooms(p["stufe"], rooms, occupancy, max_per_room)
+        out(f"\n[{index + 1}/{len(open_people)}] Matrikel {p['matrikelnummer']} | Stufe {p['stufe'] or '?'} | Klasse {p['klasse'] or '?'}")
+        for number, code in enumerate(options, 1):
+            counts = occupancy.get(code, {})
+            mix = ", ".join(f"St.{s}: {n}" for s, n in sorted(counts.items())) or "leer"
+            out(f"  {number}) {code}  ({sum(counts.values())} belegt; {mix})")
+        answer = str(ask("> ")).strip()
+        if answer.lower() == "q":
+            break
+        if answer.lower() == "r":
+            for code in sorted(rooms):
+                counts = occupancy.get(code, {})
+                out(f"  {code}: {sum(counts.values())}/{rooms[code]['capacity'] or max_per_room} "
+                    + ", ".join(f"St.{s}: {n}" for s, n in sorted(counts.items())))
+            continue
+        if answer.lower() == "u":
+            if not history:
+                out("  Nichts zum Zurücknehmen")
+                continue
+            index, undone = history.pop()
+            if undone is not None:
+                chosen.pop()
+                add(open_people[index], undone, -1)
+            else:
+                skipped -= 1
+            continue
+        if answer == "":
+            history.append((index, None))
+            skipped += 1
+            index += 1
+            continue
+        code = options[int(answer) - 1] if answer.isdigit() and 1 <= int(answer) <= len(options) else answer
+        if code not in rooms or not rooms[code]["active"]:
+            out(f"  Unbekannter oder inaktiver Raum: {answer}")
+            continue
+        cap = min(rooms[code]["capacity"] or max_per_room, max_per_room)
+        if sum(occupancy.get(code, {}).values()) >= cap:
+            out(f"  Raum {code} ist voll (Kapazität {cap})")
+            continue
+        chosen.append((p, code))
+        add(p, code, 1)
+        history.append((index, code))
+        index += 1
+
+    by_room: dict[str, list[int]] = {}
+    for p, code in chosen:
+        by_room.setdefault(code, []).append(p["matrikelnummer"])
+    out(f"\nZusammenfassung: {len(chosen)} zugeteilt, {skipped} übersprungen, "
+        f"{len(open_people) - len(chosen) - skipped} nicht bearbeitet")
+    for code, numbers in sorted(by_room.items()):
+        out(f"  {code}: {', '.join(map(str, numbers))}")
+    result: dict[str, Any] = {"zugeteilt": len(chosen), "uebersprungen": skipped, "raeume": {c: len(n) for c, n in by_room.items()}}
+    if not by_room:
+        return result
+    for code, numbers in by_room.items():
+        set_room(db, tables, code, numbers, dry_run=True)
+    if not apply:
+        out("DRY-RUN: nichts geschrieben. Schreiben mit --apply")
+        return result
+    if str(ask("In die Datenbank schreiben? [j/N] ")).strip().lower() != "j":
+        out("Abgebrochen, nichts geschrieben")
+        result["zugeteilt"] = 0
+        return result
+    for code, numbers in by_room.items():
+        set_room(db, tables, code, numbers, dry_run=False)
+    return result

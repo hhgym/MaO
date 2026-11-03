@@ -524,3 +524,77 @@ def test_set_room_refuses_unknown_inactive_taken_and_overfull():
     assert run_set(SetCur([1, 2], in_room=(15, 0)), [1, 2], dry_run=True, allow_over_capacity=True)["im_raum_danach"] == 17
     with pytest.raises(r.RoomError, match="doppelt"):
         run_set(SetCur([1]), [1, 1], dry_run=True)
+
+
+def _rooms3():
+    return {"A": {"id": 1, "capacity": 2, "active": True}, "B": {"id": 2, "capacity": 15, "active": True},
+            "C": {"id": 3, "capacity": 15, "active": False}}
+
+
+def test_suggest_rooms_prefers_same_level_and_skips_full_and_inactive():
+    rooms = _rooms3()
+    assert r.suggest_rooms(7, rooms, {"A": {7: 1}, "B": {8: 3}}, 15) == ["A", "B"]
+    assert r.suggest_rooms(7, rooms, {"A": {8: 2}, "B": {7: 1}}, 15) == ["B"]
+
+
+class IaCur:
+    def __init__(self):
+        self.last, self.writes = "", []
+    def execute(self, sql, params=None):
+        self.last = sql
+        if sql.startswith("UPDATE"):
+            self.writes.append((sql, params))
+    def fetchall(self):
+        if "GET_LOCK" in self.last or "RELEASE_LOCK" in self.last:
+            return [(1,)]
+        if "COUNT(*), COALESCE" in self.last:
+            return [(0, 0)]
+        if "COUNT(*)" in self.last:
+            return [(len(self.writes[-1][1]) - 1,)]
+        if "`raeume`" in self.last:
+            return [(1, "A", 2, 1), (2, "B", 15, 1)]
+        if "`orga`" in self.last and "matrikelnummer IN" in self.last:
+            return [(1, 7, "7-1", None), (2, 7, "7-2", None), (3, 8, "8-1", None)]
+        if "`orga`" in self.last:
+            return [(1, 7, "7-1", None), (2, 7, "7-2", None), (3, 8, "8-1", None)]
+        return []
+    def close(self):
+        pass
+
+
+def _db(cur):
+    cnx = SimpleNamespace(cursor=lambda: cur, in_transaction=False, start_transaction=lambda: None,
+                          commit=lambda: None, rollback=lambda: None)
+    return SimpleNamespace(conn=cnx)
+
+
+def _run_ia(inputs, apply):
+    cur, lines, answers = IaCur(), [], iter(inputs)
+    result = r.interactive_assign(_db(cur), TABLES2 | {"points_last_year_view": "punkte"}, apply=apply,
+                                  ask=lambda _p: next(answers), out=lines.append)
+    return cur, result, lines
+
+
+def test_interactive_dry_run_writes_nothing():
+    cur, result, _ = _run_ia(["1", "1", "A"], apply=False)
+    assert result["zugeteilt"] == 3 and not cur.writes
+
+
+def test_interactive_skip_undo_and_quit():
+    cur, result, _ = _run_ia(["1", "", "u", "q"], apply=False)
+    assert result["zugeteilt"] == 1 and result["uebersprungen"] == 0
+    cur, result, _ = _run_ia(["", "q"], apply=False)
+    assert result["zugeteilt"] == 0 and result["uebersprungen"] == 1
+
+
+def test_interactive_apply_needs_confirmation():
+    cur, result, _ = _run_ia(["A", "A", "B", "n"], apply=True)
+    assert not cur.writes and result["zugeteilt"] == 0
+    cur, result, _ = _run_ia(["A", "A", "B", "j"], apply=True)
+    assert len(cur.writes) == 2
+
+
+def test_interactive_refuses_full_and_unknown_room():
+    _cur, result, lines = _run_ia(["A", "A", "A", "XX", "q"], apply=False)
+    assert any("voll" in x for x in lines) and any("Unbekannter" in x for x in lines)
+    assert result["zugeteilt"] == 2
