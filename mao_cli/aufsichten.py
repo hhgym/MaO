@@ -273,84 +273,6 @@ def set_supervision(db: Any, tables: Mapping[str, str], *, room: str | None, kue
         cur.close()
 
 
-def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str], *, apply: bool,
-                            workspace: Path | None = None, ask: Any = input, out: Any = print) -> dict[str, Any]:
-    """Räume ohne volle Aufsicht der Reihe nach besetzen; am Ende Reserve und Fachaufsicht."""
-    rules = load_room_rules(resolve_rules_file(workspace, config_dir))
-    cnx = db.conn
-    if cnx is None:
-        raise RoomError("Keine Datenbankverbindung")
-    cur = cnx.cursor()
-    try:
-        sup_t = _ident(tables, "aufsichten_table")
-        try:
-            jahrgang_id = load_state_year(cur, tables)
-        except ExternError as exc:
-            raise RoomError(str(exc)) from exc
-        rooms = load_rooms(cur, tables)
-        by_id = {info["id"]: code for code, info in rooms.items()}
-        counts = _room_counts(cur, tables, by_id, jahrgang_id)
-        cur.execute(f"SELECT raum_id, rolle FROM `{sup_t}` WHERE mao_jahrgang_id = %s", (jahrgang_id,))
-        have: dict[str | None, int] = {}
-        roles_present = set()
-        for r, ro in cur.fetchall():
-            roles_present.add(str(ro))
-            if str(ro) == "Standard" and r is not None:
-                have[by_id.get(int(r))] = have.get(by_id.get(int(r)), 0) + 1
-        teachers = _teacher_list(cur, tables)
-    finally:
-        cur.close()
-    if not counts:
-        raise RoomError("Keine Teilnehmenden mit Raum (erst raumzuteilung ausführen)")
-    need = rules.supervisors_per_room
-    steps: list[tuple[str | None, str, str]] = [(code, "Standard", f"Raum {code} ({counts[code]} Teilnehmende, "
-                                                                    f"{have.get(code, 0)}/{need} Aufsichten)")
-                                                for code in sorted(counts) if have.get(code, 0) < need]
-    steps += [(None, ro, f"{ro} (ohne Raum)") for ro in ("Fachaufsicht", "Reserve") if ro not in roles_present]
-    has_math = any(t[3] for t in teachers)
-    out(f"{len(steps)} Schritte. Eingabe: Kürzel (durch Leerzeichen/Komma getrennt), Enter = überspringen, "
-        f"l = {'Mathematik-Lehrkräfte' if has_math else 'Lehrkräfte'}, la = alle Lehrkräfte, q = Ende")
-    chosen: list[tuple[str | None, str, list[str]]] = []
-    index = 0
-    while index < len(steps):
-        room, role, label = steps[index]
-        out(f"\n[{index + 1}/{len(steps)}] {label}")
-        answer = str(ask("> ")).strip()
-        if answer.lower() == "q":
-            break
-        if answer.lower() in ("l", "la"):
-            shown = [t for t in teachers if answer.lower() == "la" or t[3] or not has_math]
-            out("  " + "; ".join(f"{k} {v} {n}".replace("  ", " ").strip() for k, v, n, _m in shown))
-            continue
-        index += 1
-        names = [x for x in answer.replace(",", " ").split() if x]
-        if not names:
-            continue
-        try:
-            set_supervision(db, tables, room=room, kuerzel=names, role=role, dry_run=True)
-        except RoomError as exc:
-            out(f"  {exc}")
-            index -= 1
-            continue
-        chosen.append((room, role, names))
-    out(f"\nZusammenfassung: {len(chosen)} Einträge")
-    for room, role, names in chosen:
-        out(f"  {role} {room or '(ohne Raum)'}: {', '.join(n.upper() for n in names)}")
-    result: dict[str, Any] = {"eintraege": len(chosen)}
-    if not chosen:
-        return result
-    if not apply:
-        out("DRY-RUN: nichts geschrieben. Schreiben mit --apply")
-        return result
-    if str(ask("In die Datenbank schreiben? [j/N] ")).strip().lower() != "j":
-        out("Abgebrochen, nichts geschrieben")
-        result["eintraege"] = 0
-        return result
-    for room, role, names in chosen:
-        set_supervision(db, tables, room=room, kuerzel=names, role=role, dry_run=False)
-    return result
-
-
 PLAN_FILE = "aufsichten-plan.yaml"
 
 
@@ -420,13 +342,18 @@ def export_plan(db: Any, config_dir: Path, tables: Mapping[str, str], workspace:
 
 def apply_plan(db: Any, config_dir: Path, tables: Mapping[str, str], workspace: Path, name: Path, *,
                dry_run: bool = True) -> dict[str, Any]:
-    """Plandatei mit der Datenbank abgleichen: alles auf einmal einstellen und in einer Transaktion schreiben."""
+    """Plandatei lesen und mit der Datenbank abgleichen."""
     import yaml
     target = _plan_path(workspace, config_dir, name)
     try:
         plan = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError) as exc:
         raise RoomError(f"Plandatei nicht lesbar: {exc}") from exc
+    return apply_plan_data(db, tables, plan, dry_run=dry_run)
+
+
+def apply_plan_data(db: Any, tables: Mapping[str, str], plan: Any, *, dry_run: bool = True) -> dict[str, Any]:
+    """Plan (raeume/fachaufsicht/reserve) mit der Datenbank abgleichen: alles auf einmal, eine Transaktion."""
     if not isinstance(plan, dict) or not set(plan) <= {"raeume", "fachaufsicht", "reserve"} or not plan:
         raise RoomError("Plandatei: erlaubt sind nur die Abschnitte raeume, fachaufsicht, reserve")
 
@@ -529,3 +456,276 @@ def apply_plan(db: Any, config_dir: Path, tables: Mapping[str, str], workspace: 
             except Exception:
                 LOGGER.warning("Konnte Sperre nicht regulär freigeben (DB-Disconnect gibt sie frei)")
         cur.close()
+
+
+SHORT_GRADES = 6  # Räume, in denen nur bis zu dieser Stufe schreibt (Stufen 5/6: 2 statt 4 Stunden)
+
+
+def rotation_proposal(short_rooms: list[str], rooms_map: Mapping[str, list[str]], history: Mapping[str, list[int]],
+                      per_room: int = 1) -> dict[str, Any]:
+    """Kurzräume (Stufen 5/6, 2 Stunden) rotierend besetzen: wer am seltensten/längsten nicht dran war, kommt zuerst.
+
+    Pool sind die schon für Räume eingeteilten Lehrkräfte (rooms_map). Wer in einen Kurzraum rückt, tauscht mit
+    jemandem, der den Kurzraum verlässt. Reine Funktion: rooms_map Raum → Kürzel, history Kürzel → Jahrgangsnummern.
+    """
+    pool = sorted({k for team in rooms_map.values() for k in team})
+    rank = sorted(pool, key=lambda k: (len(history.get(k, [])), max(history.get(k, []), default=0), k))
+    slots = len(short_rooms) * per_room
+    chosen = rank[:slots]
+    new_map = {code: list(team) for code, team in rooms_map.items()}
+    notes: list[str] = []
+    if len(pool) < slots:
+        notes.append(f"Nur {len(pool)} Lehrkräfte eingeteilt, {slots} Plätze in Kurzräumen")
+    target = {code: chosen[n * per_room:(n + 1) * per_room] for n, code in enumerate(sorted(short_rooms))}
+    where = {k: code for code, team in rooms_map.items() for k in team}
+    leaving = sorted(k for code in short_rooms for k in rooms_map.get(code, []) if k not in chosen)
+    entering = sorted((k for k in chosen if where.get(k) not in short_rooms), key=lambda k: where.get(k, ""))
+    for code in short_rooms:
+        new_map[code] = list(target.get(code, []))
+    for k in entering:
+        if where.get(k) in new_map and where[k] not in short_rooms:
+            new_map[where[k]] = [x for x in new_map[where[k]] if x != k]
+    moves = []
+    for n, k in enumerate(entering):
+        home = where.get(k)
+        if n < len(leaving) and home is not None:
+            new_map[home] = new_map[home] + [leaving[n]]
+            moves.append(f"{k}: {home} → Kurzraum, {leaving[n]}: Kurzraum → {home}")
+        else:
+            moves.append(f"{k}: {home or '-'} → Kurzraum")
+    for k in chosen:
+        if where.get(k) in short_rooms and not any(m.startswith(f"{k}:") for m in moves):
+            moves.append(f"{k}: bleibt im Kurzraum {where[k]}")
+    return {"raeume": new_map, "zuteilung": target, "wechsel": moves, "hinweise": notes, "rang": rank}
+
+
+def _short_rooms_and_history(cur: Any, tables: Mapping[str, str], by_id: Mapping[int, str],
+                             jahrgang_id: int) -> tuple[list[str], dict[int, list[int]]]:
+    """Kurzräume des aktuellen Jahrgangs und je Lehrkraft die Jahrgangsnummern früherer Kurzraum-Aufsichten."""
+    orga = _ident(tables, "orga_table")
+    cur.execute(f"SELECT raum_id, MAX(COALESCE(stufe, CAST(SUBSTRING_INDEX(klasse, '-', 1) AS UNSIGNED))) FROM `{orga}` "
+                f"WHERE raum_id IS NOT NULL GROUP BY raum_id")
+    short = sorted(by_id[int(r)] for r, m in cur.fetchall() if m is not None and int(m) <= SHORT_GRADES and int(r) in by_id)
+    history: dict[int, list[int]] = {}
+    try:
+        archive, sup_t = _ident(tables, "archive_table"), _ident(tables, "aufsichten_table")
+        years = _ident(tables, "jahrgaenge_table")
+    except RoomError:
+        return short, history
+    cur.execute(f"SELECT a.lehrkraft_id, j.jahrgang_nr FROM `{sup_t}` a JOIN `{years}` j ON j.id = a.mao_jahrgang_id "
+                f"JOIN (SELECT mao_jahrgang_id, raum_id FROM `{archive}` WHERE raum_id IS NOT NULL "
+                f"GROUP BY mao_jahrgang_id, raum_id HAVING MAX(stufe) <= {int(SHORT_GRADES)}) k "
+                "ON k.mao_jahrgang_id = a.mao_jahrgang_id AND k.raum_id = a.raum_id "
+                "WHERE a.rolle = 'Standard' AND a.lehrkraft_id IS NOT NULL AND a.mao_jahrgang_id <> %s", (jahrgang_id,))
+    for lk, nr in cur.fetchall():
+        history.setdefault(int(lk), []).append(int(nr))
+    return short, history
+
+
+def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str], *, apply: bool,
+                            workspace: Path | None = None, ask: Any = input, out: Any = print) -> dict[str, Any]:
+    """Alle Aufsichten in einer Konsolensitzung bearbeiten (Tabelle, Tausch, Rotationsvorschlag), dann gesammelt abschicken."""
+    rules = load_room_rules(resolve_rules_file(workspace, config_dir))
+    cnx = db.conn
+    if cnx is None:
+        raise RoomError("Keine Datenbankverbindung")
+    cur = cnx.cursor()
+    try:
+        ctx = _load_plan_context(cur, tables)
+        teachers = _teacher_list(cur, tables)
+        short, history_ids = _short_rooms_and_history(cur, tables, ctx["by_id"], ctx["jahrgang_id"])
+    finally:
+        cur.close()
+    names = ctx["teachers"]
+    known = {k.upper() for k, _a in names.values()}
+    history = {names[i][0].upper(): sorted(nrs) for i, nrs in history_ids.items() if i in names}
+    state: dict[str, Any] = {"raeume": {}, "fachaufsicht": [], "reserve": []}
+    for room_id, lk, role in sorted(ctx["current"], key=lambda t: (str(t[0]), t[1])):
+        who = names.get(lk, (str(lk), None))[0].upper()
+        if role == "Standard" and room_id is not None:
+            state["raeume"].setdefault(ctx["by_id"].get(room_id, "?"), []).append(who)
+        elif role == "Fachaufsicht":
+            state["fachaufsicht"].append(who)
+        elif role == "Reserve":
+            state["reserve"].append(who)
+    for code in ctx["counts"]:
+        state["raeume"].setdefault(code, [])
+    if not ctx["counts"]:
+        raise RoomError("Keine Teilnehmenden mit Raum (erst raumzuteilung ausführen)")
+    need = rules.supervisors_per_room
+    has_math = any(t[3] for t in teachers)
+    stack: list[str] = []
+    import json
+
+    def table() -> None:
+        out("\nRaum   Teilnehmende  Aufsicht")
+        for code in sorted(state["raeume"]):
+            team = state["raeume"][code]
+            flag = " K" if code in short else "  "
+            gap = "   <-- fehlt" if len(team) < need and ctx["counts"].get(code) else ""
+            out(f"{code:<6}{flag} {ctx['counts'].get(code, 0):>5}      {' '.join(team) or '-'}{gap}")
+        out(f"Fachaufsicht: {' '.join(state['fachaufsicht']) or '-'} | Reserve: {' '.join(state['reserve']) or '-'}")
+        if short:
+            out("(K = Kurzraum, Stufe ≤ 6: 2 Stunden Aufsicht)")
+
+    def parse_names(tokens: list[str]) -> list[str] | None:
+        found = [t.upper() for t in tokens]
+        bad = [t for t in found if t not in known]
+        if bad:
+            out("  Unbekannte Kürzel: " + ", ".join(bad))
+            return None
+        return found
+
+    def edit(current: list[str], tokens: list[str]) -> list[str] | None:
+        if tokens == ["-"]:
+            return []
+        if all(t[:1] in "+-" and len(t) > 1 for t in tokens):
+            result = list(current)
+            for t in tokens:
+                parsed = parse_names([t[1:]])
+                if parsed is None:
+                    return None
+                if t[0] == "+" and parsed[0] not in result:
+                    result.append(parsed[0])
+                elif t[0] == "-":
+                    result = [x for x in result if x != parsed[0]]
+            return result
+        parsed = parse_names(tokens)
+        if parsed is None:
+            return None
+        if len(set(parsed)) != len(parsed):
+            out("  Kürzel doppelt")
+            return None
+        return parsed
+
+    def where_is(k: str) -> list[tuple[str, str | None]]:
+        spots = [("raeume", c) for c, team in state["raeume"].items() if k in team]
+        spots += [(sec, None) for sec in ("fachaufsicht", "reserve") if k in state[sec]]
+        return spots
+
+    out("Alle Aufsichten bearbeiten. Befehle:\n"
+        "  <Raum> KÜRZEL...   Raum neu besetzen (+KÜ / -KÜ ändert nur, '-' leert)   z. B. 105 GER NIX\n"
+        "  fach KÜRZEL... | reserve KÜRZEL...   Fachaufsicht / Reserve setzen\n"
+        "  tausch <Raum> <Raum> | tausch KÜ KÜ   Teams bzw. Personen tauschen\n"
+        "  kurz   Rotationsvorschlag für Kurzräume zeigen, 'kurz ok' übernimmt ihn\n"
+        f"  l = {'Mathematik-Lehrkräfte' if has_math else 'Lehrkräfte'}, la = alle, z = Tabelle, u = zurück, fertig = prüfen und abschicken, q = abbrechen")
+    table()
+    result: dict[str, Any] = {"eintraege": 0}
+    while True:
+        line = str(ask("> ")).strip()
+        if not line:
+            continue
+        cmd, *args = line.split()
+        low = cmd.lower()
+        if low == "q":
+            out("Abgebrochen, nichts geschrieben")
+            return result
+        if low in ("z", "zeige"):
+            table()
+            continue
+        if low in ("l", "la"):
+            shown = [t for t in teachers if low == "la" or t[3] or not has_math]
+            out("  " + "; ".join(f"{k} {v} {n}".replace("  ", " ").strip() for k, v, n, _m in shown))
+            continue
+        if low == "u":
+            if not stack:
+                out("  Nichts zum Zurücknehmen")
+            else:
+                state = json.loads(stack.pop())
+                table()
+            continue
+        snapshot = json.dumps(state)
+        if low == "fertig":
+            plan = {"raeume": state["raeume"], "fachaufsicht": state["fachaufsicht"], "reserve": state["reserve"]}
+            try:
+                stats = apply_plan_data(db, tables, plan, dry_run=True)
+            except RoomError as exc:
+                out(f"  {exc}")
+                continue
+            out(f"\nÄnderungen: +{len(stats['hinzu'])} −{len(stats['entfernt'])}")
+            for x in stats["entfernt"]:
+                out(f"  − {x}")
+            for x in stats["hinzu"]:
+                out(f"  + {x}")
+            for x in stats["hinweise"]:
+                out(f"  Hinweis: {x}")
+            result["eintraege"] = len(stats["hinzu"]) + len(stats["entfernt"])
+            if not result["eintraege"]:
+                out("Keine Änderungen")
+                return result
+            if not apply:
+                out("DRY-RUN: nichts geschrieben. Schreiben mit --apply")
+                return result
+            if str(ask("In die Datenbank schreiben? [j/N] ")).strip().lower() != "j":
+                out("Nicht geschrieben (weiter bearbeiten mit Befehlen, q = abbrechen)")
+                continue
+            apply_plan_data(db, tables, plan, dry_run=False)
+            return result
+        if low == "kurz":
+            prop = rotation_proposal(short, state["raeume"], history, need)
+            if not short:
+                out("  Keine Kurzräume (Stufe ≤ 6) in der Raumzuteilung")
+                continue
+            out("  Vorschlag (wer am seltensten/längsten nicht im Kurzraum war, kommt zuerst):")
+            for k in prop["rang"][:max(len(short) * need + 3, 6)]:
+                past = history.get(k, [])
+                out(f"    {k}: {'noch nie' if not past else f'{len(past)}× (zuletzt Jahrgang {max(past)})'}")
+            for code, team in sorted(prop["zuteilung"].items()):
+                out(f"  Kurzraum {code}: {' '.join(team) or '-'}")
+            for m in prop["wechsel"]:
+                out(f"    {m}")
+            for h in prop["hinweise"]:
+                out(f"  Hinweis: {h}")
+            if args[:1] == ["ok"]:
+                stack.append(snapshot)
+                state["raeume"] = prop["raeume"]
+                out("  Vorschlag übernommen (u = zurück)")
+                table()
+            else:
+                out("  Übernehmen mit: kurz ok")
+            continue
+        if low == "tausch" and len(args) == 2:
+            a, b = args
+            rooms_ = state["raeume"]
+            if a in rooms_ and b in rooms_:
+                stack.append(snapshot)
+                rooms_[a], rooms_[b] = rooms_[b], rooms_[a]
+            else:
+                parsed = parse_names(args)
+                if parsed is None:
+                    continue
+                x, y = parsed
+                if not where_is(x) or not where_is(y):
+                    out("  Beide Lehrkräfte müssen schon eingeteilt sein")
+                    continue
+                stack.append(snapshot)
+                for sec, code in where_is(x) + where_is(y):
+                    team = state[sec][code] if code else state[sec]
+                    team[:] = [y if t == x else x if t == y else t for t in team]
+            table()
+            continue
+        if low in ("fach", "fachaufsicht", "reserve"):
+            key = "reserve" if low == "reserve" else "fachaufsicht"
+            new = edit(state[key], args) if args else None
+            if new is None:
+                out("  Kürzel angeben (z. B. fach MEI)")
+                continue
+            stack.append(snapshot)
+            state[key] = new
+            out(f"  {key}: {' '.join(new) or '-'}")
+            continue
+        if cmd in state["raeume"] and args:
+            new = edit(state["raeume"][cmd], args)
+            if new is None:
+                continue
+            stack.append(snapshot)
+            state["raeume"][cmd] = new
+            dup = [k for k in new for c, t in state["raeume"].items() if c != cmd and k in t]
+            if dup:
+                out(f"  Hinweis: {', '.join(sorted(set(dup)))} ist auch in einem anderen Raum eingeteilt")
+            out(f"  {cmd}: {' '.join(new) or '-'}")
+            continue
+        if cmd in state["raeume"]:
+            out(f"  {cmd}: {' '.join(state['raeume'][cmd]) or '-'}")
+            continue
+        out("  Unbekannter Befehl oder Raum (Räume ohne Teilnehmende gibt es hier nicht)")
