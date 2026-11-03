@@ -11,6 +11,8 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ### Raumzuteilung: Sammelräume
 
+- `grade_rooms` darf für einzelne Stufen leer sein (`"8": []`), wenn `rooms.sammel` gesetzt ist; die Kapazitätswarnung vergleicht dann den Gesamtrest mit den Sammelräumen statt je Stufe.
+
 - Neu: `rooms.sammel` in `raumregeln.yaml`. Alle, die nicht in ihre festen Räume passen, kommen mit möglichst wenigen Räumen und möglichst wenig Stufenmischung in die Sammelräume (Stufenblöcke nebeneinander, volle Räume rein, Reihenfolge der Stufen optimiert). Ohne Eintrag bleibt das Verhalten unverändert.
 - `mao aufsichten`: die Fachaufsicht ist die Wettkampfleitung und gehört keinem Raum an (Hinweis, wenn keine eingetragen ist).
 

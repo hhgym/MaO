@@ -360,3 +360,24 @@ def test_without_sammel_rooms_behaviour_is_unchanged():
     people = [person(i, 9, "9-1") for i in range(10)]
     plan = r.plan_rooms(people, {}, r.RoomRules(grade_rooms={"5": ["A"]}), {}, seed=1)
     assert len(plan.unassigned) == 10 and any("keine Zielräume" in w for w in plan.warnings)
+
+
+def test_empty_grade_rooms_need_sammel_rooms(tmp_path):
+    path = tmp_path / "raumregeln.yaml"
+    path.write_text('rooms:\n  grade_rooms: {"5": [R1], "8": [], "9": []}\n  sammel: [S1]\n', encoding="utf-8")
+    assert r.load_room_rules(path).grade_rooms["8"] == []
+    path.write_text('rooms:\n  grade_rooms: {"5": [R1], "8": []}\n', encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="leer"):
+        r.load_room_rules(path)
+    path.write_text('rooms:\n  grade_rooms: {"5": "R1"}\n', encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="Liste"):
+        r.load_room_rules(path)
+
+
+def test_capacity_check_with_sammel_rooms_only_warns_when_pool_is_too_small():
+    people = [person(i, 8, "8-1") for i in range(40)]
+    rule = r.RoomRules(grade_rooms={"5": ["A"], "8": []}, flex_rooms=("S1", "S2", "S3"))
+    assert not r.plan_rooms(people, {}, rule, {}, seed=1).warnings
+    small = r.RoomRules(grade_rooms={"5": ["A"], "8": []}, flex_rooms=("S1",))
+    plan = r.plan_rooms(people, {}, small, {}, seed=1)
+    assert any("Engpass" in w for w in plan.warnings) and len(plan.unassigned) == 25

@@ -106,8 +106,8 @@ def load_room_rules(path: Path) -> RoomRules:
     for key, value in raw_grades.items():
         if str(key) not in GRADES:
             raise ConfigurationError(f"{path.name}: Klassenstufe '{key}' unbekannt (erlaubt 5–12)")
-        if not isinstance(value, list) or not value or not all(isinstance(x, (str, int)) for x in value):
-            raise ConfigurationError(f"{path.name}: grade_rooms.{key} muss eine nicht leere Liste von Raumcodes sein")
+        if not isinstance(value, list) or not all(isinstance(x, (str, int)) for x in value):
+            raise ConfigurationError(f"{path.name}: grade_rooms.{key} muss eine Liste von Raumcodes sein")
         grade_rooms[str(key)] = [str(x) for x in value]
     top15 = rooms.get("top15") or {}
     if not isinstance(top15, dict):
@@ -150,6 +150,9 @@ def load_room_rules(path: Path) -> RoomRules:
         raise ConfigurationError(f"{path.name}: rooms.sammel erwartet eine Liste verschiedener Raumcodes")
     main_rooms = {r for values in grade_rooms.values() for r in values} | {str(v) for v in by_grade.values()}
     main_rooms |= {str(x) for x in (reserve, ober) if x not in (None, "")}
+    empty = sorted(k for k, v in grade_rooms.items() if not v)
+    if empty and not flex:
+        raise ConfigurationError(f"{path.name}: grade_rooms.{', '.join(empty)} ist leer; ohne rooms.sammel gäbe es für diese Stufen keinen Raum")
     clash = sorted(set(map(str, flex)) & main_rooms)
     if clash:
         raise ConfigurationError(f"{path.name}: Sammelraum {', '.join(clash)} ist zugleich ein fester Raum (grade_rooms, top15, reserve)")
@@ -238,6 +241,14 @@ def capacity_check(by_stufe: Mapping[str, list[dict[str, Any]]], rules: RoomRule
         free = sum(max(cap(room, stufe) - usage.get(room, 0), 0) for room in dict.fromkeys(rooms))
         rows.append({"stufe": stufe, "teilnehmende": len(by_stufe[stufe]), "freie_plaetze": free})
     reserve_free = max(cap(rules.reserve, "7") - usage.get(rules.reserve, 0), 0) if rules.reserve else 0
+    if rules.flex_rooms:
+        # Sammelräume nehmen den Rest aller Stufen auf: Engpass nur, wenn der Gesamtrest nicht hineinpasst.
+        flex_free = sum(max(cap(room, "7") - usage.get(room, 0), 0) for room in rules.flex_rooms)
+        overflow = sum(max(row["teilnehmende"] - row["freie_plaetze"], 0) for row in rows)
+        if overflow > flex_free + reserve_free:
+            plan.warnings.append(f"Engpass: {overflow} Teilnehmende passen nicht in ihre festen Räume, Sammelräume ({flex_free} frei) "
+                                 f"und Reserve ({reserve_free} frei) reichen nicht")
+        return rows
     for row in rows:
         if row["teilnehmende"] > row["freie_plaetze"]:
             missing = row["teilnehmende"] - row["freie_plaetze"]
