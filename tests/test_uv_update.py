@@ -179,3 +179,31 @@ def test_cli_prints_notice_only_in_terminals_and_not_for_update(monkeypatch, cap
     assert "NEUE VERSION" in capsys.readouterr().err
     cli.main(["update", "--channel", "develop"])
     assert "NEUE VERSION" not in capsys.readouterr().err
+
+
+def test_develop_channel_compares_commits(monkeypatch):
+    branch = u.Installation("uv-tool", "0.6.0.dev0", requested="develop", commit="a" * 40)
+    monkeypatch.setattr(u, "detect_installation", lambda: branch)
+    monkeypatch.setattr(u, "_fetch_head", lambda repo, ref, timeout=3: "a" * 40)
+    same = u.plan_update("develop", None, None)
+    assert same.ref is None and any("Bereits aktuell" in line for line in same.lines)
+    assert u.run_update(same) == []
+    forced = u.plan_update("develop", None, None, force=True)
+    assert forced.ref == "develop"
+    monkeypatch.setattr(u, "_fetch_head", lambda repo, ref, timeout=3: "b" * 40)
+    newer = u.plan_update("develop", None, None)
+    assert newer.ref == "develop" and any("Neuer Stand" in line for line in newer.lines)
+
+
+def test_develop_channel_installs_when_comparison_fails_or_not_a_branch_install(monkeypatch):
+    branch = u.Installation("uv-tool", "0.6.0.dev0", requested="develop", commit="a" * 40)
+    monkeypatch.setattr(u, "detect_installation", lambda: branch)
+    def boom(repo, ref, timeout=3):
+        raise OSError("offline")
+    monkeypatch.setattr(u, "_fetch_head", boom)
+    target = u.plan_update("develop", None, None)
+    assert target.ref == "develop" and any("nicht möglich" in line for line in target.lines)
+    tagged = u.Installation("uv-tool", "0.6.0", requested="v0.6.0", commit="c" * 40)
+    monkeypatch.setattr(u, "detect_installation", lambda: tagged)
+    monkeypatch.setattr(u, "_fetch_head", lambda *a, **k: (_ for _ in ()).throw(AssertionError("kein Abruf erwartet")))
+    assert u.plan_update("develop", None, None).ref == "develop"

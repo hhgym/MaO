@@ -216,6 +216,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     update.add_argument("--version", metavar="X.Y.Z", help="Bestimmte Version statt der neuesten")
     update.add_argument("--run", action="store_true",
                         help="Update selbst ausführen (uv tool install); unter Windows in einem neuen Fenster nach dem Beenden von mao")
+    update.add_argument("--force", action="store_true",
+                        help="Kanal develop auch bei unverändertem Stand neu installieren")
     update.add_argument("--repository", metavar="OWNER/REPO", help="GitHub-Repository (alternativ MAO_GITHUB_REPO)")
     for ignored in ("--yes", "--home"):
         update.add_argument(ignored, nargs="?", const=True, default=None, help=argparse.SUPPRESS)
@@ -470,7 +472,7 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
         try:
             if args.legacy:
                 print("Hinweis: Die Unterbefehle von 'mao update' entfallen; MaO wird jetzt mit uv aktualisiert.")
-            update_target = plan_update(args.channel, args.repository, args.version)
+            update_target = plan_update(args.channel, args.repository, args.version, args.force)
             for line in update_target.lines:
                 print(line)
             if args.run:

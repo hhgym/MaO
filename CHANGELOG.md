@@ -31,6 +31,10 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 - Neuer Befehl: übernimmt die Anmeldungen externer Grundschulkinder aus dem Gravity-Forms-Formular in die Tabellen `extern_personen_table` und `extern_teilnahmen_table` (tables.ini). Standard ist `--dry-run`; `--apply` schreibt in einer Transaktion mit Sperre und Zählabgleich. Wiederholbar über die GF-Eintrags-ID; Doppelanmeldungen werden übersprungen, mögliche wiederkehrende Kinder nur gemeldet, nie automatisch zusammengeführt.
 - Neue Konfigurationsdatei `gf-extern.yaml` (Formular-ID und Feldnummern), von `mao config init` angelegt. Übernommen werden nur Name des Kindes, Klassenstufe, Schule und (optional, Feld `geschlecht`, Werte m/w/d) das Geschlecht.
 
+### Update-Kanal develop
+
+- `mao update --channel develop` vergleicht bei Installationen von `@develop` jetzt den installierten Commit mit dem aktuellen Stand des Branches: Bei gleichem Stand heißt es „Bereits aktuell“ und `--run` installiert nichts, bei neuem Stand wird er genannt. `--force` installiert trotzdem neu. Ist der Vergleich nicht möglich (offline), wird wie bisher neu installiert.
+
 ### Zertifikatsfehler bei Abrufen (Windows, Schulnetz)
 
 - `schulen-sync` und `mao update` prüfen HTTPS-Zertifikate jetzt über das Betriebssystem (Paket `truststore`). Das behebt „unable to get local issuer certificate", wenn Server ihre Zwischenzertifikate nicht mitliefern oder das Netz Zertifikate austauscht. Die Prüfung bleibt immer aktiv.

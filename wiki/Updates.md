@@ -62,3 +62,7 @@ Die Regel „Ordner `config` neben dem Quellordner“ gilt nur noch für Entwick
 Der Workflow `.github/workflows/release.yml` baut nach einem Release-Tag auf `main` ein Wheel samt SHA-256-Datei. Ein Tag für Release Candidate 1 könnte `v0.5.0-rc.1` lauten; `pyproject.toml` und `mao_cli/__init__.py` müssen zu diesem Zeitpunkt die Version `0.5.0rc1` tragen. Solange die Entwicklungsversion `0.5.0.dev0` lautet, ist **noch kein** RC-Release erzeugt. Siehe [Git Flow](Git-Flow.md).
 
 Release-Wheels samt `.sha256` bleiben als Download am Release erhalten; installiert wird aber direkt aus dem Git-Tag. Fehlermeldungen von `mao update` haben den Exitcode `5`.
+
+## Kanal develop
+
+`mao update --channel develop` vergleicht bei einer Installation von `@develop` den installierten Commit mit dem aktuellen Stand des Branches. Ist er gleich, meldet der Befehl „Bereits aktuell“ und `--run` installiert nichts; ist er neuer, wird der neue Stand genannt. Mit `--force` wird trotzdem neu installiert. Lässt sich der Stand nicht abrufen (offline), installiert der Befehl wie bisher neu.

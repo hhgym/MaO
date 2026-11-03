@@ -128,7 +128,7 @@ class UpdateTarget:
     argv: list[str] = field(default_factory=list)
 
 
-def plan_update(channel: str, repository: str | None, version: str | None) -> UpdateTarget:
+def plan_update(channel: str, repository: str | None, version: str | None, force: bool = False) -> UpdateTarget:
     if channel not in CHANNELS:
         raise UpdateError(f"Kanal muss einer von {', '.join(CHANNELS)} sein")
     repo = repository_name(repository)
@@ -139,6 +139,20 @@ def plan_update(channel: str, repository: str | None, version: str | None) -> Up
         ref = version if version.startswith("v") else f"v{version}"
     elif channel == "develop":
         ref = "develop"
+        if not force and installation.requested == "develop" and installation.commit:
+            # Branch-Installation: nur neu installieren, wenn der Branch weitergekommen ist.
+            try:
+                head = _fetch_head(repo, "develop", timeout=10)
+            except (UpdateError, OSError) as exc:
+                if is_certificate_error(exc):
+                    raise UpdateError(f"Abruf fehlgeschlagen: {exc}. {CERTIFICATE_HINT}") from exc
+                lines.append("Vergleich mit dem Stand von 'develop' nicht möglich; es wird neu installiert.")
+            else:
+                if re.fullmatch(r"[0-9a-f]{40}", head) and head == installation.commit:
+                    lines.append(f"Bereits aktuell (Kanal develop, Stand {head[:7]}). Neu installieren trotzdem: mao update --channel develop --force")
+                    return UpdateTarget(lines, repo, None, installation)
+                if re.fullmatch(r"[0-9a-f]{40}", head):
+                    lines.append(f"Neuer Stand von develop: {head[:7]} (installiert: {installation.commit[:7]}).")
     else:
         ref = latest_tag(repo, channel)
         if ref.lstrip("v") == installation.version:
