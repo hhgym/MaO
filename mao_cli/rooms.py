@@ -698,6 +698,8 @@ def assign_rooms(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_ru
             report["top15"] = {key: len(values) for key, values in plan.top15.items()}
             report["capacity_check"] = plan.capacity_check
             report["sammelraeume"] = plan.flex
+            report["raeume_je_stufe"] = {stufe: [{"raum": room, "anzahl": count} for room, count in rooms]
+                                         for stufe, rooms in rooms_by_stufe(plan).items()}
         for note in plan.warnings:
             LOGGER.warning("Raumzuteilung | %s", note)
         _log_plan(plan, stats, overwrite)
@@ -723,6 +725,16 @@ def assign_rooms(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_ru
         cur.close()
 
 
+def rooms_by_stufe(plan: RoomPlan) -> dict[str, list[tuple[str, int]]]:
+    """Je Stufe die Räume mit Anzahl, nach Raum sortiert (inklusive bereits vorhandener Zuordnungen)."""
+    result: dict[str, list[tuple[str, int]]] = {}
+    for room in sorted(plan.per_room_grade, key=lambda r: (_floor(r), r)):
+        for stufe, count in plan.per_room_grade[room].items():
+            if count:
+                result.setdefault(stufe, []).append((room, count))
+    return dict(sorted(result.items(), key=lambda item: int(item[0])))
+
+
 def _log_plan(plan: RoomPlan, stats: Mapping[str, Any], overwrite: bool) -> None:
     LOGGER.info("Raumzuteilung | Teilnehmende: %s | bereits mit Raum: %s | neu zugeteilt: %s | offen: %s | Seed: %s | Plan-ID: %s%s",
                 stats["participants"], stats["kept"], stats["assigned"], stats["unassigned"], stats["seed"],
@@ -744,6 +756,12 @@ def _log_plan(plan: RoomPlan, stats: Mapping[str, Any], overwrite: bool) -> None
                        person["matrikelnummer"], person["stufe"], person["klasse"])
     if len(plan.unassigned) > 20:
         LOGGER.warning("  … und %d weitere (vollständig mit --report)", len(plan.unassigned) - 20)
+    if plan.unassigned:
+        LOGGER.warning("  Ohne Raum von Hand zuteilen: mao raum-setzen --raum CODE --matrikel NUMMER [NUMMER ...] (Dry-Run, mit --apply schreiben)")
+    LOGGER.info("Räume je Stufe:")
+    for stufe, rooms in rooms_by_stufe(plan).items():
+        LOGGER.info("  Stufe %-3s %3d in %d Räumen: %s", stufe, sum(c for _, c in rooms), len(rooms),
+                    ", ".join(f"{room} ({count})" for room, count in rooms))
 
 
 def _floor(room: str) -> int:
@@ -795,3 +813,87 @@ def write_room_report(workspace: Path, config_dir: Path, filename: Path, report:
     except FileExistsError as exc:
         raise ConfigurationError(f"Bericht existiert bereits und wird nicht überschrieben: {target}") from exc
     return target
+
+
+def set_room(db: Any, tables: Mapping[str, str], room_code: str, matrikels: list[int], *, dry_run: bool,
+             overwrite: bool = False, allow_over_capacity: bool = False,
+             report: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Einzelnen Teilnehmenden von Hand einen Raum zuweisen (Dry-Run, erst mit --apply geschrieben)."""
+    orga = _ident(tables.get("orga_table", ""), "orga_table")
+    cnx = db.conn
+    if cnx is None:
+        raise RoomError("Keine Datenbankverbindung")
+    if not matrikels or len(set(matrikels)) != len(matrikels):
+        raise RoomError("Matrikelnummern fehlen oder kommen doppelt vor")
+    cur = cnx.cursor()
+    lock_name = ""
+    try:
+        rooms = load_rooms(cur, tables)
+        info = rooms.get(room_code)
+        if info is None:
+            raise RoomError(f"Raum {room_code} fehlt in der Raumtabelle")
+        if not info["active"]:
+            raise RoomError(f"Raum {room_code} ist inaktiv (aktiv = 0)")
+        by_id = {value["id"]: code for code, value in rooms.items()}
+        marks = ", ".join(["%s"] * len(matrikels))
+        cur.execute(f"SELECT matrikelnummer, stufe, klasse, raum_id FROM `{orga}` WHERE matrikelnummer IN ({marks})", tuple(matrikels))
+        found = {int(m): (s, k, r) for m, s, k, r in cur.fetchall()}
+        unknown = [m for m in matrikels if m not in found]
+        if unknown:
+            raise RoomError("Nicht in der Organisationstabelle: " + ", ".join(map(str, unknown)))
+        taken = {m: by_id.get(int(r)) for m, (_s, _k, r) in found.items() if r is not None and by_id.get(int(r)) != room_code}
+        if taken and not overwrite:
+            raise RoomError("Schon einem anderen Raum zugeordnet (mit --ueberschreiben ersetzen): "
+                            + ", ".join(f"{m} ({code})" for m, code in sorted(taken.items())))
+        cur.execute(f"SELECT COUNT(*), COALESCE(SUM(matrikelnummer IN ({marks})), 0) FROM `{orga}` WHERE raum_id = %s",
+                    (*matrikels, info["id"]))
+        inside, already = (int(x) for x in cur.fetchall()[0])
+        new_total = inside - already + len(matrikels)
+        capacity = info["capacity"]
+        warnings = []
+        if capacity is not None and new_total > capacity:
+            message = f"Raum {room_code}: {new_total} Teilnehmende, Kapazität {capacity}"
+            if not allow_over_capacity:
+                raise RoomError(message + " (mit --trotzdem trotzdem zuteilen)")
+            warnings.append(message)
+        levels = {int(s) if s not in (None, "") else grade(k) for s, k, _r in found.values()}
+        stufen = sorted(x for x in levels if x is not None)
+        stats = {"raum": room_code, "teilnehmende": len(matrikels), "im_raum_danach": new_total, "stufen": stufen}
+        LOGGER.info("Raum setzen | Raum %s: %d Teilnehmende zugeteilt (danach %d im Raum, Stufen der Zugeteilten: %s) | Modus: %s",
+                    room_code, len(matrikels), new_total, ", ".join(map(str, stufen)) or "?", "DRY-RUN" if dry_run else "APPLY")
+        for note in warnings:
+            LOGGER.warning("Raum setzen | %s", note)
+        if report is not None:
+            report.update({"summary": stats, "warnings": warnings})
+        if dry_run:
+            if report is not None:
+                report["status"] = "ready"
+            return stats
+        lock_name = f"mao-rooms-{orga}"
+        cur.execute("SELECT GET_LOCK(%s, 10)", (lock_name,))
+        if cur.fetchall()[0][0] != 1:
+            raise RoomError("Konkurrierende Raumzuteilung oder Sperr-Timeout")
+        if cnx.in_transaction:
+            cnx.rollback()
+        cnx.start_transaction()
+        try:
+            guard = "" if overwrite else " AND raum_id IS NULL"
+            cur.execute(f"UPDATE `{orga}` SET raum_id = %s WHERE matrikelnummer IN ({marks}){guard}", (info["id"], *matrikels))
+            cur.execute(f"SELECT COUNT(*) FROM `{orga}` WHERE raum_id = %s AND matrikelnummer IN ({marks})", (info["id"], *matrikels))
+            if int(cur.fetchall()[0][0]) != len(matrikels):
+                raise RoomError("Zählabgleich fehlgeschlagen; nichts geschrieben")
+            cnx.commit()
+        except Exception:
+            cnx.rollback()
+            raise
+        if report is not None:
+            report["status"] = "applied"
+        return stats
+    finally:
+        if lock_name:
+            try:
+                cur.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
+                cur.fetchall()
+            except Exception:
+                LOGGER.warning("Konnte Raumsperre nicht regulär freigeben (DB-Disconnect gibt sie frei)")
+        cur.close()

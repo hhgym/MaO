@@ -208,6 +208,11 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
     vier Stufen; Spanne 2 gibt 4 reine und 2 gemischte Räume; Spanne 1 gibt 3 reine und 3 Räume mit je zwei Nachbarstufen.
   Klassen werden innerhalb einer Stufe weiter gemischt. Die Verteilung steht im Log und im Bericht (`sammelraeume`).
   Ohne `sammel` bleibt das bisherige Verhalten.
+- Am Ende des Laufs steht „Räume je Stufe“: für jede Stufe die Räume mit der Anzahl (im Bericht `raeume_je_stufe`).
+- **Von Hand nachtragen:** `mao raum-setzen --raum 105 --matrikel 12345 12346` prüft zuerst (Dry-Run) und
+  schreibt erst mit `--apply`. Geprüft werden Raum (vorhanden, aktiv), Matrikelnummern, vorhandener Raum
+  (nur mit `--ueberschreiben` ersetzt) und Kapazität (mit `--trotzdem` überschritten). Von Hand gesetzte Räume
+  bleiben bei der nächsten `mao raumzuteilung` erhalten (Ausnahme: `--ueberschreiben` verteilt alles neu).
 - `mao raumzuteilung --extern` teilt stattdessen die externen Teilnehmenden zu. Die Räume stehen in
   `raumregeln.yaml` unter `extern: {rooms: [...]}` und dürfen nicht zugleich im Hauptwettbewerb vorkommen.
   Gefüllt wird nach Teilnehmernummer Raum für Raum bis `max_per_room` (bzw. Datenbankkapazität). Wer
