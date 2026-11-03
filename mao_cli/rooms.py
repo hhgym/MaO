@@ -853,9 +853,7 @@ def set_room(db: Any, tables: Mapping[str, str], room_code: str, matrikels: list
         warnings = []
         if capacity is not None and new_total > capacity:
             message = f"Raum {room_code}: {new_total} Teilnehmende, Kapazität {capacity}"
-            if not allow_over_capacity:
-                raise RoomError(message + " (mit --trotzdem trotzdem zuteilen)")
-            warnings.append(message)
+            warnings.append(message + " (Kapazität bei Handzuteilung ignoriert)")
         levels = {int(s) if s not in (None, "") else grade(k) for s, k, _r in found.values()}
         stufen = sorted(x for x in levels if x is not None)
         stats = {"raum": room_code, "teilnehmende": len(matrikels), "im_raum_danach": new_total, "stufen": stufen}
@@ -990,8 +988,7 @@ def interactive_assign(db: Any, tables: Mapping[str, str], *, apply: bool, max_p
             continue
         cap = min(rooms[code]["capacity"] or max_per_room, max_per_room)
         if sum(occupancy.get(code, {}).values()) >= cap:
-            out(f"  Raum {code} ist voll (Kapazität {cap})")
-            continue
+            out(f"  Hinweis: Raum {code} ist damit über der Kapazität {cap} (wird trotzdem zugeteilt)")
         chosen.append((p, code))
         add(p, code, 1)
         history.append((index, code))

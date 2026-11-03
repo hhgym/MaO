@@ -519,8 +519,7 @@ def test_set_room_refuses_unknown_inactive_taken_and_overfull():
     cur = SetCur([1], taken_room=2)
     run_set(cur, [1], dry_run=False, overwrite=True)
     assert "raum_id IS NULL" not in cur.writes[0][0]
-    with pytest.raises(r.RoomError, match="Kapazität"):
-        run_set(SetCur([1, 2], in_room=(15, 0)), [1, 2], dry_run=True)
+    assert run_set(SetCur([1, 2], in_room=(15, 0)), [1, 2], dry_run=True)["im_raum_danach"] == 17
     assert run_set(SetCur([1, 2], in_room=(15, 0)), [1, 2], dry_run=True, allow_over_capacity=True)["im_raum_danach"] == 17
     with pytest.raises(r.RoomError, match="doppelt"):
         run_set(SetCur([1]), [1, 1], dry_run=True)
@@ -595,6 +594,6 @@ def test_interactive_apply_needs_confirmation():
 
 
 def test_interactive_refuses_full_and_unknown_room():
-    _cur, result, lines = _run_ia(["A", "A", "A", "XX", "q"], apply=False)
-    assert any("voll" in x for x in lines) and any("Unbekannter" in x for x in lines)
-    assert result["zugeteilt"] == 2
+    _cur, result, lines = _run_ia(["A", "A", "XX", "A"], apply=False)
+    assert any("über der Kapazität" in x for x in lines) and any("Unbekannter" in x for x in lines)
+    assert result["zugeteilt"] == 3

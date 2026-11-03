@@ -192,7 +192,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     setroom.add_argument("--raum", metavar="CODE", help="Raumcode (wie in der Raumtabelle)")
     setroom.add_argument("--matrikel", nargs="+", type=int, metavar="NUMMER", help="Matrikelnummer(n)")
     setroom.add_argument("--ueberschreiben", action="store_true", help="Auch Teilnehmende umsetzen, die schon einen anderen Raum haben")
-    setroom.add_argument("--trotzdem", action="store_true", help="Auch bei Überschreitung der Raumkapazität zuteilen")
+    setroom.add_argument("--trotzdem", action="store_true", help="Ohne Wirkung (Handzuteilung ignoriert die Kapazität ohnehin; nur noch aus Kompatibilität)")
 
     sup = commands.add_parser("aufsichten", help="Aufsichten der Lehrkräfte nach der Raumzuteilung prüfen (nur lesend)")
     common(sup)
