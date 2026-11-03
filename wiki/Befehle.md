@@ -236,7 +236,13 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
   - `mao aufsichten --rolle Fachaufsicht --lehrkraft MEI [--apply]` (ebenso `Reserve`) trägt Lehrkräfte ohne Raum ein.
   - `--entfernen` löscht die genannten Einträge. Eingetragen werden können alle aktiven Lehrkräfte, nicht nur Mathematik.
     Ist jemand schon in einem anderen Raum eingeteilt, gibt es eine Warnung (Eintrag erfolgt trotzdem).
-  - **Alles auf einmal in der Konsole:** `mao aufsichten --interaktiv [--apply]` zeigt eine Tabelle aller belegten Räume
+  - **Tabelle mit Cursor:** `mao aufsichten --interaktiv [--apply]` öffnet eine Tabelle aller belegten Räume (plus
+    Fachaufsicht und Reserve). Mit den Pfeiltasten die Zeile wählen, `Enter` bearbeitet sie (Kürzel eintippen, `Tab`
+    ergänzt, `+KÜ`/`-KÜ` ändert nur), `Leertaste` markiert eine Zeile und tauscht sie mit der nächsten markierten,
+    `r` zeigt den Rotationsvorschlag für Kurzräume (`j` übernimmt), `u` nimmt zurück, `l`/`L` zeigen die Lehrkräfte
+    (Mathematik/alle), `s` prüft (Diff `+`/`−`) und schreibt mit `--apply` nach `j` alles in einer Transaktion, `q` beendet.
+    Ohne Zusatzpaket; braucht ein Terminal. Mit `--einfach` gibt es stattdessen die zeilenweise Eingabe:
+    `mao aufsichten --interaktiv --einfach` zeigt eine Tabelle aller belegten Räume
     mit der Aufsicht und bearbeitet sie in einer Sitzung; abgeschickt wird erst am Ende:
     `105 GER NIX` besetzt einen Raum neu (`+KÜ`/`-KÜ` ändert nur, `-` leert), `fach MEI` und `reserve KRE` setzen
     Fachaufsicht und Reserve, `tausch 105 204` tauscht zwei Raum-Teams, `tausch GER NIX` zwei Personen, `u` nimmt zurück,
