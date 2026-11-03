@@ -210,7 +210,7 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
   in mehreren Räumen, nicht mehr aktive oder unbekannte Lehrkräfte (`fehler`) sowie Hinweise
   (überzählige Aufsichten, Aufsicht in einem leeren Raum, Eintrag ohne Raum).
 - Regeln in `raumregeln.yaml` (je Jahrgang): `aufsichten: {lehrkraefte_pro_raum: 1, zaehlende_rollen: ["Standard"]}`.
-  Die Rolle `Reserve` darf ohne Raum bleiben und zählt standardmäßig nicht als Aufsicht des Raums.
+  Die Rollen `Reserve` (Springer) und `Fachaufsicht` (Wettkampfleitung: beantwortet Fragen zu den Aufgaben) gehören keinem Raum an und zählen standardmäßig nicht als Raumaufsicht. Fehlt eine Fachaufsicht, gibt es einen Hinweis; ist sie einem Raum zugeordnet, ebenfalls.
 - Die Oberstufenschüler als Aufsicht folgen später.
 
 

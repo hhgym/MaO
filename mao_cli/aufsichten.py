@@ -16,6 +16,8 @@ from .extern import ExternError, _ident as _extern_ident, load_state_year
 from .rooms import RoomError, RoomRules, load_room_rules, load_rooms, log_rules_source, resolve_rules_file
 
 LOGGER = logging.getLogger(__name__)
+# Rollen ohne Raum: Reserve springt ein, die Fachaufsicht ist die Wettkampfleitung (beantwortet Fragen zu den Aufgaben).
+ROOMLESS_ROLES = ("Reserve", "Fachaufsicht")
 
 
 def _ident(tables: Mapping[str, str], key: str) -> str:
@@ -60,9 +62,15 @@ def check_supervision(rooms: Mapping[str, int], supervisions: list[dict[str, Any
         if s["raum"] is not None and rooms.get(s["raum"], 0) == 0:
             findings.append({"art": "hinweis", "raum": str(s["raum"]),
                              "text": f"Aufsicht {name(s['lehrkraft_id'])} im Raum {s['raum']}, in dem niemand schreibt"})
-        if s["raum"] is None and s["rolle"] != "Reserve":
+        if s["raum"] is not None and s["rolle"] == "Fachaufsicht":
+            findings.append({"art": "hinweis", "raum": str(s["raum"]),
+                             "text": f"Fachaufsicht {name(s['lehrkraft_id'])} ist dem Raum {s['raum']} zugeordnet; "
+                                     "die Wettkampfleitung gehört keinem Raum an"})
+        if s["raum"] is None and s["rolle"] not in ROOMLESS_ROLES:
             findings.append({"art": "hinweis", "raum": "",
                              "text": f"Aufsicht {name(s['lehrkraft_id'])} ({s['rolle']}) ohne Raum"})
+    if not any(s["rolle"] == "Fachaufsicht" and s["lehrkraft_id"] is not None for s in supervisions):
+        findings.append({"art": "hinweis", "raum": "", "text": "Keine Fachaufsicht (Wettkampfleitung) eingetragen"})
     by_teacher: dict[int, set[str]] = {}
     for s in supervisions:
         if s["lehrkraft_id"] is None:
@@ -124,12 +132,16 @@ def check_aufsichten(db: Any, config_dir: Path, tables: Mapping[str, str], *, wo
     stats = {"raeume": len(rows), "aufsichten": len(supervisions), "probleme": errors, "hinweise": len(findings) - errors}
     LOGGER.info("Aufsichten | belegte Räume: %d | Einträge: %d | Probleme: %d | Hinweise: %d",
                 stats["raeume"], stats["aufsichten"], errors, stats["hinweise"])
+    leitung = [str((teachers.get(int(s["lehrkraft_id"])) or {}).get("kuerzel") or s["lehrkraft_id"]) for s in supervisions
+               if s["rolle"] == "Fachaufsicht" and s["lehrkraft_id"] is not None]
+    if leitung:
+        LOGGER.info("  Wettkampfleitung (Fachaufsicht): %s", ", ".join(leitung))
     for row in rows:
         LOGGER.info("  Raum %-8s %3d Teilnehmende | Aufsicht: %s", row["raum"], row["teilnehmende"],
                     ", ".join(row["lehrkraefte"]) or "–")
     for item in findings:
         (LOGGER.warning if item["art"] != "hinweis" else LOGGER.info)("  %s: %s", item["art"].upper(), item["text"])
     if report is not None:
-        report.update({"summary": stats, "rooms": rows, "findings": findings, "rules_file": str(rules_path),
+        report.update({"summary": stats, "wettkampfleitung": leitung, "rooms": rows, "findings": findings, "rules_file": str(rules_path),
                        "status": "ok" if not errors else "probleme"})
     return stats
