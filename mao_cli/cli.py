@@ -25,7 +25,7 @@ from .updater import UpdateError, plan_update, run_update, update_notice
 from .workspaces import (resolve_config_dir, find_conflict_copies, write_pointer, CONFIG_FOLDER, TEX_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
-from .aufsichten import check_aufsichten, interactive_supervision, set_supervision
+from .aufsichten import apply_plan, check_aufsichten, export_plan, interactive_supervision, set_supervision
 from .extern import ExternError, assign_extern_rooms, import_extern
 from .gf_import import import_participants, ImportErrorGF, write_import_report
 from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, read_file, sync_schools
@@ -204,6 +204,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     sup.add_argument("--rolle", default="Standard", choices=["Standard", "Reserve", "Fachaufsicht"],
                      help="Rolle; Reserve und Fachaufsicht gehören zu keinem Raum")
     sup.add_argument("--entfernen", action="store_true", help="Die genannten Einträge entfernen statt eintragen")
+    sup.add_argument("--plan-exportieren", nargs="?", const=Path("aufsichten-plan.yaml"), type=Path, metavar="DATEI.yaml",
+                     help="Aktuellen Stand als Plandatei im Workspace anlegen (überschreibt nie); zum Bearbeiten aller Aufsichten auf einmal")
+    sup.add_argument("--plan", type=Path, metavar="DATEI.yaml",
+                     help="Plandatei mit der Datenbank abgleichen (Dry-Run, --apply schreibt alle Änderungen in einer Transaktion)")
     sup.add_argument("--interaktiv", action="store_true", help="Räume ohne Aufsicht Schritt für Schritt besetzen (Terminal nötig)")
     sup.add_argument("--report", type=Path, metavar="DATEI.json", help="Bericht im Workspace speichern")
 
@@ -623,6 +627,20 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
             db_config = load_db_config(config_dir)
             if not can_reach(db_config.host, db_config.port, timeout=3):
                 raise ConnectionError("Datenbank für die Aufsichtenprüfung nicht erreichbar")
+            if args.plan_exportieren or args.plan:
+                if args.interaktiv or args.lehrkraft or (args.plan_exportieren and args.plan):
+                    raise ConfigurationError("--plan/--plan-exportieren nicht mit --lehrkraft, --interaktiv oder untereinander kombinieren")
+                with DB(db_config) as db:
+                    db_mao = current_MaO_number_db(db, tables)
+                    if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
+                        raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
+                    if args.plan_exportieren:
+                        LOGGER.info("Plandatei angelegt: %s", export_plan(db, config_dir, tables, workspace, args.plan_exportieren))
+                    else:
+                        apply_plan(db, config_dir, tables, workspace, args.plan, dry_run=not args.apply)
+                        if not args.apply:
+                            LOGGER.info("DRY-RUN: nichts geschrieben. Übernehmen mit --apply")
+                return 0
             if args.interaktiv or args.lehrkraft:
                 with DB(db_config) as db:
                     db_mao = current_MaO_number_db(db, tables)

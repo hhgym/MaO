@@ -349,3 +349,183 @@ def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str]
     for room, role, names in chosen:
         set_supervision(db, tables, room=room, kuerzel=names, role=role, dry_run=False)
     return result
+
+
+PLAN_FILE = "aufsichten-plan.yaml"
+
+
+def _plan_path(workspace: Path, config_dir: Path, name: Path) -> Path:
+    if name.suffix.lower() not in (".yaml", ".yml"):
+        raise RoomError("Plandatei braucht die Endung .yaml")
+    base, config = workspace.resolve(), config_dir.resolve()
+    target = (base / name).resolve()
+    if target == base or base not in target.parents or target == config or config in target.parents:
+        raise RoomError("Plandatei muss innerhalb des Workspaces liegen (nicht in der Konfiguration)")
+    return target
+
+
+def _load_plan_context(cur: Any, tables: Mapping[str, str]) -> dict[str, Any]:
+    sup_t, teachers_t = _ident(tables, "aufsichten_table"), _ident(tables, "teachers_table")
+    try:
+        jahrgang_id = load_state_year(cur, tables)
+    except ExternError as exc:
+        raise RoomError(str(exc)) from exc
+    rooms = load_rooms(cur, tables)
+    by_id = {info["id"]: code for code, info in rooms.items()}
+    cur.execute(f"SELECT raum_id, lehrkraft_id, rolle FROM `{sup_t}` WHERE mao_jahrgang_id = %s", (jahrgang_id,))
+    current = {(None if r is None else int(r), int(lk), str(ro)) for r, lk, ro in cur.fetchall() if lk is not None}
+    cur.execute(f"SELECT id, kuerzel, aktiv FROM `{teachers_t}`")
+    teachers = {int(i): (str(k) if k else str(i), a) for i, k, a in cur.fetchall()}
+    return {"sup_t": sup_t, "jahrgang_id": jahrgang_id, "rooms": rooms, "by_id": by_id, "current": current,
+            "teachers": teachers, "counts": _room_counts(cur, tables, by_id, jahrgang_id)}
+
+
+def export_plan(db: Any, config_dir: Path, tables: Mapping[str, str], workspace: Path, name: Path = Path(PLAN_FILE)) -> Path:
+    """Aktuellen Stand als bearbeitbare Plandatei schreiben (überschreibt nie)."""
+    target = _plan_path(workspace, config_dir, name)
+    cnx = db.conn
+    if cnx is None:
+        raise RoomError("Keine Datenbankverbindung")
+    cur = cnx.cursor()
+    try:
+        ctx = _load_plan_context(cur, tables)
+    finally:
+        cur.close()
+    names = ctx["teachers"]
+    standard: dict[str, list[str]] = {}
+    roleless: dict[str, list[str]] = {"Fachaufsicht": [], "Reserve": []}
+    for room_id, lk, role in sorted(ctx["current"], key=lambda t: (str(t[0]), t[1])):
+        if role == "Standard" and room_id is not None:
+            standard.setdefault(ctx["by_id"].get(room_id, "?"), []).append(names.get(lk, (str(lk), None))[0])
+        elif role in roleless:
+            roleless[role].append(names.get(lk, (str(lk), None))[0])
+    codes = sorted(set(ctx["counts"]) | set(standard))
+    lines = ["# Aufsichtenplan: Kürzel je Raum eintragen/tauschen, dann prüfen mit",
+             f"#   mao aufsichten --plan {name} --dry-run   und schreiben mit   --apply",
+             "# Abschnitte, die fehlen, bleiben unverändert. Ein Eintrag in der Datei = Zielzustand (Rest wird entfernt).",
+             "", "raeume:"]
+    for code in codes:
+        who = ", ".join(standard.get(code, []))
+        lines.append(f'  "{code}": [{who}]  # {ctx["counts"].get(code, 0)} Teilnehmende')
+    lines += ["", "# Wettkampfleitung (ohne Raum)", f"fachaufsicht: [{', '.join(roleless['Fachaufsicht'])}]",
+              "# Springer (ohne Raum)", f"reserve: [{', '.join(roleless['Reserve'])}]", ""]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with target.open("x", encoding="utf-8", newline="") as file:
+            file.write("\n".join(lines))
+    except FileExistsError as exc:
+        raise RoomError(f"Plandatei existiert bereits und wird nicht überschrieben: {target}") from exc
+    return target
+
+
+def apply_plan(db: Any, config_dir: Path, tables: Mapping[str, str], workspace: Path, name: Path, *,
+               dry_run: bool = True) -> dict[str, Any]:
+    """Plandatei mit der Datenbank abgleichen: alles auf einmal einstellen und in einer Transaktion schreiben."""
+    import yaml
+    target = _plan_path(workspace, config_dir, name)
+    try:
+        plan = yaml.safe_load(target.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        raise RoomError(f"Plandatei nicht lesbar: {exc}") from exc
+    if not isinstance(plan, dict) or not set(plan) <= {"raeume", "fachaufsicht", "reserve"} or not plan:
+        raise RoomError("Plandatei: erlaubt sind nur die Abschnitte raeume, fachaufsicht, reserve")
+
+    def names_of(value: Any, where: str) -> list[str]:
+        if value is None:
+            return []
+        if not isinstance(value, list) or not all(isinstance(x, (str, int)) for x in value):
+            raise RoomError(f"Plandatei: {where} muss eine Liste von Kürzeln sein")
+        out = [str(x).strip().upper() for x in value if str(x).strip()]
+        if len(set(out)) != len(out):
+            raise RoomError(f"Plandatei: {where} enthält ein Kürzel doppelt")
+        return out
+
+    cnx = db.conn
+    if cnx is None:
+        raise RoomError("Keine Datenbankverbindung")
+    cur = cnx.cursor()
+    lock_name = ""
+    try:
+        ctx = _load_plan_context(cur, tables)
+        by_kuerzel = {k.upper(): (i, a) for i, (k, a) in ctx["teachers"].items()}
+        rooms, current = ctx["rooms"], ctx["current"]
+        desired: set[tuple[int | None, int, str]] = set()
+        scope_rooms: set[int] = set()
+        scope_roles: set[str] = set()
+        warnings: list[str] = []
+        per_teacher: dict[str, list[str]] = {}
+
+        def lookup(n: str) -> int:
+            if n not in by_kuerzel:
+                raise RoomError(f"Unbekanntes Lehrkräfte-Kürzel: {n}")
+            if by_kuerzel[n][1] is not None and not int(by_kuerzel[n][1]):
+                raise RoomError(f"Lehrkraft {n} ist nicht aktiv")
+            return by_kuerzel[n][0]
+
+        raw_rooms = plan.get("raeume")
+        if raw_rooms is not None:
+            if not isinstance(raw_rooms, dict):
+                raise RoomError("Plandatei: raeume muss eine Zuordnung Raumcode → Kürzel sein")
+            for code, value in raw_rooms.items():
+                info = rooms.get(str(code))
+                if info is None or not info["active"]:
+                    raise RoomError(f"Raum {code} fehlt in der Raumtabelle oder ist inaktiv")
+                scope_rooms.add(info["id"])
+                for n in names_of(value, f"Raum {code}"):
+                    desired.add((info["id"], lookup(n), "Standard"))
+                    per_teacher.setdefault(n, []).append(str(code))
+        for key, role in (("fachaufsicht", "Fachaufsicht"), ("reserve", "Reserve")):
+            if key in plan:
+                scope_roles.add(role)
+                for n in names_of(plan[key], key):
+                    desired.add((None, lookup(n), role))
+        for n, places in sorted(per_teacher.items()):
+            if len(places) > 1:
+                warnings.append(f"{n} ist in mehreren Räumen eingeteilt: {', '.join(places)}")
+        scoped = {t for t in current if (t[2] == "Standard" and t[0] in scope_rooms) or t[2] in scope_roles}
+        to_add, to_del = desired - scoped, scoped - desired
+        label = {i: k for i, (k, _a) in ctx["teachers"].items()}
+
+        def show(t: tuple[int | None, int, str]) -> str:
+            place = ctx["by_id"].get(t[0], "?") if t[0] is not None else "ohne Raum"
+            return f"{t[2]} {place}: {label.get(t[1], t[1])}"
+        added, removed = sorted(show(t) for t in to_add), sorted(show(t) for t in to_del)
+        stats = {"hinzu": added, "entfernt": removed, "unveraendert": len(scoped & desired), "hinweise": warnings}
+        LOGGER.info("Aufsichtenplan | +%d −%d unverändert %d | Modus: %s", len(added), len(removed), stats["unveraendert"],
+                    "DRY-RUN" if dry_run else "APPLY")
+        for line in removed:
+            LOGGER.info("Aufsichtenplan | − %s", line)
+        for line in added:
+            LOGGER.info("Aufsichtenplan | + %s", line)
+        for note in warnings:
+            LOGGER.warning("Aufsichtenplan | %s", note)
+        if dry_run or not (to_add or to_del):
+            return stats
+        lock_name = f"mao-aufsichten-{ctx['sup_t']}"
+        cur.execute("SELECT GET_LOCK(%s, 10)", (lock_name,))
+        if cur.fetchall()[0][0] != 1:
+            raise RoomError("Konkurrierende Änderung oder Sperr-Timeout")
+        if cnx.in_transaction:
+            cnx.rollback()
+        cnx.start_transaction()
+        try:
+            for room_id, lk, role in sorted(to_del, key=str):
+                cur.execute(f"DELETE FROM `{ctx['sup_t']}` WHERE mao_jahrgang_id = %s AND lehrkraft_id = %s AND rolle = %s AND "
+                            + ("raum_id IS NULL" if room_id is None else "raum_id = %s"),
+                            (ctx["jahrgang_id"], lk, role) + (() if room_id is None else (room_id,)))
+            for room_id, lk, role in sorted(to_add, key=str):
+                cur.execute(f"INSERT INTO `{ctx['sup_t']}` (mao_jahrgang_id, raum_id, lehrkraft_id, rolle) VALUES (%s, %s, %s, %s)",
+                            (ctx["jahrgang_id"], room_id, lk, role))
+            cnx.commit()
+        except Exception:
+            cnx.rollback()
+            raise
+        return stats
+    finally:
+        if lock_name:
+            try:
+                cur.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
+                cur.fetchall()
+            except Exception:
+                LOGGER.warning("Konnte Sperre nicht regulär freigeben (DB-Disconnect gibt sie frei)")
+        cur.close()
