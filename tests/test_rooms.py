@@ -530,10 +530,10 @@ def _rooms3():
             "C": {"id": 3, "capacity": 15, "active": False}}
 
 
-def test_suggest_rooms_prefers_same_level_and_skips_full_and_inactive():
+def test_suggest_rooms_prefers_same_level_and_lists_full_last_and_skips_inactive():
     rooms = _rooms3()
     assert r.suggest_rooms(7, rooms, {"A": {7: 1}, "B": {8: 3}}, 15) == ["A", "B"]
-    assert r.suggest_rooms(7, rooms, {"A": {8: 2}, "B": {7: 1}}, 15) == ["B"]
+    assert r.suggest_rooms(7, rooms, {"A": {8: 2}, "B": {7: 1}}, 15) == ["B", "A"]
 
 
 class IaCur:
