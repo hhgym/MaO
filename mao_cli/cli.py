@@ -29,7 +29,7 @@ from .aufsichten import check_aufsichten
 from .extern import ExternError, assign_extern_rooms, import_extern
 from .gf_import import import_participants, ImportErrorGF, write_import_report
 from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, read_file, sync_schools
-from .rooms import RoomError, assign_rooms, create_year_rules, write_room_report
+from .rooms import RoomError, assign_rooms, create_year_rules, set_room, write_room_report
 from .validation import validate_online
 
 DEFAULTS = Path(__file__).resolve().parent / "defaults"
@@ -181,6 +181,16 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                        help="raumregeln.yaml im Jahrgangsordner aus der zentralen Vorlage anlegen (überschreibt nie) und beenden")
     rooms.add_argument("--report", type=Path, metavar="DATEI.json|DATEI.csv",
                        help="Bericht im Workspace speichern (ohne vorhandene Datei zu überschreiben)")
+
+    setroom = commands.add_parser("raum-setzen", help="Teilnehmenden von Hand einen Raum zuweisen (z. B. nach der Raumzuteilung)")
+    common(setroom)
+    set_mode = setroom.add_mutually_exclusive_group()
+    set_mode.add_argument("--apply", action="store_true", help="Zuordnung in die Datenbank schreiben")
+    set_mode.add_argument("--dry-run", action="store_true", help="Nur prüfen und berichten (Standard)")
+    setroom.add_argument("--raum", required=True, metavar="CODE", help="Raumcode (wie in der Raumtabelle)")
+    setroom.add_argument("--matrikel", required=True, nargs="+", type=int, metavar="NUMMER", help="Matrikelnummer(n)")
+    setroom.add_argument("--ueberschreiben", action="store_true", help="Auch Teilnehmende umsetzen, die schon einen anderen Raum haben")
+    setroom.add_argument("--trotzdem", action="store_true", help="Auch bei Überschreitung der Raumkapazität zuteilen")
 
     sup = commands.add_parser("aufsichten", help="Aufsichten der Lehrkräfte nach der Raumzuteilung prüfen (nur lesend)")
     common(sup)
@@ -570,6 +580,22 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                 raise ConnectionError(f"Schulverzeichnis nicht abrufbar: {exc}") from exc
             if args.report:
                 LOGGER.info("Schulbericht: %s", write_import_report(workspace, config_dir, args.report, school_report))
+            return 0
+        if args.command == "raum-setzen":
+            if selection.year is None or selection.year != settings["current_year"]:
+                raise ConfigurationError("raum-setzen nur für den aktuell registrierten Jahrgang zulässig")
+            tables = load_tables(resolve_config_file(config_dir, "tables.ini"))
+            db_config = load_db_config(config_dir)
+            if not can_reach(db_config.host, db_config.port, timeout=3):
+                raise ConnectionError("Datenbank nicht erreichbar")
+            with DB(db_config) as db:
+                db_mao = current_MaO_number_db(db, tables)
+                if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
+                    raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
+                set_room(db, tables, args.raum, args.matrikel, dry_run=not args.apply, overwrite=args.ueberschreiben,
+                         allow_over_capacity=args.trotzdem)
+            if not args.apply:
+                LOGGER.info("DRY-RUN: nichts geschrieben. Zuteilen mit --apply")
             return 0
         if args.command == "aufsichten":
             if selection.year is None or selection.year != settings["current_year"]:

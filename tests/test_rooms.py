@@ -448,3 +448,79 @@ def test_max_span_is_validated_and_warns_when_not_achievable(tmp_path):
     rule = r.RoomRules(grade_rooms={"5": ["A"]}, flex_rooms=("S1",), flex_max_span=1)
     plan = r.plan_rooms(people, {}, rule, {}, seed=1)
     assert any("erlaubte Spanne" in w for w in plan.warnings) and not plan.unassigned
+
+
+# ------------------------------------------------------------------ Räume je Stufe / Raum von Hand
+
+def test_rooms_by_stufe_lists_rooms_in_order_with_counts():
+    plan = r.RoomPlan()
+    plan.per_room_grade = {"204": {"8": 15}, "105": {"7": 2, "8": 13}, "003": {"7": 15}}
+    result = r.rooms_by_stufe(plan)
+    assert list(result) == ["7", "8"] and result["7"] == [("003", 15), ("105", 2)] and result["8"] == [("105", 13), ("204", 15)]
+
+
+def test_plan_report_has_rooms_per_stufe():
+    people = [person(i, 7, "7-1") for i in range(20)]
+    plan = r.plan_rooms(people, {}, r.RoomRules(grade_rooms={"7": ["A", "B"]}), {}, seed=1)
+    assert r.rooms_by_stufe(plan)["7"] == [("A", 15), ("B", 5)]
+
+
+class SetCur:
+    def __init__(self, people, in_room=(0, 0), taken_room=None):
+        self.people, self.in_room, self.taken, self.sql, self.writes = people, in_room, taken_room, "", []
+    def execute(self, sql, params=None):
+        self.sql, self.params = sql, params
+        if sql.startswith("UPDATE"):
+            self.writes.append((sql, params))
+    def fetchall(self):
+        s = self.sql
+        if "GET_LOCK" in s:
+            return [(1,)]
+        if "FROM `raeume`" in s:
+            return [(1, "105", 15, 1), (2, "205", 15, 1), (3, "OFF", 15, 0)]
+        if "SELECT matrikelnummer, stufe" in s:
+            return [(m, 8, "8-1", self.taken) for m in self.people]
+        if "SUM(" in s:
+            return [self.in_room]
+        if "COUNT(*)" in s:
+            return [(len(self.people),)]
+        return []
+    def close(self):
+        pass
+
+
+TABLES2 = {"orga_table": "orga", "rooms_table": "raeume"}
+
+
+def run_set(cur, matrikels, **kw):
+    cnx = SimpleNamespace(cursor=lambda: cur, in_transaction=False, start_transaction=lambda: None,
+                          commit=lambda: kw.setdefault("_c", None), rollback=lambda: None)
+    kw.pop("_c", None)
+    return r.set_room(SimpleNamespace(conn=cnx), TABLES2, kw.pop("room", "105"), matrikels, **kw)
+
+
+def test_set_room_dry_run_and_apply_are_guarded():
+    cur = SetCur([111, 222])
+    stats = run_set(cur, [111, 222], dry_run=True)
+    assert stats["im_raum_danach"] == 2 and not cur.writes
+    cur = SetCur([111, 222])
+    run_set(cur, [111, 222], dry_run=False)
+    sql, params = cur.writes[0]
+    assert "raum_id IS NULL" in sql and params[0] == 1 and params[1:] == (111, 222)
+
+
+def test_set_room_refuses_unknown_inactive_taken_and_overfull():
+    with pytest.raises(r.RoomError, match="fehlt in der Raumtabelle"):
+        run_set(SetCur([1]), [1], dry_run=True, room="XXX")
+    with pytest.raises(r.RoomError, match="inaktiv"):
+        run_set(SetCur([1]), [1], dry_run=True, room="OFF")
+    with pytest.raises(r.RoomError, match="anderen Raum"):
+        run_set(SetCur([1], taken_room=2), [1], dry_run=True)
+    cur = SetCur([1], taken_room=2)
+    run_set(cur, [1], dry_run=False, overwrite=True)
+    assert "raum_id IS NULL" not in cur.writes[0][0]
+    with pytest.raises(r.RoomError, match="Kapazität"):
+        run_set(SetCur([1, 2], in_room=(15, 0)), [1, 2], dry_run=True)
+    assert run_set(SetCur([1, 2], in_room=(15, 0)), [1, 2], dry_run=True, allow_over_capacity=True)["im_raum_danach"] == 17
+    with pytest.raises(r.RoomError, match="doppelt"):
+        run_set(SetCur([1]), [1, 1], dry_run=True)

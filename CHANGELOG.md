@@ -9,6 +9,11 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ## [0.6.0.dev0] – in Entwicklung
 
+### Raumzuteilung: Übersicht je Stufe und Zuteilung von Hand
+
+- `mao raumzuteilung` zeigt am Ende zusätzlich „Räume je Stufe“ (Raum und Anzahl je Stufe); der Bericht enthält `raeume_je_stufe`. Bleiben Teilnehmende ohne Raum, nennt das Log den Befehl zum Nachtragen.
+- Neuer Befehl `mao raum-setzen --raum CODE --matrikel NUMMER [...]`: weist einzelnen Teilnehmenden von Hand einen Raum zu. Dry-Run ist Standard, `--apply` schreibt (Transaktion, Sperre, Zählabgleich). Er prüft Raum (vorhanden, aktiv), Matrikelnummern, vorhandene Zuordnungen (`--ueberschreiben`) und die Kapazität (`--trotzdem`). Von Hand gesetzte Räume bleiben bei der nächsten Raumzuteilung erhalten.
+
 ### Raumzuteilung: Sammelräume
 
 - Neu: `rooms.sammel_max_spanne` (mit `rein_zuerst`). Gemischte Sammelräume enthalten nur Stufen innerhalb dieser Spanne (1 = nur Nachbarstufen, 2 = z. B. 8 bis 10). Es bleiben so viele reine Räume wie möglich, die Raumzahl bleibt gleich; lässt sich die Spanne nicht einhalten, gibt es eine Warnung.
