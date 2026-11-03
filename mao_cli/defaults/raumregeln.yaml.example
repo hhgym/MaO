@@ -16,9 +16,9 @@ rooms:
     "11": ["Aula"]
     "12": ["Aula"]
   # Sammelräume (optional): nehmen alle, die nicht in ihre festen Räume (grade_rooms) passen oder keinen haben, mit
-  # möglichst wenigen Räumen und möglichst wenig Stufenmischung auf. Stufenblöcke liegen nebeneinander (z. B. 8 und 9 zusammen),
-  # volle Räume bleiben rein. Dann in grade_rooms nur die wirklich festen Räume eintragen.
+  # möglichst wenigen Räumen und möglichst wenig Stufenmischung auf: volle Räume bleiben rein, die Reste teilen sich einen Raum. Dann in grade_rooms nur die wirklich festen Räume eintragen.
   # sammel: ["R20", "R21", "R22"]
+  # sammel_stil: rein_zuerst   # volle Räume je Stufe, Reste gemeinsam in einem Sammelraum; alternativ: nachbarn
   # Überlauf (höchstens max_per_room Plätze)
   reserve: "R12"
   # Die besten Teilnehmenden unter den aktuell Gemeldeten (Vorjahrespunkte laut points_last_year_view) sitzen gemeinsam.
