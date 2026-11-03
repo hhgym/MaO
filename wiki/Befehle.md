@@ -211,7 +211,7 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
 - Am Ende des Laufs steht „Räume je Stufe“: für jede Stufe die Räume mit der Anzahl (im Bericht `raeume_je_stufe`).
 - **Von Hand nachtragen:** `mao raum-setzen --raum 105 --matrikel 12345 12346` prüft zuerst (Dry-Run) und
   schreibt erst mit `--apply`. Geprüft werden Raum (vorhanden, aktiv), Matrikelnummern, vorhandener Raum
-  (nur mit `--ueberschreiben` ersetzt) und Kapazität (mit `--trotzdem` überschritten). Von Hand gesetzte Räume
+  (nur mit `--ueberschreiben` ersetzt) ; die Kapazität wird nur gemeldet, nicht erzwungen. Von Hand gesetzte Räume
   bleiben bei der nächsten `mao raumzuteilung` erhalten (Ausnahme: `--ueberschreiben` verteilt alles neu).
 - **Schritt für Schritt:** `mao raum-setzen --interaktiv [--apply]` zeigt jede Person ohne Raum mit bis zu fünf Raumvorschlägen. Eingabe: Nummer oder Raumcode, Enter überspringt, `u` nimmt zurück, `r` zeigt die Räume, `q` beendet. Geschrieben wird erst nach der Zusammenfassung und `j` (nur mit `--apply`).
 - `mao raumzuteilung --extern` teilt stattdessen die externen Teilnehmenden zu. Die Räume stehen in
