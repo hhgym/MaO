@@ -366,6 +366,7 @@ def test_tui_scrolls_marks_and_unmarks(tmp_path):
     assert "Reserve" in frames[1] and "\x1b[H" in frames[0]
 
 
+@pytest.mark.skipif(__import__("os").name == "nt", reason="select() auf Pipes gibt es nur unter POSIX")
 def test_read_key_posix_maps_escape_sequences():
     import os
     r, w = os.pipe()
