@@ -45,6 +45,7 @@ class RoomRules:
     db_capacity_rooms: tuple[str, ...] = ("Aula",)
     fill: str = "full"  # full: Raum für Raum auffüllen (wenige Aufsichten); even: gleichmäßig verteilen
     extern_rooms: tuple[str, ...] = ()  # Räume der externen Teilnehmenden (mao raumzuteilung --extern)
+    flex_max_span: int | None = None  # größte erlaubte Stufenspanne in einem gemischten Sammelraum (None = beliebig)
     flex_style: str = "rein_zuerst"  # rein_zuerst: volle Räume je Stufe, Reste gemeinsam; nachbarn: Stufenblöcke nebeneinander
     flex_rooms: tuple[str, ...] = ()  # Sammelräume: nehmen den Rest aller Stufen mit möglichst wenigen Räumen und Mischungen auf
     supervisors_per_room: int = 1  # Lehrkräfte je belegtem Raum (mao aufsichten)
@@ -154,6 +155,9 @@ def load_room_rules(path: Path) -> RoomRules:
     flex_style = str(rooms.get("sammel_stil", "rein_zuerst"))
     if flex_style not in ("rein_zuerst", "nachbarn"):
         raise ConfigurationError(f"{path.name}: rooms.sammel_stil muss 'rein_zuerst' oder 'nachbarn' sein")
+    span = rooms.get("sammel_max_spanne")
+    if span is not None and (not isinstance(span, int) or isinstance(span, bool) or not 0 <= span <= 7):
+        raise ConfigurationError(f"{path.name}: rooms.sammel_max_spanne muss eine ganze Zahl von 0 bis 7 sein")
     empty = sorted(k for k, v in grade_rooms.items() if not v)
     if empty and not flex:
         raise ConfigurationError(f"{path.name}: grade_rooms.{', '.join(empty)} ist leer; ohne rooms.sammel gäbe es für diese Stufen keinen Raum")
@@ -178,6 +182,7 @@ def load_room_rules(path: Path) -> RoomRules:
         extern_rooms=tuple(str(x) for x in extern_rooms),
         flex_rooms=tuple(str(x) for x in flex),
         flex_style=flex_style,
+        flex_max_span=span,
         supervisors_per_room=sup_count,
         supervisor_roles=tuple(str(x) for x in sup_roles),
     )
@@ -283,9 +288,65 @@ def _flex_segments(order: tuple[int, ...], counts: Mapping[int, int], rooms: lis
     return layout, {s: n for s, n in remaining.items() if n > 0}
 
 
+def _plan_flex_span(remaining: Mapping[int, int], chosen: list[tuple[str, int]], existing: Mapping[str, set[int]],
+                    max_span: int) -> tuple[list[tuple[str, dict[int, int]]], dict[int, int]] | None:
+    """Möglichst viele reine Räume, gemischte Räume nur mit Stufen innerhalb von max_span.
+
+    Probiert, wie viele reine Räume je Stufe angelegt werden (0 bis alle möglichen), legt die Reste in aufsteigender
+    Stufenfolge hintereinander und wählt: wenigste Überschreitungen der Spanne, dann wenigste gemischte Räume,
+    zusätzliche Stufen und Gesamtspanne. None, wenn der Suchraum zu groß ist.
+    """
+    stufen = sorted(remaining)
+    smallest = min(free for _code, free in chosen)
+    limits = [remaining[s] // smallest for s in stufen]
+    size = 1
+    for limit in limits:
+        size *= limit + 1
+    if size > 20000:
+        return None
+    best: tuple[tuple[int, int, int, int], dict[str, dict[int, int]], dict[int, int]] | None = None
+    for counts in itertools.product(*(range(limit + 1) for limit in limits)):
+        left_over = dict(remaining)
+        pure: dict[str, dict[int, int]] = {}
+        free_rooms = list(chosen)
+        feasible = True
+        for level, number in zip(stufen, counts):
+            for _ in range(number):
+                options = [r for r in free_rooms if left_over[level] >= r[1] and set(existing.get(r[0], ())) <= {level}]
+                if not options:
+                    feasible = False
+                    break
+                room = max(options, key=lambda r: r[1])
+                free_rooms.remove(room)
+                pure[room[0]] = {level: room[1]}
+                left_over[level] -= room[1]
+            if not feasible:
+                break
+        if not feasible:
+            continue
+        rest = {s: n for s, n in left_over.items() if n > 0}
+        layout, not_placed = _flex_segments(tuple(sorted(rest)), rest, free_rooms)
+        violations = mixed = mixes = spread = 0
+        for (code, _free), seg in zip(free_rooms, layout):
+            if not seg:
+                continue
+            levels = set(seg) | set(existing.get(code, ()))
+            span = max(levels) - min(levels)
+            violations += max(0, span - max_span)
+            mixed += len(levels) > 1
+            mixes += len(levels) - 1
+            spread += span
+        cost = (violations + sum(not_placed.values()) * 1000, mixed, mixes, spread)
+        if best is None or cost < best[0]:
+            best = (cost, {**pure, **{c: s for (c, _f), s in zip(free_rooms, layout)}}, not_placed)
+    if best is None:
+        return None
+    return [(code, best[1][code]) for code, _free in chosen if best[1].get(code)], best[2]
+
+
 def plan_flex(counts: Mapping[int, int], rooms: list[tuple[str, int]],
               existing: Mapping[str, set[int]] | None = None, *,
-              pure_first: bool = True) -> tuple[list[tuple[str, dict[int, int]]], dict[int, int]]:
+              pure_first: bool = True, max_span: int | None = None) -> tuple[list[tuple[str, dict[int, int]]], dict[int, int]]:
     """Rest der Teilnehmenden auf die Sammelräume verteilen.
 
     counts: Stufe -> Anzahl; rooms: (Raumcode, freie Plätze); existing: Raumcode -> Stufen, die dort schon sitzen.
@@ -296,6 +357,8 @@ def plan_flex(counts: Mapping[int, int], rooms: list[tuple[str, int]],
        zusätzlichen Stufen, dann der geringsten Stufenspanne.
        Ohne pure_first liegen alle Stufenblöcke hintereinander; gewonnen hat die Reihenfolge mit den wenigsten
        zusätzlichen Stufen je Raum und danach der geringsten Spanne (gemischt wird nur mit Nachbarstufen).
+    max_span: nur mit pure_first. Gemischte Räume sollen nur Stufen innerhalb dieser Spanne enthalten (1 = Nachbarstufen);
+       dafür werden bei Bedarf auch weniger reine Räume angelegt, die Zahl der Räume bleibt gleich.
     Rückgabe: Belegung je genutztem Raum, nicht untergebrachte Teilnehmende je Stufe.
     """
     existing = existing or {}
@@ -309,6 +372,10 @@ def plan_flex(counts: Mapping[int, int], rooms: list[tuple[str, int]],
             break
         chosen.append(room)
         capacity += room[1]
+    if pure_first and max_span is not None and remaining and chosen:
+        found = _plan_flex_span(remaining, chosen, existing, max_span)
+        if found is not None:
+            return found
     pure: dict[str, dict[int, int]] = {}
     rest_rooms: list[tuple[str, int]] = []
     for code, free in chosen:
@@ -496,7 +563,7 @@ def plan_rooms(participants: list[dict[str, Any]], capacities: Mapping[str, int 
         flex_free = [(room, cap(room, "7") - usage.get(room, 0)) for room in rules.flex_rooms]
         existing = {room: {int(s) for s in plan.per_room_grade.get(room, {})} for room in rules.flex_rooms}
         layout, not_placed = plan_flex({s: len(m) for s, m in by_level.items()}, flex_free, existing,
-                                        pure_first=rules.flex_style == "rein_zuerst")
+                                        pure_first=rules.flex_style == "rein_zuerst", max_span=rules.flex_max_span)
         queues = {}
         for level, members in by_level.items():
             buckets = buckets_of(members)
@@ -511,6 +578,12 @@ def plan_rooms(participants: list[dict[str, Any]], capacities: Mapping[str, int 
         for level in queues:
             leftovers_all.extend(queues[level])
         plan.flex = [{"raum": room, "stufen": {str(s): n for s, n in segment.items()}} for room, segment in layout]
+        if rules.flex_max_span is not None:
+            for room, segment in layout:
+                levels = set(segment) | set(existing.get(room, ()))
+                if max(levels) - min(levels) > rules.flex_max_span:
+                    plan.warnings.append(f"Sammelraum {room}: Stufen {min(levels)} bis {max(levels)} gemischt "
+                                         f"(erlaubte Spanne {rules.flex_max_span} nicht einzuhalten)")
         if not_placed:
             plan.warnings.append("Sammelräume reichen nicht aus: " + ", ".join(f"{n}× Stufe {s}" for s, n in sorted(not_placed.items())))
 

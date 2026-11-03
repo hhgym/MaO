@@ -11,6 +11,8 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ### Raumzuteilung: Sammelräume
 
+- Neu: `rooms.sammel_max_spanne` (mit `rein_zuerst`). Gemischte Sammelräume enthalten nur Stufen innerhalb dieser Spanne (1 = nur Nachbarstufen, 2 = z. B. 8 bis 10). Es bleiben so viele reine Räume wie möglich, die Raumzahl bleibt gleich; lässt sich die Spanne nicht einhalten, gibt es eine Warnung.
+
 - Neuer Standard `sammel_stil: rein_zuerst`: Jeder Sammelraum, den eine Stufe allein füllen kann, wird mit genau dieser Stufe gefüllt; nur die Reste aller Stufen kommen gemeinsam in die übrigen Räume (wenn möglich in einen einzigen Sammelraum). `sammel_stil: nachbarn` behält das bisherige Verhalten (Stufenblöcke nebeneinander, gemischt nur mit Nachbarstufen).
 
 - `grade_rooms` darf für einzelne Stufen leer sein (`"8": []`), wenn `rooms.sammel` gesetzt ist; die Kapazitätswarnung vergleicht dann den Gesamtrest mit den Sammelräumen statt je Stufe.
