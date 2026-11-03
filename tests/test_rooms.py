@@ -299,3 +299,64 @@ def test_new_year_folder_inherits_rules_of_latest_year(tmp_path):
     first.mkdir(parents=True)
     _seed_year_rules(first, config)
     assert (first / "raumregeln.yaml").read_text(encoding="utf-8") == "# zentral\n"
+
+
+# ------------------------------------------------------------------ Sammelräume
+
+def test_flex_uses_fewest_rooms_and_avoids_mixing():
+    layout, left = r.plan_flex({7: 15, 8: 9, 9: 6}, [("S1", 15), ("S2", 15), ("S3", 15)])
+    assert not left and [code for code, _ in layout] == ["S1", "S2"]
+    assert sorted(sum(seg.values()) for _, seg in layout) == [15, 15]
+    assert any(seg == {7: 15} for _, seg in layout)  # Stufe 7 füllt einen Raum allein
+    assert any(seg == {8: 9, 9: 6} for _, seg in layout)  # der Rest bildet den Sammelraum
+
+
+def test_flex_keeps_mixing_to_neighbouring_levels():
+    # 3 × 10 in 2 × 15: beide Räume müssen gemischt sein, aber nur mit benachbarten Stufen (nie 5 mit 7)
+    layout, left = r.plan_flex({5: 10, 6: 10, 7: 10}, [("S1", 15), ("S2", 15)])
+    assert not left and all(max(seg) - min(seg) == 1 for _, seg in layout)
+    # Eine Stufe mit genau einem Raum voll bleibt rein; nur der Rest mischt
+    layout, _ = r.plan_flex({5: 15, 8: 9, 9: 6}, [("S1", 15), ("S2", 15)])
+    assert sorted(len(seg) for _, seg in layout) == [1, 2]
+
+
+def test_flex_prefers_large_rooms_respects_existing_and_reports_overflow():
+    layout, left = r.plan_flex({7: 20, 8: 5}, [("klein", 10), ("gross", 40)])
+    assert layout == [("gross", {7: 20, 8: 5})] and not left
+    layout, left = r.plan_flex({7: 20, 8: 20}, [("a", 15), ("b", 15)])
+    assert sum(sum(seg.values()) for _, seg in layout) == 30 and sum(left.values()) == 10
+    layout, _ = r.plan_flex({8: 5, 9: 5}, [("a", 15), ("b", 15)], existing={"a": {9}, "b": {8}})
+    assert len(layout) == 1
+
+
+def test_rules_parse_sammel_rooms_and_reject_conflicts(tmp_path):
+    def load(extra):
+        path = tmp_path / "raumregeln.yaml"
+        path.write_text('rooms:\n  grade_rooms: {"5": [R1]}\n  reserve: R2\n' + extra, encoding="utf-8")
+        return r.load_room_rules(path)
+    assert load("  sammel: [S1, S2]\n").flex_rooms == ("S1", "S2")
+    assert load("").flex_rooms == ()
+    with pytest.raises(ConfigurationError, match="Sammelraum"):
+        load("  sammel: [R1]\n")
+    with pytest.raises(ConfigurationError, match="sammel"):
+        load("  sammel: [S1, S1]\n")
+
+
+def test_plan_rooms_sends_the_rest_into_sammelraeume():
+    people = ([person(i, 5, "5-1") for i in range(100, 120)] + [person(i, 8, "8-1") for i in range(200, 209)]
+              + [person(i, 9, "9-1") for i in range(300, 306)])
+    rule = r.RoomRules(grade_rooms={"5": ["F5"]}, flex_rooms=("S1", "S2", "S3"), reserve="RES")
+    plan = r.plan_rooms(people, {}, rule, {}, seed=1)
+    assert not plan.unassigned and plan.per_room.get("F5") == 15 and "RES" not in plan.per_room
+    assert {s for item in plan.flex for s in item["stufen"]} == {"5", "8", "9"}
+    used = [code for code in plan.per_room if code.startswith("S")]
+    assert len(used) == 2  # 5 + 9 + 6 = 20 Rest passt in zwei Räume
+    assert sum(plan.per_room.values()) == len(people)
+    again = r.plan_rooms(people, {}, rule, {}, seed=1)
+    assert again.assignments == plan.assignments
+
+
+def test_without_sammel_rooms_behaviour_is_unchanged():
+    people = [person(i, 9, "9-1") for i in range(10)]
+    plan = r.plan_rooms(people, {}, r.RoomRules(grade_rooms={"5": ["A"]}), {}, seed=1)
+    assert len(plan.unassigned) == 10 and any("keine Zielräume" in w for w in plan.warnings)
