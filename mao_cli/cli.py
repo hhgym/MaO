@@ -16,7 +16,7 @@ from . import __version__
 from .common import LOGGER, can_reach, ensure_parent, write_text
 from .config import (
     ConfigurationError, apply_profile, load_config, load_profiles,
-    load_tables, resolve_table_placeholders, validate_config, validate_profiles,
+    load_tables, resolve_table_placeholders, select_latex_jobs, validate_config, validate_profiles,
 )
 from .db import DB, active_jahrgang_db, current_MaO_number_db, current_MaO_number_fallback, load_db_config
 from .exports import ExportPlan, load_datasets, render_plan, run_exports
@@ -98,6 +98,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     run.add_argument("--cleanup-latex", action="store_true",
                      help="LaTeX-Hilfsdateien (.aux, .log, ...) nach erfolgreichem Lauf löschen")
     run.add_argument("--mao", type=int, help="MaO-Nummer für Dokumente (nicht Datenquelle!)")
+    run.add_argument("--job", action="append", metavar="NAME",
+                       help="Nur diesen LaTeX-Job ausführen (auch wenn ausgeschaltet; mehrfach angebbar)")
 
     plan = commands.add_parser("plan", help="Exportplan ermitteln (kein CSV/PDF schreiben)")
     common(plan, profile=True)
@@ -110,6 +112,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                        help="LaTeX-Hilfsdateien (.aux, .log, ...) nach erfolgreichem Lauf löschen")
     common(latex, profile=True)
     latex.add_argument("--mao", type=int, help="MaO-Nummer für Dokumente (nicht Datenquelle!)")
+    latex.add_argument("--job", action="append", metavar="NAME",
+                       help="Nur diesen LaTeX-Job ausführen (auch wenn ausgeschaltet; mehrfach angebbar)")
 
     validate = commands.add_parser("validate", help="Konfiguration prüfen; optional mit Datenbank und Gravity Forms")
     common(validate, profile=True)
@@ -795,6 +799,9 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                 LOGGER.info("Online-Validierung abgeschlossen (nur lesende Abfragen)")
             return 0
         LOGGER.info("Profil: %s", profile_name)
+        if getattr(args, "job", None):
+            select_latex_jobs(cfg, args.job)
+            LOGGER.info("Nur LaTeX-Job(s): %s", ", ".join(args.job))
 
         if args.command == "latex":
             mao = args.mao or selection.mao_number or current_MaO_number_fallback()
