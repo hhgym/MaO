@@ -37,7 +37,7 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 - `mao latex --job NAME` und `mao run --job NAME` führen nur die genannten LaTeX-Jobs aus (mehrfach angebbar, auch wenn ausgeschaltet).
 
-- Neues Dataset `aufsichten_lehrkraefte` (Aufsichten des aktuellen Jahrgangs mit Kürzel, Name, Raum, Stufen im Raum, Rolle, Bemerkung), zwei Exporte (`db/Aufsichten/Aufsichten-Lehrkraefte.csv` nach Kürzel, `Aufsichten-Raeume.csv` nach Raum) und der LaTeX-Job `aufsichten_lehrkraefte` (Vorlage `tex/Aufsichten-Lehrkraefte/Aufsichten-Lehrkraefte.tex`).
+- Neues Dataset `aufsichten_lehrkraefte` (Aufsichten des aktuellen Jahrgangs mit Kürzel, Name inkl. Titel, Raum, Stufen im Raum, Rolle, Bemerkung), zwei Exporte (`db/Aufsichten/Aufsichten-Lehrkraefte.csv` nach Kürzel, `Aufsichten-Raeume.csv` nach Raum) und der LaTeX-Job `aufsichten_lehrkraefte` (Vorlage `tex/Aufsichten-Lehrkraefte/Aufsichten-Lehrkraefte.tex`).
 - Job `aufsichten_schueler` (Vorlage `tex/Aufsichten-Schueler/Aufsichten-Schueler.tex`, liest `Einsatz-Oberstufe.csv`) ist vorbereitet, aber ausgeschaltet, bis der Export der Oberstufen-Einsätze in der Pipeline existiert.
 
 ### Aufsichtenprüfung (`mao aufsichten`)
