@@ -276,6 +276,44 @@ datasets:
     enabled: true
     sql: "SELECT * FROM {{table.aufsichten_view}}"
 
+  # Lehrkraft-Aufsichten des aktuellen Jahrgangs (Tabelle aufsichten_table, Pflege: mao aufsichten).
+  # Eine Zeile je Eintrag; Reserve/Fachaufsicht haben keinen Raum (raum leer).
+  # klassenstufen = Stufen der Teilnehmenden im Raum (Hauptwettbewerb und Externe).
+  - name: aufsichten_lehrkraefte
+    id: aufsichten_lehrkraefte
+    enabled: true
+    sql: |
+      SELECT
+        t.kuerzel AS kuerzel,
+        TRIM(CONCAT(COALESCE(t.vorname, ''), ' ', COALESCE(t.nachname, ''))) AS name,
+        COALESCE(r.raumcode, '') AS raum,
+        COALESCE(st.stufen, '') AS klassenstufen,
+        a.rolle AS rolle,
+        COALESCE(a.bemerkung, '') AS bemerkung
+      FROM {{table.aufsichten_table}} a
+      JOIN {{table.teachers_table}} t ON t.id = a.lehrkraft_id
+      LEFT JOIN {{table.rooms_table}} r ON r.id = a.raum_id
+      LEFT JOIN (
+        SELECT x.raum_id, GROUP_CONCAT(DISTINCT x.stufe ORDER BY x.stufe SEPARATOR ', ') AS stufen
+        FROM (
+          SELECT rr.id AS raum_id, m.stufe AS stufe
+          FROM {{table.orga_view}} m
+          JOIN {{table.rooms_table}} rr ON rr.raumcode = m.raum
+          UNION
+          SELECT e.raum_id, e.klassenstufe
+          FROM {{table.extern_teilnahmen_table}} e
+          WHERE e.raum_id IS NOT NULL
+            AND e.mao_jahrgang_id = (SELECT j.id FROM {{table.jahrgaenge_table}} j
+                                     JOIN {{table.schuljahre_table}} s ON s.id = j.schuljahr_id
+                                     WHERE s.aktiv = 1 ORDER BY j.id DESC LIMIT 1)
+        ) x
+        WHERE x.stufe IS NOT NULL
+        GROUP BY x.raum_id
+      ) st ON st.raum_id = a.raum_id
+      WHERE a.mao_jahrgang_id = (SELECT j.id FROM {{table.jahrgaenge_table}} j
+                                 JOIN {{table.schuljahre_table}} s ON s.id = j.schuljahr_id
+                                 WHERE s.aktiv = 1 ORDER BY j.id DESC LIMIT 1)
+
   - name: kopierliste
     id: kopierliste
     enabled: true
@@ -821,6 +859,27 @@ exports:
           include_gesamt: true
           gesamt_db_name: "EinsaetzeGesamt"
 
+  # Aufsichtspläne der Lehrkräfte (Vorlage: tex/Aufsichten-Lehrkraefte)
+  - name: aufsichten_lehrkraefte_nach_lehrkraft
+    id: aufsichten_lehrkraefte_nach_lehrkraft
+    enabled: true
+    from_dataset: aufsichten_lehrkraefte
+    output:
+      path: "db/Aufsichten/Aufsichten-Lehrkraefte.csv"
+      sep: ";"
+      columns: "*"
+    sort_by: [kuerzel, raum]
+
+  - name: aufsichten_lehrkraefte_nach_raum
+    id: aufsichten_lehrkraefte_nach_raum
+    enabled: true
+    from_dataset: aufsichten_lehrkraefte
+    output:
+      path: "db/Aufsichten/Aufsichten-Raeume.csv"
+      sep: ";"
+      columns: "*"
+    sort_by: [raum, kuerzel]
+
   - name: aufsichten_mit_schueler
     id: aufsichten_mit_schueler
     enabled: false
@@ -1005,6 +1064,24 @@ latex:
       jobname: "Einsatz-Oberstufe"
       define_mao: true
       pdf_name: "MaO_{mao}_Einsatz-Oberstufe"
+
+    - name: aufsichten_lehrkraefte
+      id: aufsichten_lehrkraefte
+      enabled: true
+      workdir: "Aufsichten"
+      tex: "@tex/Aufsichten-Lehrkraefte/Aufsichten-Lehrkraefte.tex"
+      jobname: "Aufsichten-Lehrkraefte"
+      define_mao: true
+      pdf_name: "MaO_{mao}_Aufsichten-Lehrkraefte"
+
+    - name: aufsichten_schueler
+      id: aufsichten_schueler
+      enabled: false   # benötigt db/Einsatz-Oberstufe/Einsatz-Oberstufe.csv (Export noch nicht in der Pipeline)
+      workdir: "Aufsichten"
+      tex: "@tex/Aufsichten-Schueler/Aufsichten-Schueler.tex"
+      jobname: "Aufsichten-Schueler"
+      define_mao: true
+      pdf_name: "MaO_{mao}_Aufsichten-Schueler"
 
     - name: rueckgabelisten
       id: rueckgabelisten

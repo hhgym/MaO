@@ -264,6 +264,9 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
     und Räume; fehlende Abschnitte/Räume bleiben unverändert. Eine Lehrkraft in mehreren Räumen ergibt eine Warnung.
   - Für die Mathematik-Auswahl `teacher_subjects_table` und `subjects_table` in tables.ini setzen (optional; sonst zeigt `l` alle).
 - Die Oberstufenschüler als Aufsicht folgen später.
+- **PDF des Aufsichtsplans:** `mao run` exportiert die Aufsichten nach `db/Aufsichten/` und `mao latex` erzeugt
+  `MaO_<Nr>_Aufsichten-Lehrkraefte.pdf` (Seite 1 nach Lehrkraft, Seite 2 nach Raum; Reserve und Fachaufsicht mit Rolle in
+  „Bemerkungen“). Vorlagen: `tex/Aufsichten-Lehrkraefte/` und (noch ausgeschaltet) `tex/Aufsichten-Schueler/` im MaO-Ordner.
 
 
 ## Schulabgleich

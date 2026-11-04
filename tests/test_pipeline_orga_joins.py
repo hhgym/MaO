@@ -80,3 +80,22 @@ def test_pipeline_reads_organisation_only_through_the_view():
     for name in ("orga",):
         raw = next(item for item in cfg["datasets"] if item["name"] == name)["sql"]
         assert "{{table.orga_view}}" in raw and "{{table.orga_table}}" not in raw
+
+
+def test_aufsichten_pipeline_steps_are_consistent():
+    """Dataset → Exporte → LaTeX-Jobs der Aufsichtspläne greifen ineinander (CSV-Pfade passen zu den Vorlagen)."""
+    cfg = yaml.safe_load((DEFAULTS / "pipeline.yaml").read_text(encoding="utf-8"))
+    ds = next(d for d in cfg["datasets"] if d["name"] == "aufsichten_lehrkraefte")
+    for token in ("aufsichten_table", "teachers_table", "rooms_table", "extern_teilnahmen_table",
+                  "jahrgaenge_table", "schuljahre_table", "orga_view"):
+        assert "{{table.%s}}" % token in ds["sql"]
+    for column in ("kuerzel", "name", "raum", "klassenstufen", "rolle", "bemerkung"):
+        assert f" AS {column}" in ds["sql"]
+    exports = {e["id"]: e for e in cfg["exports"] if e.get("from_dataset") == "aufsichten_lehrkraefte"}
+    assert {e["output"]["path"] for e in exports.values()} == {
+        "db/Aufsichten/Aufsichten-Lehrkraefte.csv", "db/Aufsichten/Aufsichten-Raeume.csv"}
+    assert exports["aufsichten_lehrkraefte_nach_raum"]["sort_by"] == ["raum", "kuerzel"]
+    jobs = {j["id"]: j for j in cfg["latex"]["jobs"]}
+    assert jobs["aufsichten_lehrkraefte"]["enabled"] is True
+    assert jobs["aufsichten_lehrkraefte"]["tex"] == "@tex/Aufsichten-Lehrkraefte/Aufsichten-Lehrkraefte.tex"
+    assert jobs["aufsichten_schueler"]["enabled"] is False
