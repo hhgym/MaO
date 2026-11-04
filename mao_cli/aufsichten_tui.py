@@ -146,17 +146,21 @@ def run_tui(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, appl
     ui = Ui()
     rows = model.rows
     result: dict[str, Any] = {"eintraege": 0, "geschrieben": False}
-    math_names = [t for t in model.teachers if t[3]] or model.teachers
 
-    def teacher_panel(show: list[tuple[str, str, str, bool]]) -> list[str]:
-        text = "; ".join(f"{k} {n}".strip() for k, _v, n, _m in show)
-        out, line = [], ""
-        for part in text.split("; "):
-            if len(line) + len(part) > 90:
-                out.append(line)
-                line = ""
-            line += (part + "; ")
-        return (out + [line])[:6]
+    def wrap(label: str, items: list[str], style: str = "") -> list[str]:
+        lines, line = [], f"{label}: "
+        for item in items or ["-"]:
+            if len(line) + len(item) > 96:
+                lines.append(line.rstrip("; "))
+                line = "    "
+            line += item + "; "
+        lines.append(line.rstrip("; "))
+        return [f"{style}{x}{RESET if style else ''}" for x in lines]
+
+    def teacher_panel(everyone: bool) -> list[str]:
+        free, placed, title = model.overview(everyone)
+        return ([f"{title}: noch frei {len(free)}, verplant {len(placed)}"] + wrap("  Noch nicht verplant", free)
+                + wrap("  Schon verplant", placed, DIM))[:12]
 
     def prompt(text: str, action: Callable[[], None]) -> None:
         ui.mode, ui.confirm_text, ui.confirm_action = "confirm", text, action
@@ -255,9 +259,7 @@ def run_tui(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, appl
         elif key == "u":
             ui.message = "Zurückgenommen" if model.undo() else "Nichts zum Zurücknehmen"
         elif key in ("l", "L"):
-            ui.panel = [] if ui.panel and ui.message == "" and ui.panel[0].startswith("Lehrkräfte") else \
-                ["Lehrkräfte (" + ("alle" if key == "L" else "Mathematik") + "):"] + teacher_panel(
-                    model.teachers if key == "L" else math_names)
+            ui.panel = teacher_panel(key == "L")
         elif key == "r":
             if not model.short:
                 ui.message = "Keine Kurzräume (Stufe ≤ 6) in der Raumzuteilung"

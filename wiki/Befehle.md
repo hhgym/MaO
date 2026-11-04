@@ -240,7 +240,7 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
     Fachaufsicht und Reserve). Mit den Pfeiltasten die Zeile wählen, `Enter` bearbeitet sie (Kürzel eintippen, `Tab`
     ergänzt, `+KÜ`/`-KÜ` ändert nur), `Leertaste` markiert eine Zeile und tauscht sie mit der nächsten markierten,
     `r` zeigt den Rotationsvorschlag für Kurzräume (`j` übernimmt), `u` nimmt zurück, `l`/`L` zeigen die Lehrkräfte
-    (Mathematik/alle), `s` prüft (Diff `+`/`−`) und schreibt mit `--apply` nach `j` alles in einer Transaktion, `q` beendet.
+    (Mathematik/alle) getrennt nach „noch nicht verplant“ und „schon verplant“ (mit Raum bzw. Fach/Reserve) in der aktuellen Sitzung, `s` prüft (Diff `+`/`−`) und schreibt mit `--apply` nach `j` alles in einer Transaktion, `q` beendet.
     Ohne Zusatzpaket; braucht ein Terminal. Mit `--einfach` gibt es stattdessen die zeilenweise Eingabe:
     `mao aufsichten --interaktiv --einfach` zeigt eine Tabelle aller belegten Räume
     mit der Aufsicht und bearbeitet sie in einer Sitzung; abgeschickt wird erst am Ende:
