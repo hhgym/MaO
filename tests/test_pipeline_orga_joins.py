@@ -89,7 +89,7 @@ def test_aufsichten_pipeline_steps_are_consistent():
     for token in ("aufsichten_table", "teachers_table", "rooms_table", "extern_teilnahmen_table",
                   "jahrgaenge_table", "schuljahre_table", "orga_view"):
         assert "{{table.%s}}" % token in ds["sql"]
-    for column in ("kuerzel", "name", "raum", "klassenstufen", "rolle", "bemerkung"):
+    for column in ("kuerzel", "name", "raum", "klassenstufen", "rolle", "bemerkungen"):
         assert f" AS {column}" in ds["sql"]
     exports = {e["id"]: e for e in cfg["exports"] if e.get("from_dataset") == "aufsichten_lehrkraefte"}
     assert {e["output"]["path"] for e in exports.values()} == {
