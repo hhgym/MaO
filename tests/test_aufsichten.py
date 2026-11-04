@@ -134,6 +134,10 @@ class SCur(Cur):
             return [(1,)]
         if "SELECT id, kuerzel, aktiv" in s:
             return [(1, "AB", 1), (2, "CD", 1), (3, "EF", 0)]
+        if "SELECT DISTINCT raum_id, COALESCE" in s:
+            return getattr(self, "levels", [(1, 5), (1, 6)])
+        if "SELECT DISTINCT raum_id, klassenstufe" in s:
+            return getattr(self, "ext_levels", [(2, 4)])
         if "MAX(COALESCE" in s:
             return getattr(self, "short", [(1, 5)])
         if "SELECT a.lehrkraft_id, j.jahrgang_nr" in s:
@@ -395,3 +399,87 @@ def test_overview_shows_who_is_not_yet_placed_in_this_session(tmp_path):
     _result, frames = drive(m, db, ["l", "L", "q", "j"])
     text = "".join(frames)
     assert "Noch nicht verplant" in text and "AB Alpha" in text and "CD (X1, Fach)" in text
+
+
+def test_levels_are_shown_in_both_views(tmp_path):
+    db, _cur, m = make_model(tmp_path)
+    assert m.level_text("R1") == "5, 6" and m.level_text("X1") == "E4" and m.level_text("reserve") == ""
+    _r, frames = drive(m, db, ["q"])
+    assert any("Stufen" in f and "5, 6" in f and "E4" in f for f in frames)
+    _c, _res, text = session(tmp_path, ["q"])
+    assert "Stufen" in text and "5, 6" in text and "E4" in text
+
+
+def test_draft_roundtrip_load_and_clear(tmp_path):
+    db, _cur, m = make_model(tmp_path)
+    draft = a.Draft(tmp_path, tmp_path / "cfg")
+    assert draft.load_into(m) == "" and not m.changed
+    m.edit("R1", ["CD"])
+    m.edit("reserve", ["AB", "CD"])
+    assert m.changed
+    path = draft.save(m)
+    assert path.name == "aufsichten-plan.yaml" and not m.changed and not list(tmp_path.glob("*.tmp"))
+    text = path.read_text(encoding="utf-8")
+    assert "# 15 Teilnehmende, Stufe 5, 6" in text and "reserve: [AB, CD]" in text
+    _db2, _cur2, fresh = make_model(tmp_path)
+    assert fresh.team("R1") == ["AB"]
+    assert draft.load_into(fresh).startswith("Entwurf aufsichten-plan.yaml geladen")
+    assert fresh.team("R1") == ["CD"] and fresh.state["reserve"] == ["AB", "CD"] and not fresh.changed
+    path.write_text('raeume:\n  "R1": [ZZ]\n', encoding="utf-8")
+    with pytest.raises(r.RoomError, match="unbekannte Kürzel ZZ"):
+        draft.load_into(fresh)
+    path.write_text('raeume:\n  "NOPE": [AB]\nfoo: 1\n', encoding="utf-8")
+    with pytest.raises(r.RoomError, match="erlaubt sind nur"):
+        draft.load_into(fresh)
+    path.write_text('raeume:\n  "NOPE": [AB]\n', encoding="utf-8")
+    assert "NOPE" in draft.load_into(fresh)
+    assert draft.clear() and not draft.clear()
+
+
+def test_tui_dry_run_saves_draft_and_apply_clears_it(tmp_path):
+    db, cur, m = make_model(tmp_path)
+    draft = a.Draft(tmp_path, tmp_path / "cfg")
+    frames: list[str] = []
+    seq = iter(["enter", "backspace", "backspace", "backspace", "enter", "s", "q"])
+    tui.run_tui(m, db, TABLES_IA, apply=False, read=lambda: next(seq), write=frames.append, size=lambda: (30, 120), draft=draft)
+    assert draft.path.exists() and "Entwurf gespeichert" in "".join(frames) and not cur.writes
+    db2, cur2, m2 = make_model(tmp_path)
+    draft.load_into(m2)
+    assert m2.team("R1") == []
+    seq = iter(["s", "j"])
+    result = tui.run_tui(m2, db2, TABLES_IA, apply=True, read=lambda: next(seq), write=lambda _t: None, size=lambda: (30, 120), draft=draft)
+    assert result["geschrieben"] and result["entwurf_geloescht"] and not draft.path.exists()
+
+
+def test_tui_quit_offers_save_or_discard_of_draft(tmp_path):
+    db, _cur, m = make_model(tmp_path)
+    draft = a.Draft(tmp_path, tmp_path / "cfg")
+    seq = iter(["enter", "backspace", "backspace", "backspace", "enter", "w", "q", "esc", "q", "v"])
+    tui.run_tui(m, db, TABLES_IA, apply=False, read=lambda: next(seq), write=lambda _t: None, size=lambda: (30, 120), draft=draft)
+    assert draft.path.exists()  # w hat gespeichert, q danach ohne neue Änderung beendet direkt
+    db, _cur, m = make_model(tmp_path)
+    draft2 = a.Draft(tmp_path, tmp_path / "cfg", Path("zwei.yaml"))
+    seq = iter(["enter", "backspace", "backspace", "backspace", "enter", "q", "j"])
+    result = tui.run_tui(m, db, TABLES_IA, apply=False, read=lambda: next(seq), write=lambda _t: None, size=lambda: (30, 120), draft=draft2)
+    assert draft2.path.exists() and "Entwurf gespeichert" in result["entwurf"]
+    db, _cur, m = make_model(tmp_path)
+    draft3 = a.Draft(tmp_path, tmp_path / "cfg", Path("drei.yaml"))
+    seq = iter(["enter", "backspace", "backspace", "backspace", "enter", "q", "v"])
+    tui.run_tui(m, db, TABLES_IA, apply=False, read=lambda: next(seq), write=lambda _t: None, size=lambda: (30, 120), draft=draft3)
+    assert not draft3.path.exists()
+
+
+def test_line_mode_saves_draft_on_dry_run_fertig_and_w(tmp_path):
+    (tmp_path / "raumregeln.yaml").write_text('rooms:\n  grade_rooms: {"5": [R1]}\n', encoding="utf-8")
+    db, cur, m = make_model(tmp_path)
+    draft = a.Draft(tmp_path, tmp_path / "cfg")
+    lines, answers = [], iter(["R1 -", "fertig"])
+    a.interactive_supervision(db, tmp_path, TABLES_IA, apply=False, workspace=tmp_path, ask=lambda _p: next(answers),
+                              out=lines.append, draft=draft, model=m)
+    assert draft.path.exists() and any("Entwurf gespeichert" in x for x in lines)
+    draft.clear()
+    db, cur, m = make_model(tmp_path)
+    lines, answers = [], iter(["R1 -", "w", "R1 AB", "q", "n"])
+    a.interactive_supervision(db, tmp_path, TABLES_IA, apply=False, workspace=tmp_path, ask=lambda _p: next(answers),
+                              out=lines.append, draft=draft, model=m)
+    assert draft.path.exists() and '"R1": []' in draft.path.read_text(encoding="utf-8")

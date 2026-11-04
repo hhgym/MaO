@@ -248,6 +248,11 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
     Fachaufsicht und Reserve, `tausch 105 204` tauscht zwei Raum-Teams, `tausch GER NIX` zwei Personen, `u` nimmt zurück,
     `z` zeigt die Tabelle, `l`/`la` listen die Lehrkräfte (Mathematik zuerst/alle). `fertig` zeigt die Änderungen (`+`/`−`)
     und schreibt mit `--apply` nach `j` alles in einer Transaktion; `q` bricht ab.
+  - **Stufen und Entwurf:** Die Tabelle zeigt je Raum die schreibenden Stufen (`5, 6`; Externe als `E4`). Im Dry-Run
+    (ohne `--apply`) speichern `s`/`fertig` und `w` den Stand als Entwurf `aufsichten-plan.yaml` im Jahrgangsordner
+    (beim Beenden mit Änderungen wird gefragt). Jeder erneute Aufruf von `mao aufsichten --interaktiv` startet mit diesem
+    Entwurf; so lässt sich ein Stand über mehrere Sitzungen weiterbearbeiten, bis er mit `--apply` bestätigt wird. Danach
+    wird der Entwurf gelöscht. `--neu` ignoriert einen vorhandenen Entwurf, `--plan DATEI.yaml` nimmt eine andere Datei.
   - **Kurzräume rotieren:** Räume, in denen nur Stufe 5/6 schreibt (2 statt 4 Stunden, in der Tabelle mit `K`), besetzt
     `kurz` per Vorschlag: aus den eingeteilten Lehrkräften kommt zuerst, wer in früheren Jahrgängen am seltensten und
     am längsten nicht in einem Kurzraum war (Grundlage: `archive_table` und frühere Aufsichten). Wer in den Kurzraum

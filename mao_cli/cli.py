@@ -25,7 +25,7 @@ from .updater import UpdateError, plan_update, run_update, update_notice
 from .workspaces import (resolve_config_dir, find_conflict_copies, write_pointer, CONFIG_FOLDER, TEX_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
                          resolve_workspace, write_wrapper, check_year)
 from .year_ops import preliminary_plan, database_preflight
-from .aufsichten import (apply_plan, check_aufsichten, export_plan, interactive_supervision, load_supervision_model,
+from .aufsichten import (PLAN_FILE, Draft, apply_plan, check_aufsichten, export_plan, interactive_supervision, load_supervision_model,
                          set_supervision)
 from .aufsichten_tui import tui_supervision
 from .extern import ExternError, assign_extern_rooms, import_extern
@@ -211,6 +211,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     sup.add_argument("--plan", type=Path, metavar="DATEI.yaml",
                      help="Plandatei mit der Datenbank abgleichen (Dry-Run, --apply schreibt alle Änderungen in einer Transaktion)")
     sup.add_argument("--interaktiv", action="store_true", help="Alle Aufsichten in einer Tabelle mit Cursor bearbeiten und gesammelt abschicken (Terminal nötig)")
+    sup.add_argument("--neu", action="store_true",
+                     help="Mit --interaktiv: vorhandenen Entwurf (aufsichten-plan.yaml bzw. --plan DATEI) ignorieren und aus der Datenbank starten")
     sup.add_argument("--einfach", action="store_true", help="Mit --interaktiv: zeilenweise Eingabe statt Tabellenansicht (z. B. in einfachen Konsolen)")
     sup.add_argument("--report", type=Path, metavar="DATEI.json", help="Bericht im Workspace speichern")
 
@@ -630,7 +632,7 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
             db_config = load_db_config(config_dir)
             if not can_reach(db_config.host, db_config.port, timeout=3):
                 raise ConnectionError("Datenbank für die Aufsichtenprüfung nicht erreichbar")
-            if args.plan_exportieren or args.plan:
+            if args.plan_exportieren or (args.plan and not args.interaktiv):
                 if args.interaktiv or args.lehrkraft or (args.plan_exportieren and args.plan):
                     raise ConfigurationError("--plan/--plan-exportieren nicht mit --lehrkraft, --interaktiv oder untereinander kombinieren")
                 with DB(db_config) as db:
@@ -652,13 +654,19 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                     if args.interaktiv:
                         if not sys.stdin.isatty():
                             raise ConfigurationError("--interaktiv braucht ein Terminal")
+                        draft = Draft(workspace, config_dir, args.plan or Path(PLAN_FILE))
+                        model = load_supervision_model(db, config_dir, tables, workspace)
+                        if not args.neu:
+                            note = draft.load_into(model)
+                            if note:
+                                LOGGER.info("%s (ignorieren mit --neu)", note)
                         if args.einfach:
-                            interactive_supervision(db, config_dir, tables, apply=args.apply, workspace=workspace)
+                            interactive_supervision(db, config_dir, tables, apply=args.apply, workspace=workspace,
+                                                    draft=draft, model=model)
                         else:
-                            outcome = tui_supervision(load_supervision_model(db, config_dir, tables, workspace), db, tables,
-                                                      apply=args.apply)
+                            outcome = tui_supervision(model, db, tables, apply=args.apply, draft=draft)
                             LOGGER.info("Aufsichten bearbeitet: %d Änderungen, %s", outcome["eintraege"],
-                                        "geschrieben" if outcome["geschrieben"] else "nichts geschrieben")
+                                        "geschrieben" if outcome["geschrieben"] else "nicht in die Datenbank geschrieben")
                     else:
                         set_supervision(db, tables, room=args.raum, kuerzel=args.lehrkraft, role=args.rolle,
                                         remove=args.entfernen, dry_run=not args.apply)

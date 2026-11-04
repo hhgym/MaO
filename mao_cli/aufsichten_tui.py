@@ -12,7 +12,7 @@ import sys
 from contextlib import contextmanager
 from typing import Any, Callable, Iterator, Mapping
 
-from .aufsichten import SupervisionModel, apply_plan_data
+from .aufsichten import Draft, SupervisionModel, apply_plan_data
 from .rooms import RoomError
 
 REVERSE, RESET, DIM = "\x1b[7m", "\x1b[0m", "\x1b[2m"
@@ -90,15 +90,15 @@ class Ui:
         self.cursor, self.top, self.mode = 0, 0, "browse"
         self.message, self.panel = "", []  # type: str, list[str]
         self.buffer, self.pos, self.mark = "", 0, None  # type: str, int, str | None
-        self.confirm_text, self.confirm_action = "", None  # type: str, Callable[[], None] | None
+        self.confirm_text, self.confirm_actions = "", {}  # type: str, dict[str, Callable[[], None]]
 
 
 def render(model: SupervisionModel, ui: Ui, height: int, width: int) -> str:
     rows = model.rows()
     body_h = max(4, height - 9 - len(ui.panel))
     ui.top = min(max(ui.top, ui.cursor - body_h + 1), ui.cursor) if len(rows) > body_h else 0
-    lines = ["Aufsichten  ↑↓ wählen · Enter bearbeiten · Leertaste markieren/tauschen · r Rotation · u zurück · s abschicken · q Ende",
-             f"{'':2}{'Raum':<12}{'Tn':>4}  Aufsicht"]
+    lines = ["Aufsichten  ↑↓ wählen · Enter bearbeiten · Leertaste tauschen · r Rotation · u zurück · l Lehrkräfte · w Entwurf · s Diff/abschicken · q Ende",
+             f"{'':2}{'Raum':<12}{'Tn':>4}  {'Stufen':<14}Aufsicht"]
     for index in range(ui.top, min(len(rows), ui.top + body_h)):
         row = rows[index]
         if row in model.ROLE_KEYS:
@@ -106,7 +106,7 @@ def render(model: SupervisionModel, ui: Ui, height: int, width: int) -> str:
         else:
             name, count = row + ("  K" if row in model.short else ""), str(model.counts.get(row, 0))
         gap = "  <-- fehlt" if model.gap(row) else ""
-        text = f"{'*' if ui.mark == row else ' '} {name:<12}{count:>4}  {' '.join(model.team(row)) or '-'}{gap}"
+        text = f"{'*' if ui.mark == row else ' '} {name:<12}{count:>4}  {model.level_text(row):<14}{' '.join(model.team(row)) or '-'}{gap}"
         text = text[:max(20, width - 1)]
         lines.append(f"{REVERSE}{text:<{max(20, width - 1)}}{RESET}" if index == ui.cursor and ui.mode != "edit" else text)
     lines.append(f"{DIM}K = Kurzraum (Stufe ≤ 6, 2 Stunden){RESET}" if model.short else "")
@@ -117,7 +117,7 @@ def render(model: SupervisionModel, ui: Ui, height: int, width: int) -> str:
         before, here, after = ui.buffer[:ui.pos], ui.buffer[ui.pos:ui.pos + 1] or " ", ui.buffer[ui.pos + 1:]
         lines.append(f"{row} › {before}{REVERSE}{here}{RESET}{after}   (Enter ok · Esc abbrechen · Tab ergänzt · +KÜ/-KÜ ändert)")
     elif ui.mode == "confirm":
-        lines.append(f"{ui.confirm_text} [j/n]")
+        lines.append(ui.confirm_text)
     else:
         lines.append("")
     return "\x1b[H\x1b[J" + "\r\n".join(lines)
@@ -141,6 +141,7 @@ def _complete(model: SupervisionModel, ui: Ui) -> None:
 
 
 def run_tui(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, apply: bool, read: Callable[[], str],
+            draft: Draft | None = None,
             write: Callable[[str], Any], size: Callable[[], tuple[int, int]] = lambda: tuple(shutil.get_terminal_size((100, 30))),  # type: ignore[assignment,return-value]
             ) -> dict[str, Any]:
     ui = Ui()
@@ -162,8 +163,11 @@ def run_tui(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, appl
         return ([f"{title}: noch frei {len(free)}, verplant {len(placed)}"] + wrap("  Noch nicht verplant", free)
                 + wrap("  Schon verplant", placed, DIM))[:12]
 
-    def prompt(text: str, action: Callable[[], None]) -> None:
-        ui.mode, ui.confirm_text, ui.confirm_action = "confirm", text, action
+    def prompt(text: str, action: Callable[[], None], extra: dict[str, Callable[[], None]] | None = None) -> None:
+        ui.mode, ui.confirm_text, ui.confirm_actions = "confirm", text, {"j": action, **(extra or {})}
+
+    def save_draft() -> str:
+        return f"Entwurf gespeichert: {draft.save(model)}" if draft else "Kein Entwurf-Ziel"
 
     def save() -> None:
         try:
@@ -180,22 +184,24 @@ def run_tui(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, appl
         if not changes:
             ui.message = "Keine Änderungen"
         elif not apply:
-            ui.message = "DRY-RUN: nichts geschrieben (zum Schreiben mit --apply starten)"
+            ui.message = "DRY-RUN: nichts in die Datenbank geschrieben. " + (
+                save_draft() + " – weiterbearbeiten: erneut --interaktiv, bestätigen: --apply" if draft else "")
         else:
             def commit() -> None:
                 apply_plan_data(db, tables, model.plan(), dry_run=False)
                 result["geschrieben"] = True
+                result["entwurf_geloescht"] = bool(draft and draft.clear())
                 ui.mode = "done"
-            prompt("In die Datenbank schreiben?", commit)
+            prompt("In die Datenbank schreiben? [j/n]", commit)
 
     while ui.mode != "done":
         height, width = size()
         write(render(model, ui, height, width))
         key = read()
         if ui.mode == "confirm":
-            action = ui.confirm_action
-            ui.mode, ui.confirm_action = "browse", None
-            if key.lower() == "j" and action:
+            action = ui.confirm_actions.get(key.lower())
+            ui.mode, ui.confirm_actions = "browse", {}
+            if action:
                 action()
             else:
                 ui.message = "Abgebrochen"
@@ -273,7 +279,9 @@ def run_tui(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, appl
                 def adopt() -> None:
                     model.adopt(prop)
                     ui.panel = []
-                prompt("Vorschlag übernehmen?", adopt)
+                prompt("Vorschlag übernehmen? [j/n]", adopt)
+        elif key == "w":
+            ui.message = save_draft()
         elif key == "s":
             save()
         elif key in ("q", "esc"):
@@ -281,18 +289,27 @@ def run_tui(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, appl
                 def leave() -> None:
                     ui.mode = "done"
                     result["eintraege"] = 0
-                prompt("Änderungen verwerfen und beenden?", leave)
+
+                def keep() -> None:
+                    result["entwurf"] = save_draft()
+                    leave()
+                if draft:
+                    prompt("Ungespeicherte Änderungen: Entwurf speichern und beenden (j) · verwerfen und beenden (v) · zurück (Esc)",
+                           keep, {"v": leave})
+                else:
+                    prompt("Änderungen verwerfen und beenden? [j/n]", leave)
             else:
                 ui.mode = "done"
     write("")
     return result
 
 
-def tui_supervision(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, apply: bool) -> dict[str, Any]:
+def tui_supervision(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, apply: bool,
+                    draft: Draft | None = None) -> dict[str, Any]:
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         raise RoomError("Die Tabellenansicht braucht ein Terminal (sonst --einfach verwenden)")
     with terminal() as read:
         def write(text: str) -> None:
             sys.stdout.write(text)
             sys.stdout.flush()
-        return run_tui(model, db, tables, apply=apply, read=read, write=write)
+        return run_tui(model, db, tables, apply=apply, read=read, write=write, draft=draft)
