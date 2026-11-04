@@ -124,3 +124,17 @@ def test_cli_workspace_profile_smoke(monkeypatch, tmp_path):
     assert (workspace / 'db').exists()
     assert (workspace / '.mao-cli/exports-manifest.json').exists()
     assert cli.main(['validate','--workspace',str(workspace),'--profile','unknown']) == 2
+
+
+def test_select_latex_jobs_runs_only_named_jobs_even_if_disabled():
+    from mao_cli.config import select_latex_jobs
+    cfg = {'latex': {'jobs': [{'name': 'a', 'enabled': False}, {'name': 'b', 'enabled': True}, {'name': 'c'}]}}
+    select_latex_jobs(cfg, ['a'])
+    assert [j['enabled'] for j in cfg['latex']['jobs']] == [True, False, False]
+    with pytest.raises(ConfigurationError, match='Unbekannter LaTeX-Job: x'):
+        select_latex_jobs(cfg, ['x'])
+
+
+def test_cli_latex_job_option_is_repeatable():
+    args = cli.parse_args(['latex', '--job', 'a', '--job', 'b'])
+    assert args.job == ['a', 'b']

@@ -304,3 +304,15 @@ def validate_profiles(cfg: Dict[str, Any], profiles: dict[str, dict[str, Any]]) 
             apply_profile(cfg, profile)
         except ConfigurationError as exc:
             raise ConfigurationError(f"Profil '{name}': {exc}") from exc
+
+
+def select_latex_jobs(cfg: Dict[str, Any], names: list[str]) -> Dict[str, Any]:
+    """Nur die genannten LaTeX-Jobs ausführen (auch wenn sie ausgeschaltet sind); alle anderen aus."""
+    jobs = (cfg.get("latex") or {}).get("jobs", [])
+    known = {str(job.get("name")) for job in jobs}
+    unknown = [name for name in names if name not in known]
+    if unknown:
+        raise ConfigurationError(f"Unbekannter LaTeX-Job: {', '.join(unknown)} (vorhanden: {', '.join(sorted(known))})")
+    for job in jobs:
+        job["enabled"] = str(job.get("name")) in names
+    return cfg

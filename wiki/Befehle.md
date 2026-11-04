@@ -107,7 +107,7 @@ mao run --workspace "D:/MaO/2026-27" --profile turniertag --no-latex
 mao run --workspace "D:/MaO/2026-27" --profile ergebnisse --mao 66
 ```
 
-Optionen: `--no-latex` und `--mao NUMMER` (nur Dokumentnummer).
+Optionen: `--no-latex`, `--mao NUMMER` (nur Dokumentnummer) und `--job NAME` (nur dieser LaTeX-Job, mehrfach angebbar; die Exporte laufen wie gewohnt).
 
 ## `mao latex`
 
@@ -118,6 +118,8 @@ mao latex --workspace "D:/MaO/2026-27" --profile ergebnisse --mao 66
 ```
 
 Wenn `--mao` fehlt, wird die Jahrgangsnummer rechnerisch anhand des Datums bestimmt. Für vergangene oder künftige Wettbewerbsjahrgänge deshalb `--mao` ausdrücklich setzen.
+
+Einzelne Jobs: `mao latex --job aufsichten_lehrkraefte` (mehrfach angebbar). Der Job läuft auch, wenn er in der Pipeline ausgeschaltet ist; alle anderen entfallen. Unbekannte Namen werden mit der Liste der vorhandenen Jobs abgelehnt. Die Namen stehen unter `latex.jobs` in der `pipeline.yaml`.
 
 ## `mao update`
 
