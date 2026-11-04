@@ -632,6 +632,21 @@ class SupervisionModel:
     def gap(self, row: str) -> bool:
         return row not in self.ROLE_KEYS and bool(self.counts.get(row)) and len(self.team(row)) < self.need
 
+    def overview(self, everyone: bool = False) -> tuple[list[str], list[str], str]:
+        """Lehrkräfte (Mathematik, sonst alle) in dieser Sitzung: (noch frei, schon verplant mit Ort, Überschrift)."""
+        math = [t for t in self.teachers if t[3]]
+        shown = self.teachers if everyone or not math else math
+        names = {"fachaufsicht": "Fach", "reserve": "Reserve"}
+        free: list[str] = []
+        placed: list[str] = []
+        for k, v, n, _m in shown:
+            spots = self.where(k.upper())
+            if spots:
+                placed.append(f"{k} ({', '.join(names.get(r, r) for r in spots)})")
+            else:
+                free.append(" ".join(x for x in (k, n) if x))
+        return free, placed, ("alle Lehrkräfte" if everyone or not math else "Mathematik-Lehrkräfte")
+
     def history_text(self, k: str) -> str:
         past = self.history.get(k, [])
         return "noch nie" if not past else f"{len(past)}× (zuletzt Jahrgang {max(past)})"
@@ -734,8 +749,9 @@ def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str]
         if low in ("z", "zeige"):
             table()
         elif low in ("l", "la"):
-            shown = [t for t in model.teachers if low == "la" or t[3] or not has_math]
-            out("  " + "; ".join(f"{k} {v} {n}".replace("  ", " ").strip() for k, v, n, _m in shown))
+            free, placed, title = model.overview(low == "la")
+            out(f"  {title}: noch nicht verplant ({len(free)}): " + ("; ".join(free) or "-"))
+            out(f"  schon verplant ({len(placed)}): " + ("; ".join(placed) or "-"))
         elif low == "u":
             if model.undo():
                 table()

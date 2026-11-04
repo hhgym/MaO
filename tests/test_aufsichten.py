@@ -266,7 +266,7 @@ def session(tmp_path, inputs, apply=False, cur=None, tables=None):
 
 def test_session_shows_table_with_short_room_and_math_list(tmp_path):
     _cur, result, text = session(tmp_path, ["l", "la", "q"])
-    assert any(x.startswith("R1") and " K " in x for x in text.splitlines()) and "X1" in text and "Fachaufsicht: -" in text and "Alpha" in text and result["eintraege"] == 0
+    assert any(x.startswith("R1") and " K " in x for x in text.splitlines()) and "X1" in text and "Fachaufsicht: -" in text and "schon verplant (2): AB (R1); CD (X1)" in text and result["eintraege"] == 0
 
 
 def test_session_kurz_proposal_and_apply_in_one_go(tmp_path):
@@ -383,3 +383,15 @@ def test_tui_supervision_needs_terminal(tmp_path):
     db, cur, m = make_model(tmp_path)
     with pytest.raises(r.RoomError, match="Terminal"):
         tui.tui_supervision(m, db, TABLES_IA, apply=False)
+
+
+def test_overview_shows_who_is_not_yet_placed_in_this_session(tmp_path):
+    db, _cur, m = make_model(tmp_path)
+    assert m.overview() == ([], ["AB (R1)"], "Mathematik-Lehrkräfte")
+    m.edit("R1", ["-"])
+    m.edit("fachaufsicht", ["CD"])
+    assert m.overview() == (["AB Alpha"], [], "Mathematik-Lehrkräfte")
+    assert m.overview(True) == (["AB Alpha"], ["CD (X1, Fach)"], "alle Lehrkräfte")
+    _result, frames = drive(m, db, ["l", "L", "q", "j"])
+    text = "".join(frames)
+    assert "Noch nicht verplant" in text and "AB Alpha" in text and "CD (X1, Fach)" in text
