@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import date
 from pathlib import Path
 from typing import Any, Mapping
@@ -323,22 +324,89 @@ def export_plan(db: Any, config_dir: Path, tables: Mapping[str, str], workspace:
         elif role in roleless:
             roleless[role].append(names.get(lk, (str(lk), None))[0])
     codes = sorted(set(ctx["counts"]) | set(standard))
-    lines = ["# Aufsichtenplan: Kürzel je Raum eintragen/tauschen, dann prüfen mit",
-             f"#   mao aufsichten --plan {name} --dry-run   und schreiben mit   --apply",
-             "# Abschnitte, die fehlen, bleiben unverändert. Ein Eintrag in der Datei = Zielzustand (Rest wird entfernt).",
-             "", "raeume:"]
-    for code in codes:
-        who = ", ".join(standard.get(code, []))
-        lines.append(f'  "{code}": [{who}]  # {ctx["counts"].get(code, 0)} Teilnehmende')
-    lines += ["", "# Wettkampfleitung (ohne Raum)", f"fachaufsicht: [{', '.join(roleless['Fachaufsicht'])}]",
-              "# Springer (ohne Raum)", f"reserve: [{', '.join(roleless['Reserve'])}]", ""]
+    state = {"raeume": {c: standard.get(c, []) for c in codes}, "fachaufsicht": roleless["Fachaufsicht"],
+             "reserve": roleless["Reserve"]}
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
         with target.open("x", encoding="utf-8", newline="") as file:
-            file.write("\n".join(lines))
+            file.write(plan_text(state, ctx["counts"], {}, name))
     except FileExistsError as exc:
         raise RoomError(f"Plandatei existiert bereits und wird nicht überschrieben: {target}") from exc
     return target
+
+
+def plan_text(state: Mapping[str, Any], counts: Mapping[str, int], levels: Mapping[str, list[str]], name: Path) -> str:
+    lines = ["# Aufsichtenplan: Kürzel je Raum eintragen/tauschen, dann prüfen mit",
+             f"#   mao aufsichten --plan {name} --dry-run   und schreiben mit   --apply",
+             "#   (oder weiterbearbeiten mit: mao aufsichten --interaktiv)",
+             "# Abschnitte, die fehlen, bleiben unverändert. Ein Eintrag in der Datei = Zielzustand (Rest wird entfernt).",
+             "", "raeume:"]
+    for code in sorted(state["raeume"]):
+        who = ", ".join(state["raeume"][code])
+        stufen = f", Stufe {', '.join(levels[code])}" if levels.get(code) else ""
+        lines.append(f'  "{code}": [{who}]  # {counts.get(code, 0)} Teilnehmende{stufen}')
+    lines += ["", "# Wettkampfleitung (ohne Raum)", f"fachaufsicht: [{', '.join(state['fachaufsicht'])}]",
+              "# Springer (ohne Raum)", f"reserve: [{', '.join(state['reserve'])}]", ""]
+    return "\n".join(lines)
+
+
+class Draft:
+    """Entwurf der Aufsichten im Workspace (aufsichten-plan.yaml): Zwischenstand bis zum Bestätigen mit --apply."""
+
+    def __init__(self, workspace: Path, config_dir: Path, name: Path = Path(PLAN_FILE)) -> None:
+        self.name, self.path = name, _plan_path(workspace, config_dir, name)
+
+    def save(self, model: "SupervisionModel") -> Path:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        tmp.write_text(plan_text(model.state, model.counts, model.levels, self.name), encoding="utf-8", newline="")
+        os.replace(tmp, self.path)
+        model.mark_saved()
+        return self.path
+
+    def clear(self) -> bool:
+        try:
+            self.path.unlink()
+            return True
+        except FileNotFoundError:
+            return False
+
+    def load_into(self, model: "SupervisionModel") -> str:
+        """Entwurf als Ausgangsstand übernehmen; liefert eine Meldung ('' = keine Datei)."""
+        import yaml
+        if not self.path.exists():
+            return ""
+        try:
+            data = yaml.safe_load(self.path.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError) as exc:
+            raise RoomError(f"Entwurf {self.name} nicht lesbar: {exc}") from exc
+        if not isinstance(data, dict) or not set(data) <= {"raeume", "fachaufsicht", "reserve"}:
+            raise RoomError(f"Entwurf {self.name}: erlaubt sind nur die Abschnitte raeume, fachaufsicht, reserve")
+
+        def names_of(value: Any, where: str) -> list[str]:
+            if value is None:
+                return []
+            if not isinstance(value, list):
+                raise RoomError(f"Entwurf {self.name}: {where} muss eine Liste von Kürzeln sein")
+            found = [str(x).strip().upper() for x in value if str(x).strip()]
+            bad = [x for x in found if x not in model.known]
+            if bad:
+                raise RoomError(f"Entwurf {self.name}: unbekannte Kürzel {', '.join(bad)} ({where})")
+            return found
+
+        ignored = []
+        if isinstance(data.get("raeume"), dict):
+            for code, value in data["raeume"].items():
+                if str(code) in model.state["raeume"]:
+                    model.state["raeume"][str(code)] = names_of(value, f"Raum {code}")
+                else:
+                    ignored.append(str(code))
+        for key in model.ROLE_KEYS:
+            if key in data:
+                model.state[key] = names_of(data[key], key)
+        model.mark_saved()
+        note = f"Entwurf {self.name} geladen"
+        return note + (f" (nicht belegte Räume ignoriert: {', '.join(ignored)})" if ignored else "")
 
 
 def apply_plan(db: Any, config_dir: Path, tables: Mapping[str, str], workspace: Path, name: Path, *,
@@ -500,6 +568,25 @@ def rotation_proposal(short_rooms: list[str], rooms_map: Mapping[str, list[str]]
     return {"raeume": new_map, "zuteilung": target, "wechsel": moves, "hinweise": notes, "rang": rank}
 
 
+def _room_levels(cur: Any, tables: Mapping[str, str], by_id: Mapping[int, str], jahrgang_id: int) -> dict[str, list[str]]:
+    """Stufen je Raum: Zahlen für den Hauptwettbewerb, E3…E6 für Externe (Grundschulen)."""
+    orga, extern = _ident(tables, "orga_table"), _ident(tables, "extern_teilnahmen_table")
+    main: dict[str, set[int]] = {}
+    ext: dict[str, set[int]] = {}
+    cur.execute(f"SELECT DISTINCT raum_id, COALESCE(stufe, CAST(SUBSTRING_INDEX(klasse, '-', 1) AS UNSIGNED)) FROM `{orga}` "
+                "WHERE raum_id IS NOT NULL")
+    for r, level in cur.fetchall():
+        if level is not None and int(r) in by_id:
+            main.setdefault(by_id[int(r)], set()).add(int(level))
+    cur.execute(f"SELECT DISTINCT raum_id, klassenstufe FROM `{extern}` WHERE raum_id IS NOT NULL AND mao_jahrgang_id = %s",
+                (jahrgang_id,))
+    for r, level in cur.fetchall():
+        if level is not None and int(r) in by_id:
+            ext.setdefault(by_id[int(r)], set()).add(int(level))
+    return {code: [str(x) for x in sorted(main.get(code, ()))] + [f"E{x}" for x in sorted(ext.get(code, ()))]
+            for code in set(main) | set(ext)}
+
+
 def _short_rooms_and_history(cur: Any, tables: Mapping[str, str], by_id: Mapping[int, str],
                              jahrgang_id: int) -> tuple[list[str], dict[int, list[int]]]:
     """Kurzräume des aktuellen Jahrgangs und je Lehrkraft die Jahrgangsnummern früherer Kurzraum-Aufsichten."""
@@ -529,8 +616,10 @@ class SupervisionModel:
     ROLE_KEYS = ("fachaufsicht", "reserve")
 
     def __init__(self, state: dict[str, Any], known: set[str], counts: Mapping[str, int], short: list[str],
-                 history: Mapping[str, list[int]], need: int, teachers: list[tuple[str, str, str, bool]]) -> None:
+                 history: Mapping[str, list[int]], need: int, teachers: list[tuple[str, str, str, bool]],
+                 levels: Mapping[str, list[str]] | None = None) -> None:
         self.state, self.known, self.counts, self.short = state, known, dict(counts), list(short)
+        self.levels = dict(levels or {})
         self.history, self.need, self.teachers = dict(history), need, teachers
         self.stack: list[str] = []
         self.original = json.dumps(state, sort_keys=True)
@@ -538,6 +627,12 @@ class SupervisionModel:
     @property
     def changed(self) -> bool:
         return json.dumps(self.state, sort_keys=True) != self.original
+
+    def mark_saved(self) -> None:
+        self.original = json.dumps(self.state, sort_keys=True)
+
+    def level_text(self, row: str) -> str:
+        return ", ".join(self.levels.get(row, [])) if row not in self.ROLE_KEYS else ""
 
     def rows(self) -> list[str]:
         return sorted(self.state["raeume"]) + list(self.ROLE_KEYS)
@@ -663,6 +758,7 @@ def load_supervision_model(db: Any, config_dir: Path, tables: Mapping[str, str],
         ctx = _load_plan_context(cur, tables)
         teachers = _teacher_list(cur, tables)
         short, history_ids = _short_rooms_and_history(cur, tables, ctx["by_id"], ctx["jahrgang_id"])
+        levels = _room_levels(cur, tables, ctx["by_id"], ctx["jahrgang_id"])
     finally:
         cur.close()
     if not ctx["counts"]:
@@ -681,7 +777,7 @@ def load_supervision_model(db: Any, config_dir: Path, tables: Mapping[str, str],
         state["raeume"].setdefault(code, [])
     history = {names[i][0].upper(): sorted(nrs) for i, nrs in history_ids.items() if i in names}
     return SupervisionModel(state, {k.upper() for k, _a in names.values()}, ctx["counts"], short, history,
-                            rules.supervisors_per_room, teachers)
+                            rules.supervisors_per_room, teachers, levels)
 
 
 def finish_supervision(db: Any, tables: Mapping[str, str], model: SupervisionModel, *, apply: bool,
@@ -713,17 +809,19 @@ def finish_supervision(db: Any, tables: Mapping[str, str], model: SupervisionMod
 
 
 def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str], *, apply: bool,
-                            workspace: Path | None = None, ask: Any = input, out: Any = print) -> dict[str, Any]:
+                            workspace: Path | None = None, ask: Any = input, out: Any = print,
+                            draft: "Draft | None" = None, model: "SupervisionModel | None" = None) -> dict[str, Any]:
     """Alle Aufsichten in einer zeilenweisen Konsolensitzung bearbeiten (Tabelle, Tausch, Rotation), dann gesammelt abschicken."""
-    model = load_supervision_model(db, config_dir, tables, workspace)
+    model = model or load_supervision_model(db, config_dir, tables, workspace)
     has_math = any(t[3] for t in model.teachers)
 
     def table() -> None:
-        out("\nRaum   Teilnehmende  Aufsicht")
+        out("\nRaum   Teilnehmende  Stufen          Aufsicht")
         for code in sorted(model.state["raeume"]):
             flag = " K" if code in model.short else "  "
             gap = "   <-- fehlt" if model.gap(code) else ""
-            out(f"{code:<6}{flag} {model.counts.get(code, 0):>5}      {' '.join(model.team(code)) or '-'}{gap}")
+            out(f"{code:<6}{flag} {model.counts.get(code, 0):>5}      {model.level_text(code):<14}  "
+                f"{' '.join(model.team(code)) or '-'}{gap}")
         out(f"Fachaufsicht: {' '.join(model.state['fachaufsicht']) or '-'} | Reserve: {' '.join(model.state['reserve']) or '-'}")
         if model.short:
             out("(K = Kurzraum, Stufe ≤ 6: 2 Stunden Aufsicht)")
@@ -734,7 +832,7 @@ def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str]
         "  tausch <Raum> <Raum> | tausch KÜ KÜ   Teams bzw. Personen tauschen\n"
         "  kurz   Rotationsvorschlag für Kurzräume zeigen, 'kurz ok' übernimmt ihn\n"
         f"  l = {'Mathematik-Lehrkräfte' if has_math else 'Lehrkräfte'}, la = alle, z = Tabelle, u = zurück, "
-        "fertig = prüfen und abschicken, q = abbrechen")
+        "w = Entwurf speichern, fertig = prüfen und abschicken, q = abbrechen")
     table()
     result: dict[str, Any] = {"eintraege": 0}
     while True:
@@ -744,8 +842,13 @@ def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str]
         cmd, *args = line.split()
         low = cmd.lower()
         if low == "q":
-            out("Abgebrochen, nichts geschrieben")
+            if draft and model.changed and str(ask("Entwurf speichern? [j/N] ")).strip().lower() == "j":
+                out(f"Entwurf gespeichert: {draft.save(model)}")
+            out("Abgebrochen, nichts in die Datenbank geschrieben")
             return result
+        if low == "w":
+            out(f"Entwurf gespeichert: {draft.save(model)}" if draft else "  Kein Entwurf-Ziel")
+            continue
         if low in ("z", "zeige"):
             table()
         elif low in ("l", "la"):
@@ -762,6 +865,10 @@ def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str]
                 db, tables, model, apply=apply, out=out,
                 confirm=lambda: str(ask("In die Datenbank schreiben? [j/N] ")).strip().lower() == "j")
             result["eintraege"] = changes
+            if draft and status in ("dry", "nein"):
+                out(f"Entwurf gespeichert: {draft.save(model)} (weiterbearbeiten: erneut --interaktiv, bestätigen: --apply)")
+            elif draft and status == "ok" and draft.clear():
+                out("Entwurf gelöscht (Stand ist in der Datenbank)")
             if status == "nein":
                 out("Nicht geschrieben (weiter bearbeiten mit Befehlen, q = abbrechen)")
             elif status != "fehler":
