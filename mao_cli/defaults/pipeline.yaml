@@ -277,7 +277,7 @@ datasets:
     sql: "SELECT * FROM {{table.aufsichten_view}}"
 
   # Lehrkraft-Aufsichten des aktuellen Jahrgangs (Tabelle aufsichten_table, Pflege: mao aufsichten).
-  # Eine Zeile je Eintrag; Reserve/Fachaufsicht haben keinen Raum (raum leer).
+  # Eine Zeile je Eintrag; name = Titel (z. B. Dr.), Vorname, Nachname; Reserve/Fachaufsicht haben keinen Raum (raum leer).
   # klassenstufen = Stufen der Teilnehmenden im Raum in eckigen Klammern, z. B. [5, 6] (Hauptwettbewerb und Externe);
   # leer, wenn kein Raum. Leere Werte werden hier gesetzt, damit die TeX-Vorlage keine Fallunterscheidung braucht.
   - name: aufsichten_lehrkraefte
@@ -286,7 +286,7 @@ datasets:
     sql: |
       SELECT
         t.kuerzel AS kuerzel,
-        TRIM(CONCAT(COALESCE(t.vorname, ''), ' ', COALESCE(t.nachname, ''))) AS name,
+        TRIM(CONCAT_WS(' ', NULLIF(t.titel, ''), NULLIF(t.vorname, ''), t.nachname)) AS name,
         COALESCE(r.raumcode, '') AS raum,
         CASE WHEN st.stufen IS NULL THEN '' ELSE CONCAT('[', st.stufen, ']') END AS klassenstufen,
         a.rolle AS rolle,
