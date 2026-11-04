@@ -33,6 +33,11 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 - `mao aufsichten` kann jetzt auch setzen: `--raum CODE --lehrkraft KÜRZEL…` (`--rolle Reserve|Fachaufsicht` ohne Raum, `--entfernen`), Dry-Run/`--apply`; `--interaktiv` besetzt Räume ohne Aufsicht Schritt für Schritt (Mathematik-Lehrkräfte zuerst gelistet, wenn `teacher_subjects_table`/`subjects_table` gesetzt sind). Neue optionale tables.ini-Schlüssel: `teacher_subjects_table`, `subjects_table`.
 - `mao aufsichten`: die Fachaufsicht ist die Wettkampfleitung und gehört keinem Raum an (Hinweis, wenn keine eingetragen ist).
 
+### Aufsichtspläne als PDF (Pipeline)
+
+- Neues Dataset `aufsichten_lehrkraefte` (Aufsichten des aktuellen Jahrgangs mit Kürzel, Name, Raum, Stufen im Raum, Rolle, Bemerkung), zwei Exporte (`db/Aufsichten/Aufsichten-Lehrkraefte.csv` nach Kürzel, `Aufsichten-Raeume.csv` nach Raum) und der LaTeX-Job `aufsichten_lehrkraefte` (Vorlage `tex/Aufsichten-Lehrkraefte/Aufsichten-Lehrkraefte.tex`).
+- Job `aufsichten_schueler` (Vorlage `tex/Aufsichten-Schueler/Aufsichten-Schueler.tex`, liest `Einsatz-Oberstufe.csv`) ist vorbereitet, aber ausgeschaltet, bis der Export der Oberstufen-Einsätze in der Pipeline existiert.
+
 ### Aufsichtenprüfung (`mao aufsichten`)
 
 - Neuer, nur lesender Befehl: prüft nach der Raumzuteilung, ob jeder belegte Raum (auch die der Externen) die vorgesehene Zahl Lehrkraft-Aufsichten hat, und meldet Plätze ohne Lehrkraft, Doppelbelegungen, nicht mehr aktive Lehrkräfte und Einträge in leeren Räumen. Regeln im Abschnitt `aufsichten` der `raumregeln.yaml`; neuer tables.ini-Schlüssel `aufsichten_table`.

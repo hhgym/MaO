@@ -25,7 +25,7 @@ def original_data():
         'aufgabe_1': 3, 'aufgabe_2': 3, 'aufgabe_3': 4, 'aufgabe_4': 2,
         'punkte': 12, 'preis': '1. Preis', 'preisgeld': 15, 'delegierung': 1,
         'lehrkraft': 'AB', 'kurs': 'Ma7', 'raum': 'R001', 'lerngruppe': '7-1',
-        'kl': 'AB', 'stellvkl': 'CD'
+        'kl': 'AB', 'stellvkl': 'CD', 'kuerzel': 'AB', 'klassenstufen': '7', 'rolle': 'Standard'
     }])
 
 
@@ -35,7 +35,7 @@ def base_config():
 
 def test_all_sql_datasets_reference_only_pseudonymous_tables():
     cfg = base_config()
-    assert len(cfg['datasets']) == 13
+    assert len(cfg['datasets']) == 14
     assert all('{{table.' not in d['sql'] for d in cfg['datasets'])
     assert any('DEMO_ORGA' in d['sql'] for d in cfg['datasets'])
 
