@@ -93,12 +93,25 @@ class Ui:
         self.confirm_text, self.confirm_actions = "", {}  # type: str, dict[str, Callable[[], None]]
 
 
+def terminal_size() -> tuple[int, int]:
+    """(Zeilen, Spalten) – get_terminal_size liefert (Spalten, Zeilen)."""
+    columns, lines = shutil.get_terminal_size((100, 30))
+    return lines, columns
+
+
+def _clip(text: str, width: int) -> str:
+    return text if len(text) <= width else text[:max(1, width - 1)] + "…"
+
+
 def render(model: SupervisionModel, ui: Ui, height: int, width: int) -> str:
     rows = model.rows()
     body_h = max(4, height - 9 - len(ui.panel))
     ui.top = min(max(ui.top, ui.cursor - body_h + 1), ui.cursor) if len(rows) > body_h else 0
+    # Stufen-Spalte passt sich dem Inhalt an (Externe: E3, E4 …), lässt aber Platz für die Aufsicht
+    wanted = max([len(model.level_text(r)) for r in rows if r not in model.ROLE_KEYS] + [6])
+    level_w = max(8, min(wanted, 30, width - 45)) + 2
     lines = ["Aufsichten  ↑↓ wählen · Enter bearbeiten · Leertaste tauschen · r Rotation · u zurück · l Lehrkräfte · w Entwurf · s Diff/abschicken · q Ende",
-             f"{'':2}{'Raum':<12}{'Tn':>4}  {'Stufen':<14}Aufsicht"]
+             f"{'':2}{'Raum':<12}{'Tn':>4}  {'Stufen':<{level_w}}Aufsicht"]
     for index in range(ui.top, min(len(rows), ui.top + body_h)):
         row = rows[index]
         if row in model.ROLE_KEYS:
@@ -106,7 +119,7 @@ def render(model: SupervisionModel, ui: Ui, height: int, width: int) -> str:
         else:
             name, count = row + ("  K" if row in model.short else ""), str(model.counts.get(row, 0))
         gap = "  <-- fehlt" if model.gap(row) else ""
-        text = f"{'*' if ui.mark == row else ' '} {name:<12}{count:>4}  {model.level_text(row):<14}{' '.join(model.team(row)) or '-'}{gap}"
+        text = f"{'*' if ui.mark == row else ' '} {name:<12}{count:>4}  {_clip(model.level_text(row), level_w - 2):<{level_w}}{' '.join(model.team(row)) or '-'}{gap}"
         text = text[:max(20, width - 1)]
         lines.append(f"{REVERSE}{text:<{max(20, width - 1)}}{RESET}" if index == ui.cursor and ui.mode != "edit" else text)
     lines.append(f"{DIM}K = Kurzraum (Stufe ≤ 6, 2 Stunden){RESET}" if model.short else "")
@@ -142,7 +155,7 @@ def _complete(model: SupervisionModel, ui: Ui) -> None:
 
 def run_tui(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, apply: bool, read: Callable[[], str],
             draft: Draft | None = None,
-            write: Callable[[str], Any], size: Callable[[], tuple[int, int]] = lambda: tuple(shutil.get_terminal_size((100, 30))),  # type: ignore[assignment,return-value]
+            write: Callable[[str], Any], size: Callable[[], tuple[int, int]] = lambda: terminal_size(),
             ) -> dict[str, Any]:
     ui = Ui()
     rows = model.rows

@@ -35,6 +35,7 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ### Aufsichtspläne als PDF (Pipeline)
 
+- Aufsichten-Oberfläche: Terminalgröße war vertauscht (Zeilen/Spalten), dadurch wurde die Spalte „Aufsicht“ abgeschnitten; die Stufen-Spalte passt sich jetzt dem Inhalt an (Externe: E3, E4 …).
 - `mao latex --job NAME` und `mao run --job NAME` führen nur die genannten LaTeX-Jobs aus (mehrfach angebbar, auch wenn ausgeschaltet).
 
 - Neues Dataset `aufsichten_lehrkraefte` (Aufsichten des aktuellen Jahrgangs mit Kürzel, Name inkl. Titel, Raum, Stufen im Raum, Rolle, Bemerkung), zwei Exporte (`db/Aufsichten/Aufsichten-Lehrkraefte.csv` nach Kürzel, `Aufsichten-Raeume.csv` nach Raum) und der LaTeX-Job `aufsichten_lehrkraefte` (Vorlage `tex/Aufsichten-Lehrkraefte/Aufsichten-Lehrkraefte.tex`).
