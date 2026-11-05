@@ -33,6 +33,12 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 - `mao aufsichten` kann jetzt auch setzen: `--raum CODE --lehrkraft KÜRZEL…` (`--rolle Reserve|Fachaufsicht` ohne Raum, `--entfernen`), Dry-Run/`--apply`; `--interaktiv` besetzt Räume ohne Aufsicht Schritt für Schritt (Mathematik-Lehrkräfte zuerst gelistet, wenn `teacher_subjects_table`/`subjects_table` gesetzt sind). Neue optionale tables.ini-Schlüssel: `teacher_subjects_table`, `subjects_table`.
 - `mao aufsichten`: die Fachaufsicht ist die Wettkampfleitung und gehört keinem Raum an (Hinweis, wenn keine eingetragen ist).
 
+### Einsatz der Oberstufe (`mao einsatz`)
+
+- Neuer Befehl `mao einsatz`: verteilt Stufe 11/12 auf Teilnahme, Aufsicht (je Raum, einstellbar), Reserve, Hofgruppen und 5. PK; Wünsche aus Gravity Forms (Formular 59) werden erfüllt, bei Überhang entscheidet das Los. Dry-Run ist Standard, Zwischenstand in `einsatz-plan.yaml`, Konsolensitzung mit `--interaktiv`, Schreiben nur mit `--apply` (manuelle Einträge bleiben).
+- tables.ini: neue Schlüssel `oberstufe_einsaetze_table` und `oberstufe_rollen_table` (30 Einträge).
+- Pipeline: Dataset und Export `einsatz_oberstufe` (`db/Einsatz-Oberstufe/…`, je Hofgruppe eine Datei); der Job `aufsichten_schueler` ist eingeschaltet.
+
 ### Aufsichtspläne als PDF (Pipeline)
 
 - Aufsichten-Oberfläche: Terminalgröße war vertauscht (Zeilen/Spalten), dadurch wurde die Spalte „Aufsicht“ abgeschnitten; die Stufen-Spalte passt sich jetzt dem Inhalt an (Externe: E3, E4 …).

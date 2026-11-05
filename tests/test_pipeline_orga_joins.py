@@ -98,4 +98,4 @@ def test_aufsichten_pipeline_steps_are_consistent():
     jobs = {j["id"]: j for j in cfg["latex"]["jobs"]}
     assert jobs["aufsichten_lehrkraefte"]["enabled"] is True
     assert jobs["aufsichten_lehrkraefte"]["tex"] == "@tex/Aufsichten-Lehrkraefte/Aufsichten-Lehrkraefte.tex"
-    assert jobs["aufsichten_schueler"]["enabled"] is False
+    assert jobs["aufsichten_schueler"]["enabled"] is True

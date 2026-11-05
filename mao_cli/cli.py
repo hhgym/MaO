@@ -28,6 +28,7 @@ from .year_ops import preliminary_plan, database_preflight
 from .aufsichten import (PLAN_FILE, Draft, apply_plan, check_aufsichten, export_plan, interactive_supervision, load_supervision_model,
                          set_supervision)
 from .aufsichten_tui import tui_supervision
+from .einsatz import DEFAULT_FORM_ID, PLAN_FILE as EINSATZ_PLAN_FILE, Settings as EinsatzSettings, run_einsatz
 from .extern import ExternError, assign_extern_rooms, import_extern
 from .gf_import import import_participants, ImportErrorGF, write_import_report
 from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, read_file, sync_schools
@@ -220,6 +221,24 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     sup.add_argument("--einfach", action="store_true", help="Mit --interaktiv: zeilenweise Eingabe statt Tabellenansicht (z. B. in einfachen Konsolen)")
     sup.add_argument("--report", type=Path, metavar="DATEI.json", help="Bericht im Workspace speichern")
 
+    einsatz = commands.add_parser("einsatz", help="Einsatz der Oberstufe (Stufe 11/12) planen: Aufsicht, Hof, Reserve, 5. PK")
+    common(einsatz)
+    einsatz_mode = einsatz.add_mutually_exclusive_group()
+    einsatz_mode.add_argument("--apply", action="store_true", help="In die Einsatztabelle schreiben")
+    einsatz_mode.add_argument("--dry-run", action="store_true", help="Nur planen und berichten (Standard); Zwischenstand landet in einsatz-plan.yaml")
+    einsatz.add_argument("--aufsichten-pro-raum", type=int, default=1, metavar="N", help="Schüler-Aufsichten je Raum (Standard 1)")
+    einsatz.add_argument("--reserve", type=int, default=3, metavar="N", help="Anzahl Reserve (Standard 3)")
+    einsatz.add_argument("--hof-gruppen", type=int, default=2, metavar="N", help="Schichten/Gruppen für die Hofarbeit (Standard 2)")
+    einsatz.add_argument("--hof-pro-gruppe", type=int, metavar="N", help="Höchstens so viele je Hofgruppe (Standard: unbegrenzt)")
+    einsatz.add_argument("--ohne-raum", nargs="+", default=[], metavar="CODE", help="Diese Räume bekommen keine Schüler-Aufsicht")
+    einsatz.add_argument("--seed", type=int, metavar="ZAHL", help="Startwert der Auslosung (sonst zufällig; steht im Entwurf)")
+    einsatz.add_argument("--formular", type=int, default=DEFAULT_FORM_ID, metavar="ID", help="Gravity-Forms-Formular der Wünsche")
+    einsatz.add_argument("--ohne-wuensche", action="store_true", help="Wünsche nicht abrufen (alle gelten als ohne Wunsch)")
+    einsatz.add_argument("--interaktiv", action="store_true", help="Verteilung in einer Konsolensitzung prüfen und ändern")
+    einsatz.add_argument("--neu", action="store_true", help="Vorhandenen Entwurf ignorieren und neu auslosen")
+    einsatz.add_argument("--plan", type=Path, metavar="DATEI.yaml", help=f"Entwurfsdatei im Workspace (Standard {EINSATZ_PLAN_FILE})")
+    einsatz.add_argument("--report", type=Path, metavar="DATEI.json", help="Bericht im Workspace speichern")
+
     extern = commands.add_parser("import-extern", help="Anmeldungen externer Teilnehmender (Grundschulen) übernehmen")
     common(extern)
     extern_mode = extern.add_mutually_exclusive_group()
@@ -260,8 +279,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.command == "schulen-sync" and args.report and args.report.suffix.lower() != ".json":
         parser.error("--report benötigt für schulen-sync einen Dateinamen mit .json")
-    if args.command == "aufsichten" and args.report and args.report.suffix.lower() != ".json":
-        parser.error("--report benötigt für aufsichten einen Dateinamen mit .json")
+    if args.command in ("aufsichten", "einsatz") and args.report and args.report.suffix.lower() != ".json":
+        parser.error("--report benötigt für aufsichten und einsatz einen Dateinamen mit .json")
     if args.command == "import-extern" and args.report and args.report.suffix.lower() != ".json":
         parser.error("--report benötigt für import-extern einen Dateinamen mit .json")
     if args.command == "raumzuteilung" and args.plan_id and not args.apply:
@@ -693,6 +712,34 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                 raise
             if args.report:
                 LOGGER.info("Aufsichtenbericht: %s", write_import_report(workspace, config_dir, args.report, sup_report))
+            return 0
+        if args.command == "einsatz":
+            if selection.year is None or selection.year != settings["current_year"]:
+                raise ConfigurationError("einsatz nur für den aktuell registrierten Jahrgang zulässig")
+            tables = load_tables(resolve_config_file(config_dir, "tables.ini"))
+            db_config = load_db_config(config_dir)
+            if not can_reach(db_config.host, db_config.port, timeout=3):
+                raise ConnectionError("Datenbank für den Einsatz nicht erreichbar")
+            einsatz_settings = EinsatzSettings(args.aufsichten_pro_raum, args.reserve, args.hof_gruppen, args.hof_pro_gruppe,
+                                               args.seed if args.seed is not None else random.randint(1, 999999))
+            einsatz_report: dict = {"schema_version": 1, "status": "blocked", "issues": []}
+            try:
+                with DB(db_config) as db:
+                    db_mao = current_MaO_number_db(db, tables)
+                    if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
+                        raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
+                    run_einsatz(db, config_dir, tables, workspace, settings=einsatz_settings, apply=args.apply,
+                                interactive=args.interaktiv, fresh=args.neu, plan=args.plan, form_id=args.formular,
+                                skip_rooms=tuple(args.ohne_raum), use_wishes=not args.ohne_wuensche, report=einsatz_report)
+            except (RoomError, ExternError, ConfigurationError) as exc:
+                einsatz_report["issues"].append(str(exc))
+                if args.report:
+                    LOGGER.info("Blockierter Bericht: %s", write_import_report(workspace, config_dir, args.report, einsatz_report))
+                raise
+            if args.report:
+                LOGGER.info("Einsatzbericht: %s", write_import_report(workspace, config_dir, args.report, einsatz_report))
+            if not args.apply:
+                LOGGER.info("DRY-RUN: nichts in die Datenbank geschrieben. Schreiben mit --apply")
             return 0
         if args.command == "import-extern":
             if selection.year is None or selection.year != settings["current_year"]:
