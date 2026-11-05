@@ -35,7 +35,7 @@ def base_config():
 
 def test_all_sql_datasets_reference_only_pseudonymous_tables():
     cfg = base_config()
-    assert len(cfg['datasets']) == 14
+    assert len(cfg['datasets']) == 15
     assert all('{{table.' not in d['sql'] for d in cfg['datasets'])
     assert any('DEMO_ORGA' in d['sql'] for d in cfg['datasets'])
 
@@ -94,10 +94,12 @@ def test_output_parity_same_synthetic_input(tmp_path):
     # Aufsichten (nach Step 1 ergänzt): eigener Datensatz, nicht Teil der Step-1-Referenz
     datasets['aufsichten_lehrkraefte'] = pd.DataFrame([{
         'kuerzel': 'AB', 'name': 'A B', 'raum': 'R001', 'klassenstufen': '7', 'rolle': 'Standard', 'bemerkung': ''}])
+    datasets['einsatz_oberstufe'] = pd.DataFrame([{
+        'nachname': 'M', 'vorname': 'E', 'klasse': '11', 'rolle': 'Hof', 'bemerkung': 'Gruppe 1', 'gruppe': 1}])
     plan = ExportPlan(tmp_path)
     run_exports(datasets, cfg, tmp_path, plan)
     actual = {name: hashlib.sha256(content).hexdigest()
-              for name, (content, _, _) in plan.outputs.items() if 'Aufsichten/' not in str(name).replace('\\', '/')}
+              for name, (content, _, _) in plan.outputs.items() if not any(x in str(name).replace('\\', '/') for x in ('Aufsichten/', 'Einsatz-Oberstufe/'))}
     assert actual == REFERENCE['exports_sha256']
 
 

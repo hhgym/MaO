@@ -318,6 +318,29 @@ datasets:
                                  JOIN {{table.schuljahre_table}} s ON s.id = j.schuljahr_id
                                  WHERE s.aktiv = 1 ORDER BY j.id DESC LIMIT 1)
 
+  # Einsätze der Oberstufe des aktuellen Jahrgangs (Pflege: mao einsatz). bemerkung = Raum, "Reserve" oder "Gruppe n";
+  # gruppe = Hofgruppe (leer sonst). Grundlage der Aufsichts- und Einsatzlisten der Oberstufe.
+  - name: einsatz_oberstufe
+    id: einsatz_oberstufe
+    enabled: true
+    sql: |
+      SELECT
+        s.nachname AS nachname,
+        s.vorname AS vorname,
+        s.klasse AS klasse,
+        r.code AS rolle,
+        CASE WHEN e.modus = 'Reserve' THEN 'Reserve'
+             WHEN e.modus = 'Gruppe' THEN CONCAT('Gruppe ', e.gruppe_nr)
+             ELSE COALESCE(ra.raumcode, COALESCE(e.bemerkung, '')) END AS bemerkung,
+        COALESCE(e.gruppe_nr, '') AS gruppe
+      FROM {{table.oberstufe_einsaetze_table}} e
+      JOIN {{table.oberstufe_rollen_table}} r ON r.id = e.rolle_id
+      JOIN {{table.students_table}} s ON s.matrikelnummer = e.matrikelnummer
+      LEFT JOIN {{table.rooms_table}} ra ON ra.id = e.raum_id
+      WHERE e.mao_jahrgang_id = (SELECT j.id FROM {{table.jahrgaenge_table}} j
+                                 JOIN {{table.schuljahre_table}} sj ON sj.id = j.schuljahr_id
+                                 WHERE sj.aktiv = 1 ORDER BY j.id DESC LIMIT 1)
+
   - name: kopierliste
     id: kopierliste
     enabled: true
@@ -884,6 +907,22 @@ exports:
       columns: "*"
     sort_by: [raum, kuerzel]
 
+  # Einsatz der Oberstufe (Vorlagen: tex/Einsatz-Oberstufe, tex/Aufsichten-Schueler)
+  - name: einsatz_oberstufe
+    id: einsatz_oberstufe
+    enabled: true
+    from_dataset: einsatz_oberstufe
+    output:
+      path: "db/Einsatz-Oberstufe/Einsatz-Oberstufe.csv"
+      sep: ";"
+      columns: "*"
+    sort_by: [nachname, vorname]
+    splits:
+      - name: hofgruppe
+        enabled: true
+        by: "gruppe"
+        filename_template: "db/Einsatz-Oberstufe/Einsatz-Oberstufe-Gruppe-{key}.csv"
+
   - name: aufsichten_mit_schueler
     id: aufsichten_mit_schueler
     enabled: false
@@ -1080,7 +1119,7 @@ latex:
 
     - name: aufsichten_schueler
       id: aufsichten_schueler
-      enabled: false   # benötigt db/Einsatz-Oberstufe/Einsatz-Oberstufe.csv (Export noch nicht in der Pipeline)
+      enabled: true
       workdir: "Aufsichten"
       tex: "@tex/Aufsichten-Schueler/Aufsichten-Schueler.tex"
       jobname: "Aufsichten-Schueler"

@@ -271,6 +271,24 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
   „Bemerkungen“). Vorlagen: `tex/Aufsichten-Lehrkraefte/` und (noch ausgeschaltet) `tex/Aufsichten-Schueler/` im MaO-Ordner.
 
 
+## Einsatz der Oberstufe (`mao einsatz`)
+
+Plant den Einsatz der Stufen 11 und 12 und schreibt ihn in die Einsatztabelle (`oberstufe_einsaetze_table`, Rollen aus `oberstufe_rollen_table`; beide in tables.ini setzen).
+
+- **Regeln:** Teilnehmende (Tnr in der Organisationstabelle) der Stufe 11 und 12 → `Teilnahme`. Stufe 12 ohne Teilnahme → `5PK`. Stufe 11 ohne Teilnahme: Wunsch (`Aufsicht` oder `Hof`) aus dem Gravity-Forms-Formular (`--formular`, Standard 59; Zugang wie beim GF-Import in `gf.config`).
+- **Verteilung:** Wünsche werden erfüllt; gibt es mehr Wünsche als Plätze, entscheidet das Los (`--seed` macht es wiederholbar). Wer nichts gewünscht hat oder nicht zum Zug kam, füllt freie Aufsichtsplätze, dann die Hofgruppen; der Rest bekommt `5PK`.
+- **Einstellbar:** `--aufsichten-pro-raum N` (Standard 1, je Raum mit Teilnehmenden, ausgenommen `--ohne-raum CODE …`), `--reserve N` (Standard 3, Modus Reserve ohne Raum), `--hof-gruppen N` (Standard 2, Modus Gruppe mit `gruppe_nr`) und `--hof-pro-gruppe N` (Standard unbegrenzt).
+- **Schutz:** Einträge mit `quelle = MANUAL` und fremde Rollen (z. B. Korrektur) bleiben unverändert und belegen ihre Plätze. Automatische Einträge werden aktualisiert, nicht gelöscht.
+- **Dry-Run ist Standard.** Der Stand liegt als `einsatz-plan.yaml` im Jahrgangsordner (Matrikelnummer am Zeilenanfang jedes Eintrags; bearbeitbar). Ein erneuter Aufruf nutzt diese Datei (`--neu` lost neu aus, `--plan DATEI` wählt eine andere). `--apply` schreibt in einer Transaktion mit Sperre und löscht den Entwurf.
+- **`--interaktiv`:** Konsolensitzung mit `l` (Übersicht), `l ZIEL`, `s TEXT` (suchen), `v PERSON ZIEL` (verschieben, z. B. `v mueller hof2`), `t PERSON PERSON` (tauschen), `n [SEED]` (neu auslosen), `w` (offene Wünsche), `u` (zurück), `d` (Entwurf speichern), `ok` (Änderungen zeigen, mit `--apply` nach Rückfrage schreiben) und `q`.
+- **PDF:** Der Export `db/Einsatz-Oberstufe/Einsatz-Oberstufe.csv` (und je Hofgruppe `…-Gruppe-N.csv`) speist die Vorlagen `Aufsichten-Schueler` und `Einsatz-Oberstufe`.
+
+```bash
+mao einsatz --aufsichten-pro-raum 1 --reserve 3 --hof-gruppen 2    # Plan + Entwurf
+mao einsatz --interaktiv                                           # prüfen und ändern
+mao einsatz --apply                                                # schreiben
+```
+
 ## Schulabgleich
 
 - `mao schulen-sync --dry-run --report schulen.json` lädt das Schulverzeichnis Berlin und
