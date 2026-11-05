@@ -197,3 +197,19 @@ def test_run_without_apply_saves_draft_and_writes_nothing(monkeypatch, tmp_path)
                            interactive=False, fresh=False, plan=None)
     assert result["geschrieben"] == 0 and (tmp_path / "einsatz-plan.yaml").is_file()
     assert not [x for x in db.executed if x[0].startswith("INSERT")]
+
+
+def test_raumregeln_einsatz_section_is_loaded_and_validated(tmp_path):
+    from mao_cli.config import ConfigurationError
+    from mao_cli.rooms import load_room_rules
+    base = (Path(__file__).resolve().parents[1] / "mao_cli" / "defaults" / "raumregeln.yaml.example").read_text(encoding="utf-8")
+    path = tmp_path / "raumregeln.yaml"
+    path.write_text(base, encoding="utf-8")
+    assert load_room_rules(path).einsatz == {"aufsichten_pro_raum": 1, "reserve": 3, "hof_gruppen": 2}
+    path.write_text(base.replace("  reserve: 3 ", "  reserve: 5 ").replace("  # ohne_raum:", "  ohne_raum:").replace("# hof_pro_gruppe", "hof_pro_gruppe"), encoding="utf-8")
+    loaded = load_room_rules(path).einsatz
+    assert loaded["reserve"] == 5 and loaded["hof_pro_gruppe"] == 10 and loaded["ohne_raum"] == ["Aula"]
+    for bad in ("  reserve: -1 ", "  unbekannt: 1\n  reserve: 3 ", "  reserve: abc "):
+        path.write_text(base.replace("  reserve: 3 ", bad), encoding="utf-8")
+        with pytest.raises(ConfigurationError, match="einsatz"):
+            load_room_rules(path)
