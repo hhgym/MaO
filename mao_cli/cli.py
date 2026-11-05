@@ -8,7 +8,7 @@ import sys
 import time
 import traceback
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Any, Optional, Sequence
 
 import yaml
 
@@ -226,13 +226,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     einsatz_mode = einsatz.add_mutually_exclusive_group()
     einsatz_mode.add_argument("--apply", action="store_true", help="In die Einsatztabelle schreiben")
     einsatz_mode.add_argument("--dry-run", action="store_true", help="Nur planen und berichten (Standard); Zwischenstand landet in einsatz-plan.yaml")
-    einsatz.add_argument("--aufsichten-pro-raum", type=int, default=1, metavar="N", help="Schüler-Aufsichten je Raum (Standard 1)")
-    einsatz.add_argument("--reserve", type=int, default=3, metavar="N", help="Anzahl Reserve (Standard 3)")
-    einsatz.add_argument("--hof-gruppen", type=int, default=2, metavar="N", help="Schichten/Gruppen für die Hofarbeit (Standard 2)")
-    einsatz.add_argument("--hof-pro-gruppe", type=int, metavar="N", help="Höchstens so viele je Hofgruppe (Standard: unbegrenzt)")
-    einsatz.add_argument("--ohne-raum", nargs="+", default=[], metavar="CODE", help="Diese Räume bekommen keine Schüler-Aufsicht")
+    einsatz.add_argument("--aufsichten-pro-raum", type=int, metavar="N", help="Schüler-Aufsichten je Raum (Standard 1 oder raumregeln.yaml)")
+    einsatz.add_argument("--reserve", type=int, metavar="N", help="Anzahl Reserve (Standard 3 oder raumregeln.yaml)")
+    einsatz.add_argument("--hof-gruppen", type=int, metavar="N", help="Schichten/Gruppen für die Hofarbeit (Standard 2 oder raumregeln.yaml)")
+    einsatz.add_argument("--hof-pro-gruppe", type=int, metavar="N", help="Höchstens so viele je Hofgruppe (Standard: unbegrenzt oder raumregeln.yaml)")
+    einsatz.add_argument("--ohne-raum", nargs="+", default=None, metavar="CODE", help="Diese Räume bekommen keine Schüler-Aufsicht (sonst raumregeln.yaml)")
     einsatz.add_argument("--seed", type=int, metavar="ZAHL", help="Startwert der Auslosung (sonst zufällig; steht im Entwurf)")
-    einsatz.add_argument("--formular", type=int, default=DEFAULT_FORM_ID, metavar="ID", help="Gravity-Forms-Formular der Wünsche")
+    einsatz.add_argument("--formular", type=int, metavar="ID", help=f"Gravity-Forms-Formular der Wünsche (Standard {DEFAULT_FORM_ID} oder raumregeln.yaml)")
     einsatz.add_argument("--ohne-wuensche", action="store_true", help="Wünsche nicht abrufen (alle gelten als ohne Wunsch)")
     einsatz.add_argument("--interaktiv", action="store_true", help="Verteilung in einer Konsolensitzung prüfen und ändern")
     einsatz.add_argument("--neu", action="store_true", help="Vorhandenen Entwurf ignorieren und neu auslosen")
@@ -720,7 +720,17 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
             db_config = load_db_config(config_dir)
             if not can_reach(db_config.host, db_config.port, timeout=3):
                 raise ConnectionError("Datenbank für den Einsatz nicht erreichbar")
-            einsatz_settings = EinsatzSettings(args.aufsichten_pro_raum, args.reserve, args.hof_gruppen, args.hof_pro_gruppe,
+            rules_file = resolve_rules_file(workspace, config_dir)
+            preset = load_room_rules(rules_file).einsatz if rules_file.is_file() else {}
+            if preset:
+                LOGGER.info("Einsatz | Voreinstellungen aus %s: %s", rules_file.name, ", ".join(f"{k}={v}" for k, v in preset.items()))
+
+            def pick(cli_value: Any, key: str, default: Any) -> Any:
+                return cli_value if cli_value is not None else preset.get(key, default)
+
+            einsatz_settings = EinsatzSettings(pick(args.aufsichten_pro_raum, "aufsichten_pro_raum", 1),
+                                               pick(args.reserve, "reserve", 3), pick(args.hof_gruppen, "hof_gruppen", 2),
+                                               pick(args.hof_pro_gruppe, "hof_pro_gruppe", None),
                                                args.seed if args.seed is not None else random.randint(1, 999999))
             einsatz_report: dict = {"schema_version": 1, "status": "blocked", "issues": []}
             try:
@@ -729,8 +739,8 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                     if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
                         raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
                     run_einsatz(db, config_dir, tables, workspace, settings=einsatz_settings, apply=args.apply,
-                                interactive=args.interaktiv, fresh=args.neu, plan=args.plan, form_id=args.formular,
-                                skip_rooms=tuple(args.ohne_raum), use_wishes=not args.ohne_wuensche, report=einsatz_report)
+                                interactive=args.interaktiv, fresh=args.neu, plan=args.plan, form_id=pick(args.formular, "formular", DEFAULT_FORM_ID),
+                                skip_rooms=tuple(pick(args.ohne_raum, "ohne_raum", [])), use_wishes=not args.ohne_wuensche, report=einsatz_report)
             except (RoomError, ExternError, ConfigurationError) as exc:
                 einsatz_report["issues"].append(str(exc))
                 if args.report:

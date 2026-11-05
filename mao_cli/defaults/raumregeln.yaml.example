@@ -46,3 +46,13 @@ extern:
 aufsichten:
   lehrkraefte_pro_raum: 1
   zaehlende_rollen: ["Standard"]
+
+# Einsatz der Oberstufe (mao einsatz): Voreinstellungen; Schalter auf der Kommandozeile haben Vorrang.
+# Alle Schlüssel sind optional (Standard in Klammern).
+einsatz:
+  aufsichten_pro_raum: 1   # Schüler-Aufsichten je Raum mit Teilnehmenden (1)
+  reserve: 3               # Reserve ohne Raum (3)
+  hof_gruppen: 2           # Hofgruppen/Schichten (2)
+  # hof_pro_gruppe: 10     # höchstens so viele je Hofgruppe (unbegrenzt)
+  # ohne_raum: ["Aula"]    # Räume ohne Schüler-Aufsicht ([])
+  # formular: 59           # Gravity-Forms-Formular mit den Einsatzwünschen (59)

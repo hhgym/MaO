@@ -50,6 +50,7 @@ class RoomRules:
     flex_rooms: tuple[str, ...] = ()  # Sammelräume: nehmen den Rest aller Stufen mit möglichst wenigen Räumen und Mischungen auf
     supervisors_per_room: int = 1  # Lehrkräfte je belegtem Raum (mao aufsichten)
     supervisor_roles: tuple[str, ...] = ("Standard",)  # Rollen, die als Aufsicht des Raums zählen
+    einsatz: dict[str, Any] = field(default_factory=dict)  # Voreinstellungen für mao einsatz (Oberstufe)
 
     def all_rooms(self) -> set[str]:
         rooms = {r for values in self.grade_rooms.values() for r in values}
@@ -89,6 +90,32 @@ def log_rules_source(path: Path, config_dir: Path) -> None:
                        "und anpassen.", RULES_FILE, path)
     else:
         LOGGER.info("Raumregeln | %s", path)
+
+
+EINSATZ_KEYS = {"aufsichten_pro_raum": (0, 10), "reserve": (0, 30), "hof_gruppen": (0, 10), "hof_pro_gruppe": (1, 500),
+                "formular": (1, 10**6)}
+
+
+def _load_einsatz_section(raw: Any, name: str) -> dict[str, Any]:
+    """Abschnitt einsatz: Voreinstellungen für mao einsatz (Kommandozeile hat Vorrang)."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict) or set(raw) - set(EINSATZ_KEYS) - {"ohne_raum"}:
+        raise ConfigurationError(f"{name}: einsatz erlaubt nur {', '.join(sorted(set(EINSATZ_KEYS) | {'ohne_raum'}))}")
+    out: dict[str, Any] = {}
+    for key, (low, high) in EINSATZ_KEYS.items():
+        value = raw.get(key)
+        if value is None:
+            continue
+        if not isinstance(value, int) or isinstance(value, bool) or not low <= value <= high:
+            raise ConfigurationError(f"{name}: einsatz.{key} muss eine ganze Zahl von {low} bis {high} sein")
+        out[key] = value
+    skip = raw.get("ohne_raum")
+    if skip is not None:
+        if not isinstance(skip, list) or not all(isinstance(x, (str, int)) and not isinstance(x, bool) for x in skip):
+            raise ConfigurationError(f"{name}: einsatz.ohne_raum muss eine Liste von Raumcodes sein")
+        out["ohne_raum"] = [str(x) for x in skip]
+    return out
 
 
 def load_room_rules(path: Path) -> RoomRules:
@@ -146,6 +173,7 @@ def load_room_rules(path: Path) -> RoomRules:
             or not isinstance(sup_roles, list) or not sup_roles or not set(sup_roles) <= set(SUPERVISOR_ROLES)):
         raise ConfigurationError(f"{path.name}: aufsichten erwartet lehrkraefte_pro_raum (1–10) und zaehlende_rollen "
                                  f"(Liste aus {', '.join(SUPERVISOR_ROLES)})")
+    einsatz = _load_einsatz_section(data.get("einsatz"), path.name)
     flex = rooms.get("sammel", [])
     if (not isinstance(flex, list) or not all(isinstance(x, (str, int)) and not isinstance(x, bool) for x in flex)
             or len(set(map(str, flex))) != len(flex)):
@@ -185,6 +213,7 @@ def load_room_rules(path: Path) -> RoomRules:
         flex_max_span=span,
         supervisors_per_room=sup_count,
         supervisor_roles=tuple(str(x) for x in sup_roles),
+        einsatz=einsatz,
     )
 
 
