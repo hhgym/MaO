@@ -483,3 +483,24 @@ def test_line_mode_saves_draft_on_dry_run_fertig_and_w(tmp_path):
     a.interactive_supervision(db, tmp_path, TABLES_IA, apply=False, workspace=tmp_path, ask=lambda _p: next(answers),
                               out=lines.append, draft=draft, model=m)
     assert draft.path.exists() and '"R1": []' in draft.path.read_text(encoding="utf-8")
+
+
+def test_tui_render_keeps_supervisors_visible_with_long_level_text():
+    model = a.SupervisionModel.__new__(a.SupervisionModel)
+    model.ROLE_KEYS = a.SupervisionModel.ROLE_KEYS
+    model.short = set()
+    model.counts = {"107": 14}
+    model.rows = lambda: ["107", "fachaufsicht"]
+    model.level_text = lambda row: "E3, E4, E5, E6, E7, E8, E9, E10, E11, E12" if row == "107" else ""
+    model.team = lambda row: ["ABC", "DEF"] if row == "107" else []
+    model.gap = lambda row: False
+    ui = tui.Ui()
+    text = tui.render(model, ui, 30, 100)
+    row = next(line for line in text.splitlines() if "107" in line)
+    assert "ABC DEF" in row and "…" in row
+
+
+def test_tui_terminal_size_is_lines_then_columns(monkeypatch):
+    import os
+    monkeypatch.setattr(tui.shutil, "get_terminal_size", lambda fallback=(100, 30): os.terminal_size((120, 40)))
+    assert tui.terminal_size() == (40, 120)
