@@ -549,3 +549,15 @@ def test_draft_load_reports_differences_from_database(tmp_path):
     note = draft.load_into(m)
     assert "weicht von der Datenbank ab" in note and "Abiturerstellung: Datenbank CD, Entwurf -" in note
     assert m.team("abitur") == []
+
+
+def test_missing_enum_value_is_reported_with_alter_statement():
+    class EnumCur(SCur):
+        def fetchall(self):
+            if "SHOW COLUMNS" in self.sql:
+                return [("rolle", "enum('Standard','Reserve','Fachaufsicht')")]
+            return super().fetchall()
+    cur = EnumCur(sups=())
+    with pytest.raises(r.RoomError, match="ALTER TABLE .*'Abiturerstellung'"):
+        a.set_supervision(sdb(cur), TABLES, room=None, kuerzel=["AB"], role="Abiturerstellung", dry_run=True)
+    a.set_supervision(sdb(EnumCur(sups=())), TABLES, room=None, kuerzel=["AB"], role="Reserve", dry_run=True)
