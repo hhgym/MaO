@@ -160,7 +160,7 @@ def check_aufsichten(db: Any, config_dir: Path, tables: Mapping[str, str], *, wo
     return stats
 
 
-ROLES = ("Standard", "Reserve", "Fachaufsicht", "Abiturerstellung")
+ROLES = ("Aufsicht", "Reserve", "Fachaufsicht", "Abiturerstellung")
 
 
 PREFERRED_SUBJECT = "Mathematik"
@@ -195,10 +195,10 @@ def _require_roles(cur: Any, sup_t: str, roles: set[str]) -> None:
     if missing:
         values = ", ".join(f"'{v}'" for v in [*[x for x in ROLES if x in known or x in roles], *sorted(known - set(ROLES))])
         raise RoomError(f"Die Spalte rolle in {sup_t} kennt {', '.join(missing)} nicht. Einmal in der Datenbank ausführen: "
-                        f"ALTER TABLE `{sup_t}` MODIFY `rolle` ENUM({values}) NOT NULL DEFAULT 'Standard';")
+                        f"ALTER TABLE `{sup_t}` MODIFY `rolle` ENUM({values}) NOT NULL DEFAULT 'Aufsicht';")
 
 
-def set_supervision(db: Any, tables: Mapping[str, str], *, room: str | None, kuerzel: list[str], role: str = "Standard",
+def set_supervision(db: Any, tables: Mapping[str, str], *, room: str | None, kuerzel: list[str], role: str = "Aufsicht",
                     remove: bool = False, dry_run: bool = True) -> dict[str, Any]:
     """Aufsichten eintragen (oder entfernen). Dry-Run ist Standard; Reserve und Fachaufsicht gehören zu keinem Raum."""
     if role not in ROLES:
@@ -207,7 +207,7 @@ def set_supervision(db: Any, tables: Mapping[str, str], *, room: str | None, kue
     if roomless and room:
         raise RoomError(f"Rolle {role} gehört zu keinem Raum (--raum weglassen)")
     if not roomless and not room:
-        raise RoomError("Für die Rolle Standard ist ein Raum nötig")
+        raise RoomError("Für die Rolle Aufsicht ist ein Raum nötig")
     names = [k.strip().upper() for k in kuerzel if k.strip()]
     if not names or len(set(names)) != len(names):
         raise RoomError("Lehrkräfte-Kürzel fehlen oder kommen doppelt vor")
@@ -244,7 +244,7 @@ def set_supervision(db: Any, tables: Mapping[str, str], *, room: str | None, kue
         existing = {(None if r is None else int(r), int(lk), str(ro)) for r, lk, ro in cur.fetchall()}
         elsewhere: dict[int, set[str]] = {}
         for r, lk, ro in existing:
-            if ro == "Standard" and r != room_id:
+            if ro == "Aufsicht" and r != room_id:
                 elsewhere.setdefault(lk, set()).add(next((c for c, i in rooms.items() if i["id"] == r), "?"))
         todo: list[str] = []
         skipped: list[str] = []
@@ -257,7 +257,7 @@ def set_supervision(db: Any, tables: Mapping[str, str], *, room: str | None, kue
                 skipped.append(n)
             else:
                 todo.append(n)
-                if role == "Standard" and ids[n] in elsewhere:
+                if role == "Aufsicht" and ids[n] in elsewhere:
                     warnings.append(f"{n} ist schon in Raum {', '.join(sorted(elsewhere[ids[n]]))} eingeteilt")
         if remove and not todo:
             raise RoomError("Nichts zu entfernen: " + ", ".join(skipped))
@@ -344,7 +344,7 @@ def state_from_context(ctx: Mapping[str, Any]) -> dict[str, Any]:
     by_role = {role: key for key, role in ROLE_ROWS.items()}
     for room_id, lk, role in sorted(ctx["current"], key=lambda t: (str(t[0]), t[1])):
         who = names.get(lk, (str(lk), None))[0].upper()
-        if role == "Standard" and room_id is not None:
+        if role == "Aufsicht" and room_id is not None:
             row = ctx["by_id"].get(room_id, "?")
             state["raeume"].setdefault(row, []).append(who)
         elif role in by_role:
@@ -532,7 +532,7 @@ def apply_plan_data(db: Any, tables: Mapping[str, str], plan: Any, *, dry_run: b
                     raise RoomError(f"Raum {code} fehlt in der Raumtabelle oder ist inaktiv")
                 scope_rooms.add(info["id"])
                 for n in names_of(value, f"Raum {code}"):
-                    desired.add((info["id"], lookup(n), "Standard"))
+                    desired.add((info["id"], lookup(n), "Aufsicht"))
                     per_teacher.setdefault(n, []).append(str(code))
         for key, role in ROLE_ROWS.items():
             if key in plan:
@@ -542,7 +542,7 @@ def apply_plan_data(db: Any, tables: Mapping[str, str], plan: Any, *, dry_run: b
         for n, places in sorted(per_teacher.items()):
             if len(places) > 1:
                 warnings.append(f"{n} ist in mehreren Räumen eingeteilt: {', '.join(places)}")
-        scoped = {t for t in current if (t[2] == "Standard" and t[0] in scope_rooms) or t[2] in scope_roles}
+        scoped = {t for t in current if (t[2] == "Aufsicht" and t[0] in scope_rooms) or t[2] in scope_roles}
         to_add, to_del = desired - scoped, scoped - desired
         if to_add:
             _require_roles(cur, ctx["sup_t"], {t[2] for t in to_add})
@@ -556,7 +556,7 @@ def apply_plan_data(db: Any, tables: Mapping[str, str], plan: Any, *, dry_run: b
             for key, text in raw_notes.items():
                 row, _sep, who = str(key).partition("|")
                 who = who.strip().upper()
-                triple = ((room_by_code.get(row), lookup(who), "Standard") if row in room_by_code
+                triple = ((room_by_code.get(row), lookup(who), "Aufsicht") if row in room_by_code
                           else (None, lookup(who), ROLE_ROWS[row]) if row in ROLE_ROWS else None)
                 if triple is None or triple not in desired:
                     raise RoomError(f"Plandatei: Bemerkung für {key} – diese Person ist dort nicht eingeteilt")
@@ -705,7 +705,7 @@ def _short_rooms_and_history(cur: Any, tables: Mapping[str, str], by_id: Mapping
                 f"JOIN (SELECT mao_jahrgang_id, raum_id FROM `{archive}` WHERE raum_id IS NOT NULL "
                 f"GROUP BY mao_jahrgang_id, raum_id HAVING MAX(stufe) <= {int(SHORT_GRADES)}) k "
                 "ON k.mao_jahrgang_id = a.mao_jahrgang_id AND k.raum_id = a.raum_id "
-                "WHERE a.rolle = 'Standard' AND a.lehrkraft_id IS NOT NULL AND a.mao_jahrgang_id <> %s", (jahrgang_id,))
+                "WHERE a.rolle = 'Aufsicht' AND a.lehrkraft_id IS NOT NULL AND a.mao_jahrgang_id <> %s", (jahrgang_id,))
     for lk, nr in cur.fetchall():
         history.setdefault(int(lk), []).append(int(nr))
     return short, history

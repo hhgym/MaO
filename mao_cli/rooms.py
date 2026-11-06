@@ -26,7 +26,7 @@ from .gf_import import IDENT, grade, report_target
 LOGGER = logging.getLogger(__name__)
 OBER = "11/12"
 GRADES = tuple(str(n) for n in range(5, 13))
-SUPERVISOR_ROLES = ("Standard", "Reserve", "Fachaufsicht")  # enum der Aufsichtentabelle
+SUPERVISOR_ROLES = ("Aufsicht", "Reserve", "Fachaufsicht")  # enum der Aufsichtentabelle
 
 
 class RoomError(ValueError):
@@ -49,7 +49,7 @@ class RoomRules:
     flex_style: str = "rein_zuerst"  # rein_zuerst: volle Räume je Stufe, Reste gemeinsam; nachbarn: Stufenblöcke nebeneinander
     flex_rooms: tuple[str, ...] = ()  # Sammelräume: nehmen den Rest aller Stufen mit möglichst wenigen Räumen und Mischungen auf
     supervisors_per_room: int = 1  # Lehrkräfte je belegtem Raum (mao aufsichten)
-    supervisor_roles: tuple[str, ...] = ("Standard",)  # Rollen, die als Aufsicht des Raums zählen
+    supervisor_roles: tuple[str, ...] = ("Aufsicht",)  # Rollen, die als Aufsicht des Raums zählen
     einsatz: dict[str, Any] = field(default_factory=dict)  # Voreinstellungen für mao einsatz (Oberstufe)
 
     def all_rooms(self) -> set[str]:
@@ -166,7 +166,9 @@ def load_room_rules(path: Path) -> RoomRules:
             or len(set(map(str, extern_rooms))) != len(extern_rooms)):
         raise ConfigurationError(f"{path.name}: extern erwartet nur 'rooms' mit einer Liste verschiedener Raumcodes")
     sup = data.get("aufsichten") or {}
-    sup_roles = sup.get("zaehlende_rollen", ["Standard"]) if isinstance(sup, dict) else None
+    sup_roles = sup.get("zaehlende_rollen", ["Aufsicht"]) if isinstance(sup, dict) else None
+    if isinstance(sup_roles, list):  # frühere Konfigurationen: Rolle hieß "Standard"
+        sup_roles = ["Aufsicht" if x == "Standard" else x for x in sup_roles]
     sup_count = sup.get("lehrkraefte_pro_raum", 1) if isinstance(sup, dict) else None
     if (not isinstance(sup, dict) or set(sup) - {"lehrkraefte_pro_raum", "zaehlende_rollen"}
             or not isinstance(sup_count, int) or isinstance(sup_count, bool) or not 1 <= sup_count <= 10
