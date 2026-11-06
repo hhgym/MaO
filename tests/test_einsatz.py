@@ -87,7 +87,7 @@ def test_draft_roundtrip_and_unknown_person(tmp_path):
     other = e.EinsatzModel(persons, ["101"], e.Settings(reserve=1, hof_gruppen=2, seed=9), assign={p.matrikel: "5pk" for p in persons})
     assert draft.load_into(other).startswith("Entwurf")
     assert other.assign[100] == model.assign[100] and other.assign[1] == "5pk"   # Teilnahme bleibt fest
-    draft.path.write_text(text.replace("100  Nach100", "999  Nach999"), encoding="utf-8")
+    draft.path.write_text(text.replace("100  (", "999  ("), encoding="utf-8")
     with pytest.raises(e.EinsatzError, match="999"):
         draft.load_into(other)
 
@@ -96,7 +96,7 @@ def test_console_session_move_swap_undo_and_draft(tmp_path):
     persons = free_people(4)
     model = e.EinsatzModel(persons, ["101", "102"], e.Settings(reserve=0, hof_gruppen=1, seed=1))
     draft = e.Draft(tmp_path, tmp_path / "cfg")
-    answers = iter(["v 100 hof1", "t Nach101 Nach102", "v 100 nirgends", "u", "w", "d", "q"])
+    answers = iter(["v 100 hof1", "t 101 102", "v 100 nirgends", "u", "w", "d", "q"])
     lines: list[str] = []
     result = e.interactive_einsatz(model, None, None, apply=False, draft=draft, ask=lambda _p: next(answers), out=lines.append)  # type: ignore[arg-type]
     assert result["geschrieben"] == 0
@@ -230,7 +230,7 @@ def test_unassigned_persons_are_reported():
     model = e.EinsatzModel(persons, ["101"], e.Settings(hof_gruppen=1))
     assert not any("Nicht verplant" in w for w in model.warnings())
     del model.assign[2]
-    assert any("Nicht verplant (1)" in w for w in model.warnings())
+    assert any("Nicht verplant: 1" in w for w in model.warnings())
 
 
 def test_reserve_only_for_aufsicht_wishers():
@@ -251,7 +251,7 @@ def test_hard_hof_cap_leaves_rest_without_role_and_manual_move_may_exceed_it(tmp
     settings = e.Settings(aufsichten_pro_raum=0, reserve=0, hof_gruppen=2, hof_pro_gruppe=2, seed=1)
     model = e.EinsatzModel(persons, [], settings)
     assert sorted(model.assign.values()) == ["hof:1", "hof:1", "hof:2", "hof:2", "ohne"]
-    assert any("Nicht verplant (1)" in w for w in model.warnings()) and any("OHNE ROLLE" in l for l in model.overview())
+    assert any("Nicht verplant: 1" in w for w in model.warnings()) and any("OHNE ROLLE 1" in l for l in model.overview())
     loose = model.members("ohne")[0].matrikel
     model.move(loose, "hof:1")                    # von Hand erlaubt, mit Warnung
     assert model.assign[loose] == "hof:1" and any("Hof Gruppe 1: 3 statt höchstens 2" in w for w in model.warnings())
@@ -270,6 +270,6 @@ def test_tag_shows_wish_status():
     a, b, c, d = person(1, wish="Hof"), person(2, wish="Aufsicht"), person(3), person(4, 12)
     model = e.EinsatzModel([a, b, c, d], ["101"], e.Settings(aufsichten_pro_raum=1, reserve=0, hof_gruppen=1),
                            assign={1: "hof:1", 2: "hof:1", 3: "hof:1", 4: "5pk"})
-    assert model.tag(a).endswith("(Wunsch Hof, erfüllt)") and model.tag(b).endswith("(Wunsch Aufsicht, nicht erfüllt)")
-    assert model.tag(c).endswith("(ohne Wunsch)") and model.tag(d) == d.label
-    assert any("(Wunsch Aufsicht, nicht erfüllt)" in line for line in model.overview())
+    assert model.tag(a) == "1 H+" and model.tag(b) == "2 A!" and model.tag(c) == "3 -" and model.tag(d) == "4"
+    assert "2 A!" in " ".join(model.room_lines() + [model.tag(b)])
+    assert not any(person.nachname in line for line in model.overview() + model.room_lines() for person in (a, b, c, d))
