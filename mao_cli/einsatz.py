@@ -56,7 +56,8 @@ class Person:
 
     @property
     def label(self) -> str:
-        return f"{self.nachname}, {self.vorname}"
+        """Angezeigt wird nur die Matrikelnummer (keine Namen auf dem Bildschirm)."""
+        return str(self.matrikel)
 
 
 @dataclass(frozen=True)
@@ -177,7 +178,7 @@ class EinsatzModel:
 
     def members(self, target: str) -> list[Person]:
         return sorted((self.persons[m] for m, t in self.assign.items() if t == target and m in self.persons),
-                      key=lambda p: (p.nachname.lower(), p.vorname.lower()))
+                      key=lambda p: p.matrikel)
 
     def targets(self) -> list[str]:
         out = [aufsicht_target(code) for code in self.rooms] + [T_RESERVE]
@@ -195,13 +196,13 @@ class EinsatzModel:
         return target.startswith("hof:") if person.wish == "Hof" else (target.startswith("aufsicht:") or target == T_RESERVE)
 
     def tag(self, person: Person) -> str:
-        """Name mit Wunschstatus, z. B. "Müller, Anna (Wunsch Hof, erfüllt)" (nur Stufe 11 ohne Teilnahme)."""
+        """Matrikelnummer mit Wunschstatus: A+ / H+ = Wunsch Aufsicht / Hof erfüllt, A! / H! = nicht erfüllt, - = ohne Wunsch."""
         if person.stufe != 11 or not self.movable(person.matrikel):
             return person.label
         met = self.wish_met(person)
         if met is None:
-            return f"{person.label} (ohne Wunsch)"
-        return f"{person.label} (Wunsch {person.wish}, {'erfüllt' if met else 'nicht erfüllt'})"
+            return f"{person.label} -"
+        return f"{person.label} {(person.wish or '?')[0]}{'+' if met else '!'}"
 
     def stats(self) -> dict[str, int]:
         free = [p for p in self.persons.values() if p.stufe == 11 and self.movable(p.matrikel)]
@@ -221,17 +222,17 @@ class EinsatzModel:
             out.append(f"Reserve: {have} von {self.settings.reserve}")
         open_ = [p.label for p in self.persons.values() if self.assign.get(p.matrikel, T_NONE) == T_NONE]
         if open_:
-            out.append(f"Nicht verplant ({len(open_)}): " + "; ".join(sorted(open_)[:15]) + (" …" if len(open_) > 15 else ""))
+            out.append(f"Nicht verplant: {len(open_)} (anzeigen: l ohne)")
         for n in range(1, self.settings.hof_gruppen + 1):
             size = len(self.members(hof_target(n)))
             if self.settings.hof_pro_gruppe is not None and size > self.settings.hof_pro_gruppe:
                 out.append(f"Hof Gruppe {n}: {size} statt höchstens {self.settings.hof_pro_gruppe}")
         wrong = [p.label for p in self.members(T_5PK) if p.stufe != 12]
         if wrong:
-            out.append("5. PK bei Stufe 11 (nicht zulässig): " + "; ".join(sorted(wrong)[:10]))
+            out.append(f"5. PK bei Stufe 11 (nicht zulässig): {len(wrong)} (anzeigen: l 5pk)")
         missed = [p.label for p in self.persons.values() if self.wish_met(p) is False]
         if missed:
-            out.append(f"Wunsch nicht erfüllt ({len(missed)}): " + "; ".join(sorted(missed)[:15]) + (" …" if len(missed) > 15 else ""))
+            out.append(f"Wunsch nicht erfüllt: {len(missed)} (anzeigen: w)")
         return out
 
     def parse_target(self, text: str) -> str | None:
@@ -257,8 +258,8 @@ class EinsatzModel:
         if text.isdigit() and int(text) in self.persons:
             return [self.persons[int(text)]]
         words = text.replace(",", " ").split()
-        return sorted((p for p in self.persons.values() if all(w in f"{p.nachname} {p.vorname} {p.klasse}".lower() for w in words)),
-                      key=lambda p: (p.nachname.lower(), p.vorname.lower()))
+        return sorted((p for p in self.persons.values() if all(w in f"{p.matrikel} {p.klasse}".lower() for w in words)),
+                      key=lambda p: p.matrikel)
 
     # --- Änderungen
     def _remember(self) -> None:
@@ -298,39 +299,41 @@ class EinsatzModel:
 
     # --- Darstellung
     def overview(self) -> list[str]:
-        lines = []
-        for code in self.rooms:
-            team = self.members(aufsicht_target(code))
-            lines.append(f"  Raum {code:<8} {len(team)}/{self.settings.aufsichten_pro_raum}  " + "; ".join(self.tag(p) for p in team))
-        reserve = self.members(T_RESERVE)
-        lines.append(f"  Reserve        {len(reserve)}/{self.settings.reserve}  " + "; ".join(self.tag(p) for p in reserve))
+        """Kompakte Übersicht: nur Anzahlen (Personen siehe ``l ZIEL`` und ``r``)."""
+        per_room = self.settings.aufsichten_pro_raum
+        have = sum(len(self.members(aufsicht_target(code))) for code in self.rooms)
+        lines = [f"  Aufsicht   {have}/{per_room * len(self.rooms)}   ({len(self.rooms)} Räume je {per_room})"]
+        lines.append(f"  Reserve    {len(self.members(T_RESERVE))}/{self.settings.reserve}")
+        cap = f"/{self.settings.hof_pro_gruppe}" if self.settings.hof_pro_gruppe else ""
         for n in range(1, self.settings.hof_gruppen + 1):
-            group = self.members(hof_target(n))
-            lines.append(f"  Hof Gruppe {n:<3} {len(group)}" + (f"/{self.settings.hof_pro_gruppe}" if self.settings.hof_pro_gruppe else "")
-                         + "  " + "; ".join(self.tag(p) for p in group))
-        lines.append(f"  5. PK          {len(self.members(T_5PK))}")
-        lines.append(f"  Teilnahme      {len(self.members(T_TEILNAHME))}")
-        none = self.members(T_NONE)
+            lines.append(f"  Hof {n}      {len(self.members(hof_target(n)))}{cap}")
+        lines.append(f"  5. PK      {len(self.members(T_5PK))}")
+        lines.append(f"  Teilnahme  {len(self.members(T_TEILNAHME))}")
+        none = len(self.members(T_NONE))
         if none:
-            lines.append(f"  OHNE ROLLE     {len(none)}  " + "; ".join(self.tag(p) for p in none))
+            lines.append(f"  OHNE ROLLE {none}")
         fixed = sum(1 for t in self.assign.values() if t.startswith("sonst:"))
         if fixed:
-            lines.append(f"  Fremde Rollen  {fixed} (unverändert)")
+            lines.append(f"  Fremde Rollen {fixed} (unverändert)")
         return lines
+
+    def room_lines(self) -> list[str]:
+        """Eine Zeile je Raum mit den Matrikelnummern der Schüler-Aufsichten."""
+        return [f"  {code:<6} " + (" ".join(self.tag(p) for p in self.members(aufsicht_target(code))) or "-") for code in self.rooms]
 
 
 # ------------------------------------------------------------------ Entwurf (einsatz-plan.yaml)
 
 def _item(person: Person) -> str:
     wish = f", Wunsch {person.wish}" if person.wish else ""
-    return json.dumps(f"{person.matrikel}  {person.label} ({person.klasse}{wish})", ensure_ascii=False)
+    return json.dumps(f"{person.matrikel}  ({person.klasse}{wish})", ensure_ascii=False)
 
 
 def plan_text(model: EinsatzModel, name: Path = Path(PLAN_FILE)) -> str:
     s = model.settings
     lines = [f"# {name.name}: Zwischenstand der Einsatzplanung (Oberstufe). Bearbeiten, dann:",
              "#   mao einsatz            (Dry-Run, zeigt Änderungen)   ·   mao einsatz --apply   (schreibt in die Datenbank)",
-             "# Jeder Eintrag beginnt mit der Matrikelnummer; der Rest der Zeile ist nur zur Lesbarkeit.",
+             "# Jeder Eintrag beginnt mit der Matrikelnummer; der Rest der Zeile ist nur zur Lesbarkeit (keine Namen).",
              "einstellungen:",
              f"  aufsichten_pro_raum: {s.aufsichten_pro_raum}", f"  reserve: {s.reserve}", f"  hof_gruppen: {s.hof_gruppen}",
              f"  hof_pro_gruppe: {'null' if s.hof_pro_gruppe is None else s.hof_pro_gruppe}", f"  seed: {s.seed}", "aufsicht:"]
@@ -625,24 +628,26 @@ def write_plan(db: Any, ctx: Context, changes: Mapping[str, list[Any]]) -> int:
 
 # ------------------------------------------------------------------ Ablauf
 
-HELP = """Befehle:
-  l                 Übersicht (Räume, Reserve, Hof, 5. PK)
-  l ZIEL            Personen eines Ziels, z. B. l 107 · l reserve · l hof1 · l 5pk · l ohne
-  s TEXT            Person suchen (Name, Klasse oder Matrikelnummer)
-  v PERSON ZIEL     verschieben, z. B. v mueller hof2 · v 123456 107
-  t PERSON PERSON   zwei Personen tauschen (Personen in Anführungszeichen, wenn sie Leerzeichen enthalten)
+HELP = """Befehle (Personen werden mit der Matrikelnummer angegeben):
+  l                 Übersicht (nur Anzahlen) und Warnungen
+  l ZIEL            Matrikelnummern eines Ziels: l 107 · l reserve · l hof1 · l 5pk · l ohne
+  r                 alle Räume mit ihren Schüler-Aufsichten
+  s TEXT            Person suchen (Matrikelnummer oder Klasse)
+  v NR ZIEL         verschieben, z. B. v 123456 hof2 · v 123456 107 · v 123456 ohne
+  t NR NR           zwei Personen tauschen
   n [SEED]          neu auslosen (alles außer Fixes)
-  w                 offene Wünsche anzeigen
+  w                 Personen mit nicht erfülltem Wunsch
   u                 letzte Änderung zurück
   d                 Entwurf speichern (einsatz-plan.yaml)
   ok                Änderungen gegenüber der Datenbank zeigen (mit --apply: nach Rückfrage schreiben)
-  q                 Ende"""
+  q                 Ende
+Kennzeichen: A+ / H+ Wunsch Aufsicht / Hof erfüllt · A! / H! nicht erfüllt · - ohne Wunsch"""
 
 
 def summary_lines(model: EinsatzModel) -> list[str]:
     stats = model.stats()
-    lines = [f"Stufe 11 ohne Teilnahme: {stats['stufe_11_ohne_teilnahme']} (Wunsch: {stats['mit_wunsch']}, "
-             f"erfüllt: {stats['wunsch_erfuellt']}, ohne Wunsch: {stats['ohne_wunsch']}) · Seed {model.settings.seed}"]
+    lines = [f"Stufe 11 ohne Teilnahme: {stats['stufe_11_ohne_teilnahme']} · Wunsch {stats['mit_wunsch']} "
+             f"(erfüllt {stats['wunsch_erfuellt']}) · ohne Wunsch {stats['ohne_wunsch']} · Seed {model.settings.seed}"]
     lines += model.overview()
     lines += [f"  ! {w}" for w in model.warnings()]
     return lines
@@ -665,7 +670,7 @@ def _resolve(model: EinsatzModel, query: str, out: Callable[[str], Any]) -> Pers
     found = model.find(query)
     if len(found) == 1:
         return found[0]
-    out("Keine Person gefunden" if not found else "Mehrdeutig: " + "; ".join(f"{p.label} ({p.klasse}, {p.matrikel})" for p in found[:8]))
+    out("Keine Person gefunden" if not found else "Mehrdeutig: " + "; ".join(f"{p.label} ({p.klasse})" for p in found[:8]))
     return None
 
 
@@ -700,10 +705,13 @@ def interactive_einsatz(model: EinsatzModel, db: Any, ctx: Context, *, apply: bo
                 if target is None:
                     out("Unbekanntes Ziel")
                 else:
-                    out(target_label(target) + ": " + ("; ".join(f"{model.tag(p)} [{p.klasse}]" for p in model.members(target)) or "-"))
+                    out(target_label(target) + ": " + (" ".join(model.tag(p) for p in model.members(target)) or "-"))
+            elif cmd == "r":
+                for line in model.room_lines():
+                    out(line)
             elif cmd == "s" and args:
                 for p in model.find(" ".join(args))[:15]:
-                    out(f"{p.label} ({p.klasse}, {p.matrikel}) – {target_label(model.assign.get(p.matrikel, '-'))}"
+                    out(f"{model.tag(p)} ({p.klasse}) – {target_label(model.assign.get(p.matrikel, '-'))}"
                         + (f", Wunsch {p.wish}" if p.wish else ""))
             elif cmd == "v" and len(args) >= 2:
                 person, target = _resolve(model, args[0], out), model.parse_target(" ".join(args[1:]))
@@ -723,8 +731,8 @@ def interactive_einsatz(model: EinsatzModel, db: Any, ctx: Context, *, apply: bo
                     out(line)
             elif cmd == "w":
                 missed = [p for p in model.persons.values() if model.wish_met(p) is False]
-                out("; ".join(f"{p.label} (Wunsch {p.wish}, jetzt {target_label(model.assign[p.matrikel])})" for p in sorted(missed, key=lambda p: p.label))
-                    or "Alle Wünsche erfüllt")
+                out("; ".join(f"{p.label} (Wunsch {p.wish}, jetzt {target_label(model.assign[p.matrikel])})"
+                              for p in sorted(missed, key=lambda p: p.matrikel)) or "Alle Wünsche erfüllt")
             elif cmd == "u":
                 out("Zurückgenommen" if model.undo() else "Nichts zum Zurücknehmen")
             elif cmd == "d":
