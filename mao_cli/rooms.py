@@ -927,8 +927,8 @@ def set_room(db: Any, tables: Mapping[str, str], room_code: str, matrikels: list
 
 
 def suggest_rooms(level: int | None, rooms: Mapping[str, Mapping[str, Any]], occupancy: Mapping[str, Mapping[int, int]],
-                  max_per_room: int, *, limit: int = 5) -> list[str]:
-    """Alle aktiven Räume; freie zuerst, dann nach: Stufe schon da, wenig andere Stufen, schon genutzt, meiste Plätze frei."""
+                  max_per_room: int, *, limit: int | None = None) -> list[str]:
+    """Alle aktiven Räume (auch volle, diese zuletzt); freie zuerst, dann nach: Stufe schon da, wenig andere Stufen, schon genutzt, meiste Plätze frei."""
     scored: list[tuple[tuple[int, int, int, int, int, str], str]] = []
     for code, info in rooms.items():
         if not info["active"]:
@@ -941,7 +941,7 @@ def suggest_rooms(level: int | None, rooms: Mapping[str, Mapping[str, Any]], occ
         others = len([s for s in counts if s != level])
         key = (0 if free > 0 else 1, 0 if level in counts else 1, others, 0 if used else 1, -free, code)
         scored.append((key, code))
-    return [code for _key, code in sorted(scored)[:limit]]
+    return [code for _key, code in sorted(scored)[:limit]]  # limit=None: alle
 
 
 def interactive_assign(db: Any, tables: Mapping[str, str], *, apply: bool, max_per_room: int = 15,
@@ -986,6 +986,7 @@ def interactive_assign(db: Any, tables: Mapping[str, str], *, apply: bool, max_p
             cap = min(rooms[code]["capacity"] or max_per_room, max_per_room)
             full = "  VOLL" if sum(counts.values()) >= cap else ""
             out(f"  {number}) {code}  ({sum(counts.values())}/{cap} belegt; {mix}){full}")
+        out("  (alle Räume stehen zur Wahl, auch volle: dort wird die Grenze bewusst überschritten)")
         answer = str(ask("> ")).strip()
         if answer.lower() == "q":
             break
