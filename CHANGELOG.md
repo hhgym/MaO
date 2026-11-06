@@ -61,6 +61,7 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ### Aufsichtenprüfung (`mao aufsichten`)
 
+- `mao aufsichten --interaktiv`: Beim Laden eines Entwurfs wird gemeldet, wo er von der Datenbank abweicht (ein alter Entwurf überschreibt sonst unbemerkt neuere Datenbankeinträge; ignorieren mit `--neu`). Pipeline: Bei `Abiturerstellung` steht die Bemerkung ohne Komma hinter der Rolle.
 - Neue Rolle `Abiturerstellung` (ohne Raum, wie Reserve) in `--rolle`, Plandatei (`abitur:`), Konsole und Tabellenansicht. Die interaktiven Ansichten haben eine Spalte **Bemerkung** (Spalte `bemerkung` der Aufsichtentabelle); setzen mit `b` bzw. `bem ZEILE KÜRZEL Text`, in der Plandatei im Abschnitt `bemerkungen:` (`"105|GER": Text`).
 
 - Neuer, nur lesender Befehl: prüft nach der Raumzuteilung, ob jeder belegte Raum (auch die der Externen) die vorgesehene Zahl Lehrkraft-Aufsichten hat, und meldet Plätze ohne Lehrkraft, Doppelbelegungen, nicht mehr aktive Lehrkräfte und Einträge in leeren Räumen. Regeln im Abschnitt `aufsichten` der `raumregeln.yaml`; neuer tables.ini-Schlüssel `aufsichten_table`.

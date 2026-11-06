@@ -421,6 +421,7 @@ class Draft:
                 raise RoomError(f"Entwurf {self.name}: unbekannte Kürzel {', '.join(bad)} ({where})")
             return found
 
+        before = json.loads(json.dumps(model.state))
         ignored = []
         if isinstance(data.get("raeume"), dict):
             for code, value in data["raeume"].items():
@@ -439,6 +440,11 @@ class Draft:
                     model.state["bemerkungen"][f"{row}|{who.upper()}"] = str(text).strip()[:NOTE_MAX]
         model.mark_saved()
         note = f"Entwurf {self.name} geladen"
+        differing = [f"{model.ROLE_TITLES.get(row, row)}: Datenbank {' '.join(before_team) or '-'}, Entwurf {' '.join(model.team(row)) or '-'}"
+                     for row in model.rows()
+                     if (before_team := before["raeume"].get(row, []) if row in model.state["raeume"] else before.get(row, [])) != model.team(row)]
+        if differing:
+            note += " – weicht von der Datenbank ab: " + "; ".join(differing[:8]) + (" …" if len(differing) > 8 else "")
         return note + (f" (nicht belegte Räume ignoriert: {', '.join(ignored)})" if ignored else "")
 
 

@@ -538,3 +538,14 @@ def test_apply_plan_writes_abitur_role_and_notes():
     assert updates and updates[0][1] == ("neu", 7, 1, "Standard", 1)
     with pytest.raises(r.RoomError, match="nicht eingeteilt"):
         a.apply_plan_data(sdb(SCur(sups=())), TABLES, {"raeume": {"R1": ["AB"]}, "bemerkungen": {"R1|CD": "x"}}, dry_run=True)
+
+
+def test_draft_load_reports_differences_from_database(tmp_path):
+    _db, cur, m = make_model(tmp_path)
+    m.state["abitur"] = ["CD"]                       # Stand der Datenbank
+    m.mark_saved()
+    draft = a.Draft(tmp_path, tmp_path / "cfg", Path("aufsichten-plan.yaml"))
+    draft.path.write_text("abitur: []\nreserve: []\n", encoding="utf-8")
+    note = draft.load_into(m)
+    assert "weicht von der Datenbank ab" in note and "Abiturerstellung: Datenbank CD, Entwurf -" in note
+    assert m.team("abitur") == []
