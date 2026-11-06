@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from datetime import date
 from pathlib import Path
 from typing import Any, Mapping
@@ -179,6 +180,24 @@ def _teacher_list(cur: Any, tables: Mapping[str, str]) -> list[tuple[str, str, s
     return [(str(k), str(v or ""), str(n or ""), bool(m)) for k, v, n, m in cur.fetchall() if k]
 
 
+def _require_roles(cur: Any, sup_t: str, roles: set[str]) -> None:
+    """Prüfen, dass die Spalte rolle (ENUM) die Rollen kennt; sonst würde MySQL still einen leeren Wert speichern."""
+    cur.execute(f"SHOW COLUMNS FROM `{sup_t}` LIKE 'rolle'")
+    rows = cur.fetchall()
+    try:
+        column_type = str(rows[0][1])
+    except (IndexError, TypeError):
+        return
+    if not column_type.lower().startswith("enum("):
+        return
+    known = set(re.findall(r"'((?:[^']|'')*)'", column_type))
+    missing = sorted(roles - known)
+    if missing:
+        values = ", ".join(f"'{v}'" for v in [*[x for x in ROLES if x in known or x in roles], *sorted(known - set(ROLES))])
+        raise RoomError(f"Die Spalte rolle in {sup_t} kennt {', '.join(missing)} nicht. Einmal in der Datenbank ausführen: "
+                        f"ALTER TABLE `{sup_t}` MODIFY `rolle` ENUM({values}) NOT NULL DEFAULT 'Standard';")
+
+
 def set_supervision(db: Any, tables: Mapping[str, str], *, room: str | None, kuerzel: list[str], role: str = "Standard",
                     remove: bool = False, dry_run: bool = True) -> dict[str, Any]:
     """Aufsichten eintragen (oder entfernen). Dry-Run ist Standard; Reserve und Fachaufsicht gehören zu keinem Raum."""
@@ -203,6 +222,8 @@ def set_supervision(db: Any, tables: Mapping[str, str], *, room: str | None, kue
             jahrgang_id = load_state_year(cur, tables)
         except ExternError as exc:
             raise RoomError(str(exc)) from exc
+        if not remove:
+            _require_roles(cur, sup_t, {role})
         rooms = load_rooms(cur, tables)
         room_id = None
         if room:
@@ -307,6 +328,10 @@ def _load_plan_context(cur: Any, tables: Mapping[str, str]) -> dict[str, Any]:
     teachers = {int(i): (str(k) if k else str(i), a) for i, k, a in cur.fetchall()}
     cur.execute(f"SELECT raum_id, lehrkraft_id, rolle, bemerkung FROM `{sup_t}` WHERE mao_jahrgang_id = %s "
                 "AND bemerkung IS NOT NULL AND bemerkung <> ''", (jahrgang_id,))
+    broken = sum(1 for _r, _lk, ro in current if ro == "")
+    if broken:
+        LOGGER.warning("%d Einträge in %s haben eine leere Rolle (vermutlich fehlt der ENUM-Wert in der Spalte rolle, "
+                       "z. B. Abiturerstellung); sie werden ignoriert", broken, sup_t)
     notes = {(None if r is None else int(r), int(lk), str(ro)): str(b).strip() for r, lk, ro, b in cur.fetchall() if lk is not None}
     return {"sup_t": sup_t, "jahrgang_id": jahrgang_id, "rooms": rooms, "by_id": by_id, "current": current, "notes": notes,
             "teachers": teachers, "counts": _room_counts(cur, tables, by_id, jahrgang_id)}
@@ -519,6 +544,8 @@ def apply_plan_data(db: Any, tables: Mapping[str, str], plan: Any, *, dry_run: b
                 warnings.append(f"{n} ist in mehreren Räumen eingeteilt: {', '.join(places)}")
         scoped = {t for t in current if (t[2] == "Standard" and t[0] in scope_rooms) or t[2] in scope_roles}
         to_add, to_del = desired - scoped, scoped - desired
+        if to_add:
+            _require_roles(cur, ctx["sup_t"], {t[2] for t in to_add})
         wanted_notes: dict[tuple[int | None, int, str], str] = {}
         note_changes: list[tuple[tuple[int | None, int, str], str]] = []
         if "bemerkungen" in plan:

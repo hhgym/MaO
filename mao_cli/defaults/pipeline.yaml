@@ -289,7 +289,7 @@ datasets:
         TRIM(CONCAT_WS(' ', NULLIF(t.titel, ''), NULLIF(t.vorname, ''), t.nachname)) AS name,
         COALESCE(r.raumcode, '') AS raum,
         CASE WHEN st.stufen IS NULL THEN '' ELSE CONCAT('[', st.stufen, ']') END AS klassenstufen,
-        a.rolle AS rolle,
+        CASE WHEN a.rolle = 'Standard' THEN 'Aufsicht' ELSE a.rolle END AS rolle,
         -- Standard: nur die Bemerkung; Reserve/Fachaufsicht: Rolle, Bemerkung; Abiturerstellung: Rolle Bemerkung
         CASE WHEN a.rolle = 'Standard' THEN COALESCE(a.bemerkung, '')
              WHEN COALESCE(a.bemerkung, '') = '' THEN a.rolle
