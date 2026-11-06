@@ -33,7 +33,7 @@ from .extern import ExternError, assign_extern_rooms, import_extern
 from .gf_import import import_participants, ImportErrorGF, write_import_report
 from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, read_file, sync_schools
 from .rooms import (RoomError, assign_rooms, create_year_rules, interactive_assign, load_room_rules,
-                    resolve_rules_file, set_room, write_room_report)
+                    resolve_rules_file, room_statistics, set_room, write_room_report)
 from .validation import validate_online
 
 DEFAULTS = Path(__file__).resolve().parent / "defaults"
@@ -188,6 +188,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                        help="Vorhandene Raumzuordnungen verwerfen und alles neu verteilen (sonst bleiben sie erhalten)")
     rooms.add_argument("--extern", action="store_true",
                        help="Stattdessen die externen Teilnehmenden zuteilen (Räume aus raumregeln.yaml, Abschnitt extern)")
+    rooms.add_argument("--statistik", action="store_true",
+                       help="Nur anzeigen, welche Stufen mit welcher Anzahl in welchem Raum sitzen (plant und schreibt nichts)")
     rooms.add_argument("--regeln-anlegen", action="store_true",
                        help="raumregeln.yaml im Jahrgangsordner aus der zentralen Vorlage anlegen (überschreibt nie) und beenden")
     rooms.add_argument("--report", type=Path, metavar="DATEI.json|DATEI.csv",
@@ -286,6 +288,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error("--report benötigt für aufsichten und einsatz einen Dateinamen mit .json")
     if args.command == "import-extern" and args.report and args.report.suffix.lower() != ".json":
         parser.error("--report benötigt für import-extern einen Dateinamen mit .json")
+    if args.command == "raumzuteilung" and args.statistik and (args.apply or args.plan_id or args.ueberschreiben or args.extern):
+        parser.error("--statistik zeigt nur an und lässt sich nicht mit --apply, --plan-id, --ueberschreiben oder --extern kombinieren")
     if args.command == "raumzuteilung" and args.plan_id and not args.apply:
         parser.error("--plan-id gehört zu --apply")
     if args.command == "import-gf" and args.apply and args.report:
@@ -800,6 +804,10 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
             db_config = load_db_config(config_dir)
             if not can_reach(db_config.host, db_config.port, timeout=3):
                 raise ConnectionError("Datenbank für die Raumzuteilung nicht erreichbar")
+            if args.statistik:
+                with DB(db_config) as db:
+                    room_statistics(db, tables)
+                return 0
             seed = args.seed if args.seed is not None else random.SystemRandom().randrange(1, 10 ** 6)
             room_report: dict = {"schema_version": 1, "status": "blocked", "mode": "apply" if args.apply else "dry-run",
                                  "issues": [], "summary": {}}

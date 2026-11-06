@@ -754,6 +754,67 @@ def assign_rooms(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_ru
         cur.close()
 
 
+def room_statistics(db: Any, tables: Mapping[str, str], *, report: dict[str, Any] | None = None,
+                    out: Any = print) -> dict[str, Any]:
+    """Nur anzeigen, welche Stufen mit welcher Anzahl in welchem Raum sitzen (Hauptwettbewerb und Externe); plant nichts."""
+    from .extern import ExternError, load_state_year
+    cnx = db.conn
+    if cnx is None:
+        raise RoomError("Keine Datenbankverbindung")
+    cur = cnx.cursor()
+    try:
+        participants, rooms, _points = load_room_data(cur, tables)
+        extern = _ident(tables.get("extern_teilnahmen_table", ""), "extern_teilnahmen_table")
+        try:
+            jahrgang_id = load_state_year(cur, tables)
+        except ExternError as exc:
+            raise RoomError(str(exc)) from exc
+        by_id = {info["id"]: code for code, info in rooms.items()}
+        cur.execute(f"SELECT raum_id, klassenstufe FROM `{extern}` WHERE mao_jahrgang_id = %s", (jahrgang_id,))
+        external = [(by_id.get(int(r)) if r is not None else None, k) for r, k in cur.fetchall()]
+    finally:
+        cur.close()
+    main: dict[str, dict[str, int]] = {}
+    ext: dict[str, dict[str, int]] = {}
+    no_room_main = no_room_ext = 0
+    for p in participants:
+        if p["raum"] is None:
+            no_room_main += 1
+        else:
+            level = str(p["stufe"]) if p["stufe"] is not None else "?"
+            main.setdefault(p["raum"], {}).setdefault(level, 0)
+            main[p["raum"]][level] += 1
+    for room, level_value in external:
+        if room is None:
+            no_room_ext += 1
+        else:
+            level = str(level_value) if level_value not in (None, "") else "?"
+            ext.setdefault(room, {}).setdefault(level, 0)
+            ext[room][level] += 1
+
+    def level_key(name: str) -> tuple[int, str]:
+        return (int(name), name) if name.isdigit() else (999, name)
+
+    rows = []
+    out("Raum    Kap.  Gesamt  Stufen (Anzahl)")
+    for code in sorted(set(main) | set(ext), key=lambda c: (_floor(c), c)):
+        n_main, n_ext = sum(main.get(code, {}).values()), sum(ext.get(code, {}).values())
+        parts = [f"{lv}: {n}" for lv, n in sorted(main.get(code, {}).items(), key=lambda x: level_key(x[0]))]
+        parts += [f"ext. {lv}: {n}" for lv, n in sorted(ext.get(code, {}).items(), key=lambda x: level_key(x[0]))]
+        capacity = rooms.get(code, {}).get("capacity")
+        out(f"{code:<7} {capacity if capacity is not None else '-':>4}  {n_main + n_ext:>6}  {' · '.join(parts)}")
+        rows.append({"raum": code, "kapazitaet": capacity, "teilnehmende": n_main, "externe": n_ext,
+                     "stufen": main.get(code, {}), "stufen_extern": ext.get(code, {})})
+    total_main, total_ext = len(participants) - no_room_main, len(external) - no_room_ext
+    out(f"Mit Raum: {total_main} Teilnehmende, {total_ext} Externe · ohne Raum: {no_room_main} Teilnehmende, {no_room_ext} Externe")
+    result = {"raeume": rows, "mit_raum": total_main, "mit_raum_extern": total_ext,
+              "ohne_raum": no_room_main, "ohne_raum_extern": no_room_ext}
+    if report is not None:
+        report.update(result)
+        report["status"] = "ready"
+    return result
+
+
 def rooms_by_stufe(plan: RoomPlan) -> dict[str, list[tuple[str, int]]]:
     """Je Stufe die Räume mit Anzahl, nach Raum sortiert (inklusive bereits vorhandener Zuordnungen)."""
     result: dict[str, list[tuple[str, int]]] = {}

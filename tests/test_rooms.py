@@ -606,3 +606,22 @@ def test_suggest_rooms_offers_all_active_rooms_including_full_ones():
     offered = r.suggest_rooms(7, rooms, occupancy, 15)
     assert sorted(offered) == list("ABCDEFGH") and offered[-2:] == ["A", "B"]
     assert len(r.suggest_rooms(7, rooms, occupancy, 15, limit=3)) == 3
+
+
+def test_room_statistics_only_shows_counts(monkeypatch):
+    import mao_cli.extern as ex
+    monkeypatch.setattr(ex, "load_state_year", lambda cur, tables: 7)
+
+    class StatCur(IaCur):
+        def fetchall(self):
+            if "`extern`" in self.last:
+                return [(1, 4), (1, 4), (None, 5)]
+            if "`orga`" in self.last:
+                return [(1, 7, "7-1", 1), (2, 7, "7-2", 1), (3, 8, "8-1", 2), (4, 8, "8-1", None)]
+            return super().fetchall()
+    cur, lines = StatCur(), []
+    result = r.room_statistics(_db(cur), TABLES2 | {"extern_teilnahmen_table": "extern", "points_last_year_view": "punkte"}, out=lines.append)
+    text = "\n".join(lines)
+    assert "7: 2 · ext. 4: 2" in text and "8: 1" in text
+    assert result["mit_raum"] == 3 and result["mit_raum_extern"] == 2 and result["ohne_raum"] == 1 and result["ohne_raum_extern"] == 1
+    assert not cur.writes

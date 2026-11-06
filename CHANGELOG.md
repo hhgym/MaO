@@ -61,6 +61,7 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ### Aufsichtenprüfung (`mao aufsichten`)
 
+- `mao raumzuteilung --statistik`: zeigt nur die aktuelle Verteilung (Stufen mit Anzahl je Raum, Externe, ohne Raum); keine Planung, kein Schreiben.
 - Pipeline `aufsichten_lehrkraefte`: Die Spalte `bemerkungen` enthält die Datenbankspalte `bemerkung`; nur bei `Fachaufsicht` und `Abiturerstellung` steht davor die Rolle, durch Leerzeichen getrennt (ohne Komma).
 - Aufsichten: Fehlt ein Rollenwert (z. B. `Abiturerstellung`) im ENUM der Spalte `rolle`, bricht das Schreiben mit der nötigen `ALTER TABLE`-Anweisung ab (MySQL würde sonst still einen leeren Wert speichern); vorhandene Einträge mit leerer Rolle werden gemeldet. Pipeline: In `Aufsichten-Lehrkraefte.csv` heißt `Standard` jetzt `Aufsicht`.
 - `mao aufsichten --interaktiv`: Beim Laden eines Entwurfs wird gemeldet, wo er von der Datenbank abweicht (ein alter Entwurf überschreibt sonst unbemerkt neuere Datenbankeinträge; ignorieren mit `--neu`). Pipeline: Bei `Abiturerstellung` steht die Bemerkung ohne Komma hinter der Rolle.
