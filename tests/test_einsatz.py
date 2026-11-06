@@ -42,14 +42,14 @@ def test_surplus_wishes_are_drawn_and_rest_goes_on():
     assign = e.build_assignment(persons, ["101", "102"], settings)
     targets = sorted(assign.values())
     assert targets.count("aufsicht:101") == targets.count("aufsicht:102") == targets.count("reserve") == 1
-    assert targets.count("hof:1") == 2 and "5pk" not in targets   # Überhang: Hof trotz Grenze, nie 5. PK
+    assert targets.count("hof:1") == 1 and targets.count("ohne") == 1 and "5pk" not in targets   # harte Grenze: Rest ohne Rolle
 
 
-def test_no_wish_fills_open_slots_then_hof_never_5pk_for_stufe_11():
+def test_no_wish_fills_open_slots_then_hof_rest_without_role():
     persons = free_people(6)
     settings = e.Settings(aufsichten_pro_raum=1, reserve=1, hof_gruppen=2, hof_pro_gruppe=1, seed=1)
     assign = e.build_assignment(persons, ["101"], settings)
-    assert sorted(assign.values()) == ["aufsicht:101", "hof:1", "hof:1", "hof:1", "hof:2", "hof:2"]   # Reserve bleibt leer
+    assert sorted(assign.values()) == ["aufsicht:101", "hof:1", "hof:2", "ohne", "ohne", "ohne"]   # Reserve bleibt leer, Hof hart begrenzt
 
 
 def test_seed_makes_the_draw_reproducible_and_reroll_changes_it():
@@ -65,12 +65,9 @@ def test_seed_makes_the_draw_reproducible_and_reroll_changes_it():
 def test_locked_entries_stay_and_use_up_slots():
     persons = free_people(3)
     settings = e.Settings(aufsichten_pro_raum=1, reserve=0, hof_gruppen=0, seed=2)
-    with pytest.raises(e.EinsatzError, match="Stufe 12"):
-        e.build_assignment(persons, ["101", "102"], settings, locked={100: "aufsicht:101"})
-    settings = e.Settings(aufsichten_pro_raum=1, reserve=0, hof_gruppen=1, seed=2)
     assign = e.build_assignment(persons, ["101", "102"], settings, locked={100: "aufsicht:101"})
     assert assign[100] == "aufsicht:101"
-    assert sorted(assign[m] for m in (101, 102)) == ["aufsicht:102", "hof:1"]
+    assert sorted(assign[m] for m in (101, 102)) == ["aufsicht:102", "ohne"]   # nie 5. PK für Stufe 11
 
 
 def test_wishes_from_entries_accepts_id_code_and_label_and_skips_trash():
@@ -247,3 +244,23 @@ def test_reserve_only_for_aufsicht_wishers():
     assign = e.build_assignment(many, ["101"], settings)
     assert sorted(m for m, t in assign.items() if t == "reserve") and all(
         m < 200 for m, t in assign.items() if t == "reserve")
+
+
+def test_hard_hof_cap_leaves_rest_without_role_and_manual_move_respects_it(tmp_path):
+    persons = free_people(5, "Hof")
+    settings = e.Settings(aufsichten_pro_raum=0, reserve=0, hof_gruppen=2, hof_pro_gruppe=2, seed=1)
+    model = e.EinsatzModel(persons, [], settings)
+    assert sorted(model.assign.values()) == ["hof:1", "hof:1", "hof:2", "hof:2", "ohne"]
+    assert any("Nicht verplant (1)" in w for w in model.warnings()) and any("OHNE ROLLE" in l for l in model.overview())
+    loose = model.members("ohne")[0].matrikel
+    with pytest.raises(e.EinsatzError, match="voll"):
+        model.move(loose, "hof:1")
+    model.move(loose, "reserve")
+    assert model.assign[loose] == "reserve" and not any("Nicht verplant" in w for w in model.warnings())
+    model.move(loose, "ohne")
+    draft = e.Draft(tmp_path, tmp_path / "cfg", Path("einsatz-plan.yaml"))
+    draft.save(model)
+    assert "\"ohne_rolle\":" in draft.path.read_text(encoding="utf-8")
+    other = e.EinsatzModel(persons, [], settings, assign={p.matrikel: "hof:1" for p in persons})
+    draft.load_into(other)
+    assert other.assign[loose] == "ohne"
