@@ -597,3 +597,12 @@ def test_interactive_refuses_full_and_unknown_room():
     _cur, result, lines = _run_ia(["A", "A", "XX", "A"], apply=False)
     assert any("über der Kapazität" in x for x in lines) and any("Unbekannter" in x for x in lines)
     assert result["zugeteilt"] == 3
+
+
+def test_suggest_rooms_offers_all_active_rooms_including_full_ones():
+    rooms = {c: {"active": True, "capacity": 2} for c in "ABCDEFGH"}
+    rooms["I"] = {"active": False, "capacity": 2}
+    occupancy = {"A": {7: 2}, "B": {7: 2}}                      # A und B sind voll
+    offered = r.suggest_rooms(7, rooms, occupancy, 15)
+    assert sorted(offered) == list("ABCDEFGH") and offered[-2:] == ["A", "B"]
+    assert len(r.suggest_rooms(7, rooms, occupancy, 15, limit=3)) == 3

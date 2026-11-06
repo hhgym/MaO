@@ -35,6 +35,7 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 
 ### GF-Import: Abgleich
 
+- `mao raum-setzen --interaktiv` bietet alle aktiven Räume zur Wahl an (nicht nur fünf), volle zuletzt; die Kapazität darf bewusst überschritten werden.
 - `mao import-gf --abgleich --apply` bietet nach dem Nachtragen neuer Teilnehmender an, ihnen sofort von Hand Räume zuzuteilen (`raum-setzen --interaktiv`); vorhandene Raumzuteilungen bleiben unberührt.
 - `mao import-gf --abgleich`: Abgleich der befüllten Organisationstabelle mit dem Formular – neue Meldungen und nicht mehr vorhandene werden angezeigt und (mit `--apply`) nur nach Rückfrage eingetragen bzw. gelöscht.
 

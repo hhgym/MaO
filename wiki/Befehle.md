@@ -172,7 +172,7 @@ Installation und Updates laufen über uv: [Updates](Updates.md).
   Raum mit der Zeile, alle anderen Zuteilungen bleiben unverändert. Nach dem Eintragen
   neuer Teilnehmender bietet der Befehl an, ihnen sofort von Hand Räume zuzuteilen
   (entspricht `mao raum-setzen --interaktiv --apply`, das nur Teilnehmende ohne Raum
-  anbietet); das geht auch später jederzeit.
+  anbietet und dabei **alle** aktiven Räume zur Wahl stellt, auch volle, deren Grenze dann bewusst überschritten wird); das geht auch später jederzeit.
 - `mao import-gf --no-mandatory` unterdrückt ausnahmsweise Pflichtteilnahmen.
 - `--report` ist ausschließlich für den Dry-Run vorgesehen; mit `--apply` unzulässig.
 - `mao --config-dir "D:/MaO/Config" --year 2026-27 import-gf` verwendet die
