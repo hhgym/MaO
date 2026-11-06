@@ -493,6 +493,7 @@ def test_tui_render_keeps_supervisors_visible_with_long_level_text():
     model.ROLE_TITLES = a.SupervisionModel.ROLE_TITLES
     model.notes_text = lambda row: "Nur bis 10 Uhr" if row == "107" else ""
     model.short = set()
+    model.marks = {}
     model.counts = {"107": 14}
     model.rows = lambda: ["107", "fachaufsicht"]
     model.level_text = lambda row: "E3, E4, E5, E6, E7, E8, E9, E10, E11, E12" if row == "107" else ""
@@ -561,3 +562,27 @@ def test_missing_enum_value_is_reported_with_alter_statement():
     with pytest.raises(r.RoomError, match="ALTER TABLE .*'Abiturerstellung'"):
         a.set_supervision(sdb(cur), TABLES, room=None, kuerzel=["AB"], role="Abiturerstellung", dry_run=True)
     a.set_supervision(sdb(EnumCur(sups=())), TABLES, room=None, kuerzel=["AB"], role="Reserve", dry_run=True)
+
+
+def test_top15_rooms_are_marked_from_rules(tmp_path):
+    (tmp_path / "raumregeln.yaml").write_text(
+        'rooms:\n  grade_rooms: {"5": [R1]}\n  top15:\n    by_grade: {"7": R1}\n    oberstufe: X1\n', encoding="utf-8")
+    db = sdb(SCur(extern=((2, 12),), sups=((1, 1, "Aufsicht"), (2, 2, "Aufsicht"))))
+    m = a.load_supervision_model(db, tmp_path, TABLES_IA, tmp_path)
+    assert m.mark("R1") == "T15/7" and m.mark("X1") == "T15/11+12" and m.mark("R9") == ""
+    assert m.room_label("R1") == "R1 K T15/7" if "R1" in m.short else m.room_label("R1").endswith("T15/7")
+    assert "T15/n" in m.legend()
+    frame = tui.render(m, tui.Ui(), 30, 100)
+    assert "T15/7" in frame and "T15/11+12" in frame
+
+
+def test_tui_uses_more_rows_and_requests_resize(tmp_path):
+    db, cur, m = make_model(tmp_path)
+    for n in range(15):
+        m.state["raeume"][f"Z{n:02d}"] = []
+    ui = tui.Ui()
+    body = tui.render(m, ui, 30, 100).split("\r\n")
+    assert len(body) <= 30 and "Abiturerstellung" in "\n".join(body)  # alle Zeilen inkl. Rollen passen in 30 Zeilen
+    frames, seq = [], iter(["q", "j"])
+    tui.run_tui(m, db, TABLES_IA, apply=False, read=lambda: next(seq), write=frames.append, size=lambda: (20, 100), resize=True)
+    assert any(f.startswith("\x1b[8;") for f in frames)

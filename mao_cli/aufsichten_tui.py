@@ -106,7 +106,7 @@ def _clip(text: str, width: int) -> str:
 
 def render(model: SupervisionModel, ui: Ui, height: int, width: int) -> str:
     rows = model.rows()
-    body_h = max(4, height - 9 - len(ui.panel))
+    body_h = max(4, height - 6 - len(ui.panel))  # Kopf 2, Legende 1, Meldung 1, Eingabe 1, eine Zeile Reserve
     ui.top = min(max(ui.top, ui.cursor - body_h + 1), ui.cursor) if len(rows) > body_h else 0
     # Stufen-Spalte passt sich dem Inhalt an (Externe: E3, E4 …), lässt aber Platz für die Aufsicht
     wanted = max([len(model.level_text(r)) for r in rows if r not in model.ROLE_KEYS] + [6])
@@ -119,14 +119,14 @@ def render(model: SupervisionModel, ui: Ui, height: int, width: int) -> str:
         if row in model.ROLE_KEYS:
             name, count = model.ROLE_TITLES[row], ""
         else:
-            name, count = row + ("  K" if row in model.short else ""), str(model.counts.get(row, 0))
+            name, count = model.room_label(row), str(model.counts.get(row, 0))
         gap = "  <-- fehlt" if model.gap(row) else ""
         who = _clip((' '.join(model.team(row)) or '-') + gap, who_w - 1)
         text = (f"{'*' if ui.mark == row else ' '} {name:<17}{count:>4}  {_clip(model.level_text(row), level_w - 2):<{level_w}}"
                 f"{who:<{who_w}}{model.notes_text(row)}")
         text = text[:max(20, width - 1)]
         lines.append(f"{REVERSE}{text:<{max(20, width - 1)}}{RESET}" if index == ui.cursor and ui.mode != "edit" else text)
-    lines.append(f"{DIM}K = Kurzraum (Stufe ≤ 6, 2 Stunden){RESET}" if model.short else "")
+    lines.append(f"{DIM}{model.legend()}{RESET}" if model.legend() else "")
     lines += ui.panel
     lines.append(ui.message)
     if ui.mode == "edit":
@@ -160,7 +160,7 @@ def _complete(model: SupervisionModel, ui: Ui) -> None:
 
 
 def run_tui(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, apply: bool, read: Callable[[], str],
-            draft: Draft | None = None,
+            draft: Draft | None = None, resize: bool = False,
             write: Callable[[str], Any], size: Callable[[], tuple[int, int]] = lambda: terminal_size(),
             ) -> dict[str, Any]:
     ui = Ui()
@@ -214,6 +214,11 @@ def run_tui(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, appl
                 ui.mode = "done"
             prompt("In die Datenbank schreiben? [j/n]", commit)
 
+    if resize:  # Fenster auf die benötigte Höhe bringen (xterm-Sequenz; manche Terminals ignorieren sie)
+        height, width = size()
+        needed = len(rows()) + 6
+        if height < needed:
+            write(f"\x1b[8;{min(needed, 60)};{max(width, 100)}t")
     while ui.mode != "done":
         height, width = size()
         write(render(model, ui, height, width))
@@ -348,4 +353,4 @@ def tui_supervision(model: SupervisionModel, db: Any, tables: Mapping[str, str],
         def write(text: str) -> None:
             sys.stdout.write(text)
             sys.stdout.flush()
-        return run_tui(model, db, tables, apply=apply, read=read, write=write, draft=draft)
+        return run_tui(model, db, tables, apply=apply, read=read, write=write, draft=draft, resize=True)
