@@ -625,3 +625,32 @@ def test_room_statistics_only_shows_counts(monkeypatch):
     assert "7: 2 · ext. 4: 2" in text and "8: 1" in text
     assert result["mit_raum"] == 3 and result["mit_raum_extern"] == 2 and result["ohne_raum"] == 1 and result["ohne_raum_extern"] == 1
     assert not cur.writes
+
+
+def test_room_marks_for_top15_and_sammelraum():
+    rules = r.RoomRules(grade_rooms={"5": ["A"]}, top15_by_grade={"7": "T7", "8": "T7"}, top15_oberstufe="Aula",
+                        flex_rooms=("S1", "T7"))
+    marks = r.room_marks(rules)
+    assert marks == {"T7": "T15/7+8 Sammel", "Aula": "T15/11+12", "S1": "Sammel"}
+    assert r.marks_legend(marks) == "T15/n = Top-15-Raum der Stufe n · Sammel = Sammelraum"
+    assert r.marks_legend({}) == ""
+
+
+def test_room_statistics_marks_special_rooms(monkeypatch):
+    import mao_cli.extern as ex
+    monkeypatch.setattr(ex, "load_state_year", lambda cur, tables: 7)
+
+    class StatCur(IaCur):
+        def fetchall(self):
+            if "`extern`" in self.last:
+                return []
+            if "`orga`" in self.last:
+                return [(1, 7, "7-1", 1), (2, 7, "7-2", 2)]
+            return super().fetchall()
+    rules = r.RoomRules(grade_rooms={"7": ["A"]}, top15_by_grade={"7": "A"}, flex_rooms=("B",))
+    lines = []
+    result = r.room_statistics(_db(StatCur()), TABLES2 | {"extern_teilnahmen_table": "extern", "points_last_year_view": "punkte"},
+                               out=lines.append, rules=rules)
+    text = "\n".join(lines)
+    assert "[T15/7]" in text and "[Sammel]" in text and "Sammel = Sammelraum" in text
+    assert [x["kennzeichnung"] for x in result["raeume"]] == ["T15/7", "Sammel"]

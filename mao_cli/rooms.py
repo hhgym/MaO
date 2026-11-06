@@ -64,6 +64,25 @@ class RoomRules:
 RULES_FILE = "raumregeln.yaml"
 
 
+def room_marks(rules: RoomRules) -> dict[str, str]:
+    """Kennzeichnung besonderer Räume: T15/<Stufen> für die Top-15-Räume, Sammel für Sammelräume."""
+    top: dict[str, list[str]] = {}
+    for level, code in rules.top15_by_grade.items():
+        top.setdefault(code, []).append(str(level))
+    if rules.top15_oberstufe:
+        top.setdefault(rules.top15_oberstufe, []).extend(["11", "12"])
+    marks = {code: "T15/" + "+".join(sorted(set(levels), key=int)) for code, levels in top.items()}
+    for code in rules.flex_rooms:
+        marks[code] = f"{marks[code]} Sammel" if code in marks else "Sammel"
+    return marks
+
+
+def marks_legend(marks: Mapping[str, str]) -> str:
+    parts = (["T15/n = Top-15-Raum der Stufe n"] if any(m.startswith("T15/") for m in marks.values()) else []) + (
+        ["Sammel = Sammelraum"] if any(m.endswith("Sammel") for m in marks.values()) else [])
+    return " · ".join(parts)
+
+
 def resolve_rules_file(workspace: Path | None, config_dir: Path) -> Path:
     """Regeln des Jahrgangs (Jahrgangsordner) haben Vorrang vor der zentralen Vorlage im Konfigurationsordner."""
     if workspace is not None and (workspace / RULES_FILE).is_file():
@@ -757,7 +776,7 @@ def assign_rooms(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_ru
 
 
 def room_statistics(db: Any, tables: Mapping[str, str], *, report: dict[str, Any] | None = None,
-                    out: Any = print) -> dict[str, Any]:
+                    out: Any = print, rules: RoomRules | None = None) -> dict[str, Any]:
     """Nur anzeigen, welche Stufen mit welcher Anzahl in welchem Raum sitzen (Hauptwettbewerb und Externe); plant nichts."""
     from .extern import ExternError, load_state_year
     cnx = db.conn
@@ -797,17 +816,21 @@ def room_statistics(db: Any, tables: Mapping[str, str], *, report: dict[str, Any
     def level_key(name: str) -> tuple[int, str]:
         return (int(name), name) if name.isdigit() else (999, name)
 
+    marks = room_marks(rules) if rules else {}
     rows = []
-    out("Raum    Kap.  Gesamt  Stufen (Anzahl)")
+    out(f"{'Raum':<7} Kap.  Gesamt  Stufen (Anzahl)")
     for code in sorted(set(main) | set(ext), key=lambda c: (_floor(c), c)):
         n_main, n_ext = sum(main.get(code, {}).values()), sum(ext.get(code, {}).values())
         parts = [f"{lv}: {n}" for lv, n in sorted(main.get(code, {}).items(), key=lambda x: level_key(x[0]))]
         parts += [f"ext. {lv}: {n}" for lv, n in sorted(ext.get(code, {}).items(), key=lambda x: level_key(x[0]))]
         capacity = rooms.get(code, {}).get("capacity")
-        out(f"{code:<7} {capacity if capacity is not None else '-':>4}  {n_main + n_ext:>6}  {' · '.join(parts)}")
-        rows.append({"raum": code, "kapazitaet": capacity, "teilnehmende": n_main, "externe": n_ext,
+        note = f"   [{marks[code]}]" if code in marks else ""
+        out(f"{code:<7} {capacity if capacity is not None else '-':>4}  {n_main + n_ext:>6}  {' · '.join(parts)}{note}")
+        rows.append({"raum": code, "kennzeichnung": marks.get(code, ""), "kapazitaet": capacity, "teilnehmende": n_main, "externe": n_ext,
                      "stufen": main.get(code, {}), "stufen_extern": ext.get(code, {})})
     total_main, total_ext = len(participants) - no_room_main, len(external) - no_room_ext
+    if marks_legend(marks):
+        out(f"({marks_legend(marks)})")
     out(f"Mit Raum: {total_main} Teilnehmende, {total_ext} Externe · ohne Raum: {no_room_main} Teilnehmende, {no_room_ext} Externe")
     result = {"raeume": rows, "mit_raum": total_main, "mit_raum_extern": total_ext,
               "ohne_raum": no_room_main, "ohne_raum_extern": no_room_ext}

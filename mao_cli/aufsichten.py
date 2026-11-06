@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .extern import ExternError, _ident as _extern_ident, load_state_year
-from .rooms import RoomError, RoomRules, load_room_rules, load_rooms, log_rules_source, resolve_rules_file
+from .rooms import RoomError, RoomRules, load_room_rules, marks_legend, room_marks, load_rooms, log_rules_source, resolve_rules_file
 
 LOGGER = logging.getLogger(__name__)
 # Rollen ohne Raum: Reserve springt ein, die Fachaufsicht ist die Wettkampfleitung (beantwortet Fragen zu den Aufgaben),
@@ -748,8 +748,7 @@ class SupervisionModel:
         return " ".join(x for x in (row, "K" if row in self.short else "", self.mark(row)) if x)
 
     def legend(self) -> str:
-        parts = (["K = Kurzraum (Stufe ≤ 6, 2 Stunden)"] if self.short else []) + (
-            ["T15/n = Top-15-Raum der Stufe n"] if self.marks else [])
+        parts = (["K = Kurzraum (Stufe ≤ 6, 2 Stunden)"] if self.short else []) + ([marks_legend(self.marks)] if self.marks else [])
         return " · ".join(parts)
 
     def rows(self) -> list[str]:
@@ -927,12 +926,7 @@ def load_supervision_model(db: Any, config_dir: Path, tables: Mapping[str, str],
     for code in ctx["counts"]:
         state["raeume"].setdefault(code, [])
     history = {names[i][0].upper(): sorted(nrs) for i, nrs in history_ids.items() if i in names}
-    top: dict[str, list[str]] = {}
-    for level, code in rules.top15_by_grade.items():
-        top.setdefault(code, []).append(level)
-    if rules.top15_oberstufe:
-        top.setdefault(rules.top15_oberstufe, []).extend(["11", "12"])
-    marks = {code: "T15/" + "+".join(sorted(set(levels), key=int)) for code, levels in top.items()}
+    marks = room_marks(rules)
     return SupervisionModel(state, {k.upper() for k, _a in names.values()}, ctx["counts"], short, history,
                             rules.supervisors_per_room, teachers, levels, marks)
 
