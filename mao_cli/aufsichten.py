@@ -719,8 +719,9 @@ class SupervisionModel:
 
     def __init__(self, state: dict[str, Any], known: set[str], counts: Mapping[str, int], short: list[str],
                  history: Mapping[str, list[int]], need: int, teachers: list[tuple[str, str, str, bool]],
-                 levels: Mapping[str, list[str]] | None = None) -> None:
+                 levels: Mapping[str, list[str]] | None = None, marks: Mapping[str, str] | None = None) -> None:
         self.state, self.known, self.counts, self.short = state, known, dict(counts), list(short)
+        self.marks = dict(marks or {})  # Raumcode → Kennzeichnung, z. B. "T15/7" (Top-15-Raum der Stufe 7)
         for key in self.ROLE_KEYS:
             self.state.setdefault(key, [])
         self.state.setdefault("bemerkungen", {})
@@ -738,6 +739,18 @@ class SupervisionModel:
 
     def level_text(self, row: str) -> str:
         return ", ".join(self.levels.get(row, [])) if row not in self.ROLE_KEYS else ""
+
+    def mark(self, row: str) -> str:
+        return self.marks.get(row, "")
+
+    def room_label(self, row: str) -> str:
+        """Raumcode mit Kennzeichnungen (K = Kurzraum, T15/n = Top-15-Raum der Stufe n)."""
+        return " ".join(x for x in (row, "K" if row in self.short else "", self.mark(row)) if x)
+
+    def legend(self) -> str:
+        parts = (["K = Kurzraum (Stufe ≤ 6, 2 Stunden)"] if self.short else []) + (
+            ["T15/n = Top-15-Raum der Stufe n"] if self.marks else [])
+        return " · ".join(parts)
 
     def rows(self) -> list[str]:
         return sorted(self.state["raeume"]) + list(self.ROLE_KEYS)
@@ -914,8 +927,14 @@ def load_supervision_model(db: Any, config_dir: Path, tables: Mapping[str, str],
     for code in ctx["counts"]:
         state["raeume"].setdefault(code, [])
     history = {names[i][0].upper(): sorted(nrs) for i, nrs in history_ids.items() if i in names}
+    top: dict[str, list[str]] = {}
+    for level, code in rules.top15_by_grade.items():
+        top.setdefault(code, []).append(level)
+    if rules.top15_oberstufe:
+        top.setdefault(rules.top15_oberstufe, []).extend(["11", "12"])
+    marks = {code: "T15/" + "+".join(sorted(set(levels), key=int)) for code, levels in top.items()}
     return SupervisionModel(state, {k.upper() for k, _a in names.values()}, ctx["counts"], short, history,
-                            rules.supervisors_per_room, teachers, levels)
+                            rules.supervisors_per_room, teachers, levels, marks)
 
 
 def finish_supervision(db: Any, tables: Mapping[str, str], model: SupervisionModel, *, apply: bool,
@@ -956,17 +975,16 @@ def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str]
     has_math = any(t[3] for t in model.teachers)
 
     def table() -> None:
-        out("\nRaum   Teilnehmende  Stufen          Aufsicht                  Bemerkung")
+        out(f"\n{'Raum':<16} Teilnehmende  Stufen          Aufsicht                  Bemerkung")
         for code in sorted(model.state["raeume"]):
-            flag = " K" if code in model.short else "  "
             gap = "   <-- fehlt" if model.gap(code) else ""
             who = (' '.join(model.team(code)) or '-') + gap
-            out(f"{code:<6}{flag} {model.counts.get(code, 0):>5}      {model.level_text(code):<14}  "
+            out(f"{model.room_label(code):<16} {model.counts.get(code, 0):>5}      {model.level_text(code):<14}  "
                 f"{who:<24}  {model.notes_text(code)}".rstrip())
         for key in model.ROLE_KEYS:
             out(f"{model.ROLE_TITLES[key] + ':':<17} {' '.join(model.state[key]) or '-':<24}  {model.notes_text(key)}".rstrip())
-        if model.short:
-            out("(K = Kurzraum, Stufe ≤ 6: 2 Stunden Aufsicht)")
+        if model.legend():
+            out(f"({model.legend()})")
 
     out("Alle Aufsichten bearbeiten. Befehle:\n"
         "  <Raum> KÜRZEL...   Raum neu besetzen (+KÜ / -KÜ ändert nur, '-' leert)   z. B. 105 GER NIX\n"
