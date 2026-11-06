@@ -36,6 +36,7 @@ Das Projekt befindet sich vor Version 2.0 in einer **nicht kompatibilitätsgebun
 ### Einsatz der Oberstufe (`mao einsatz`)
 
 - Neuer Befehl `mao einsatz`: verteilt Stufe 11/12 auf Teilnahme, Aufsicht (je Raum, einstellbar), Reserve, Hofgruppen und 5. PK; Wünsche aus Gravity Forms (Formular 59) werden erfüllt, bei Überhang entscheidet das Los. Dry-Run ist Standard, Zwischenstand in `einsatz-plan.yaml`, Konsolensitzung mit `--interaktiv`, Schreiben nur mit `--apply` (manuelle Einträge bleiben).
+- `mao einsatz`: Die Rolle 5PK gibt es nur für Stufe 12 ohne Teilnahme. Schüler der Stufe 11 ohne Platz kommen in die kleinste Hofgruppe (auch über `hof_pro_gruppe` hinaus, mit Warnung); verschieben nach 5PK ist für Stufe 11 gesperrt.
 - Voreinstellungen für `mao einsatz` stehen im Abschnitt `einsatz:` der `raumregeln.yaml` (aufsichten_pro_raum, reserve, hof_gruppen, hof_pro_gruppe, ohne_raum, formular); die Kommandozeile hat Vorrang.
 - tables.ini: neue Schlüssel `oberstufe_einsaetze_table` und `oberstufe_rollen_table` (30 Einträge).
 - Pipeline: Dataset und Export `einsatz_oberstufe` (`db/Einsatz-Oberstufe/…`, je Hofgruppe eine Datei); der Job `aufsichten_schueler` ist eingeschaltet.

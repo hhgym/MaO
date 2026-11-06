@@ -42,14 +42,14 @@ def test_surplus_wishes_are_drawn_and_rest_goes_on():
     assign = e.build_assignment(persons, ["101", "102"], settings)
     targets = sorted(assign.values())
     assert targets.count("aufsicht:101") == targets.count("aufsicht:102") == targets.count("reserve") == 1
-    assert targets.count("hof:1") == 1 and targets.count("5pk") == 1   # Überhang: Hof (1 Platz), dann 5. PK
+    assert targets.count("hof:1") == 2 and "5pk" not in targets   # Überhang: Hof trotz Grenze, nie 5. PK
 
 
-def test_no_wish_fills_open_slots_then_hof_then_5pk():
+def test_no_wish_fills_open_slots_then_hof_never_5pk_for_stufe_11():
     persons = free_people(6)
     settings = e.Settings(aufsichten_pro_raum=1, reserve=1, hof_gruppen=2, hof_pro_gruppe=1, seed=1)
     assign = e.build_assignment(persons, ["101"], settings)
-    assert sorted(assign.values()) == ["5pk", "5pk", "aufsicht:101", "hof:1", "hof:2", "reserve"]
+    assert sorted(assign.values()) == ["aufsicht:101", "hof:1", "hof:1", "hof:2", "hof:2", "reserve"]
 
 
 def test_seed_makes_the_draw_reproducible_and_reroll_changes_it():
@@ -65,9 +65,12 @@ def test_seed_makes_the_draw_reproducible_and_reroll_changes_it():
 def test_locked_entries_stay_and_use_up_slots():
     persons = free_people(3)
     settings = e.Settings(aufsichten_pro_raum=1, reserve=0, hof_gruppen=0, seed=2)
+    with pytest.raises(e.EinsatzError, match="Stufe 12"):
+        e.build_assignment(persons, ["101", "102"], settings, locked={100: "aufsicht:101"})
+    settings = e.Settings(aufsichten_pro_raum=1, reserve=0, hof_gruppen=1, seed=2)
     assign = e.build_assignment(persons, ["101", "102"], settings, locked={100: "aufsicht:101"})
     assert assign[100] == "aufsicht:101"
-    assert sorted(assign[m] for m in (101, 102)) == ["5pk", "aufsicht:102"]
+    assert sorted(assign[m] for m in (101, 102)) == ["aufsicht:102", "hof:1"]
 
 
 def test_wishes_from_entries_accepts_id_code_and_label_and_skips_trash():
@@ -102,6 +105,16 @@ def test_console_session_move_swap_undo_and_draft(tmp_path):
     assert result["geschrieben"] == 0
     assert model.assign[100] == "hof:1"      # "u" nahm nur den Tausch zurück, die Verschiebung blieb
     assert any("Unbekanntes Ziel" in line for line in lines) and draft.exists()
+
+
+def test_5pk_only_for_stufe_12():
+    twelve = person(7, 12)
+    model = e.EinsatzModel([person(2), twelve], ["101"], e.Settings(hof_gruppen=1))
+    assert model.assign[7] == "5pk" and model.assign[2] != "5pk"
+    with pytest.raises(e.EinsatzError, match="Stufe 12"):
+        model.move(2, "5pk")
+    with pytest.raises(e.EinsatzError, match="Stufe 12"):
+        model.swap(2, 7)
 
 
 def test_fixed_entries_cannot_be_moved():
