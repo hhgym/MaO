@@ -805,8 +805,13 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
             if not can_reach(db_config.host, db_config.port, timeout=3):
                 raise ConnectionError("Datenbank für die Raumzuteilung nicht erreichbar")
             if args.statistik:
+                stat_rules = None
+                try:
+                    stat_rules = load_room_rules(resolve_rules_file(workspace, config_dir))
+                except (ConfigurationError, RoomError, OSError) as exc:
+                    LOGGER.warning("Raumregeln nicht lesbar, Räume bleiben ungekennzeichnet: %s", exc)
                 with DB(db_config) as db:
-                    room_statistics(db, tables)
+                    room_statistics(db, tables, rules=stat_rules)
                 return 0
             seed = args.seed if args.seed is not None else random.SystemRandom().randrange(1, 10 ** 6)
             room_report: dict = {"schema_version": 1, "status": "blocked", "mode": "apply" if args.apply else "dry-run",
