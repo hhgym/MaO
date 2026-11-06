@@ -49,7 +49,7 @@ def test_no_wish_fills_open_slots_then_hof_never_5pk_for_stufe_11():
     persons = free_people(6)
     settings = e.Settings(aufsichten_pro_raum=1, reserve=1, hof_gruppen=2, hof_pro_gruppe=1, seed=1)
     assign = e.build_assignment(persons, ["101"], settings)
-    assert sorted(assign.values()) == ["aufsicht:101", "hof:1", "hof:1", "hof:2", "hof:2", "reserve"]
+    assert sorted(assign.values()) == ["aufsicht:101", "hof:1", "hof:1", "hof:1", "hof:2", "hof:2"]   # Reserve bleibt leer
 
 
 def test_seed_makes_the_draw_reproducible_and_reroll_changes_it():
@@ -234,3 +234,16 @@ def test_unassigned_persons_are_reported():
     assert not any("Nicht verplant" in w for w in model.warnings())
     del model.assign[2]
     assert any("Nicht verplant (1)" in w for w in model.warnings())
+
+
+def test_reserve_only_for_aufsicht_wishers():
+    persons = free_people(2, "Aufsicht", 100) + free_people(4, None, 200) + free_people(2, "Hof", 300)
+    settings = e.Settings(aufsichten_pro_raum=1, reserve=3, hof_gruppen=2, seed=4)
+    assign = e.build_assignment(persons, ["101"], settings)
+    reserve = [m for m, t in assign.items() if t == "reserve"]
+    assert reserve == [] or all(m in (100, 101) for m in reserve)
+    assert sum(1 for t in assign.values() if t in ("reserve", "aufsicht:101")) == 2   # nur die zwei Aufsicht-Wünsche
+    many = free_people(5, "Aufsicht", 100) + free_people(3, None, 200)
+    assign = e.build_assignment(many, ["101"], settings)
+    assert sorted(m for m, t in assign.items() if t == "reserve") and all(
+        m < 200 for m, t in assign.items() if t == "reserve")

@@ -5,7 +5,7 @@ Regeln:
 - Stufe 12 ohne Teilnahme: Rolle ``5PK``.
 - Stufe 11 ohne Teilnahme: Wunsch aus dem Gravity-Forms-Formular (Aufsicht oder Hof). Wünsche werden erfüllt;
   gibt es mehr Wünsche als Plätze, entscheidet das Los. Wer nichts gewünscht hat oder nicht zum Zug kam, füllt
-  freie Aufsichtsplätze, dann die Hofgruppen. ``5PK`` gibt es nie für Stufe 11; ist ``hof_pro_gruppe`` erreicht,
+  freie Aufsichtsplätze (nicht die Reserve, die bekommen nur Schüler mit Wunsch ``Aufsicht``), dann die Hofgruppen. ``5PK`` gibt es nie für Stufe 11; ist ``hof_pro_gruppe`` erreicht,
   kommt der Überhang trotzdem in die kleinste Hofgruppe (Warnung).
 - Aufsicht: ``aufsichten_pro_raum`` Schüler je belegtem Raum plus ``reserve`` Reserve (Modus Reserve ohne Raum).
 - Hof: ``hof_gruppen`` Gruppen (Modus Gruppe, gruppe_nr), optional mit höchstens ``hof_pro_gruppe`` je Gruppe.
@@ -145,8 +145,10 @@ def build_assignment(persons: list[Person], rooms: list[str], settings: Settings
     overflow = [p for p in rest if p.wish in WISHES]
     rng.shuffle(overflow)
     for person in wished_first + overflow:
-        if slots:
-            assign[person.matrikel] = slots.pop(0)
+        room_slots = [slot for slot in slots if slot != T_RESERVE]   # Reserve nur für Wunsch "Aufsicht"
+        if room_slots:
+            slots.remove(room_slots[0])
+            assign[person.matrikel] = room_slots[0]
         elif not place_hof(person, force=True):
             raise EinsatzError("Schüler der Stufe 11 ohne Platz: Es gibt keine Hofgruppe (hof_gruppen ≥ 1 setzen "
                                "oder mehr Aufsichten/Reserve einplanen). Die Rolle 5PK gilt nur für Stufe 12.")
