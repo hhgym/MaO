@@ -5,8 +5,9 @@ Regeln:
 - Stufe 12 ohne Teilnahme: Rolle ``5PK``.
 - Stufe 11 ohne Teilnahme: Wunsch aus dem Gravity-Forms-Formular (Aufsicht oder Hof). Wünsche werden erfüllt;
   gibt es mehr Wünsche als Plätze, entscheidet das Los. Wer nichts gewünscht hat oder nicht zum Zug kam, füllt
-  freie Aufsichtsplätze (nicht die Reserve, die bekommen nur Schüler mit Wunsch ``Aufsicht``), dann die Hofgruppen. ``5PK`` gibt es nie für Stufe 11; ist ``hof_pro_gruppe`` erreicht,
-  kommt der Überhang trotzdem in die kleinste Hofgruppe (Warnung).
+  freie Aufsichtsplätze (nicht die Reserve, die bekommen nur Schüler mit Wunsch ``Aufsicht``), dann die Hofgruppen.
+  ``hof_pro_gruppe`` ist eine harte Grenze; wer dann keinen Platz hat, bleibt ohne Rolle (Ziel ``ohne``, wird nicht
+  geschrieben) und wird von Hand zugeordnet. ``5PK`` gibt es nie für Stufe 11.
 - Aufsicht: ``aufsichten_pro_raum`` Schüler je belegtem Raum plus ``reserve`` Reserve (Modus Reserve ohne Raum).
 - Hof: ``hof_gruppen`` Gruppen (Modus Gruppe, gruppe_nr), optional mit höchstens ``hof_pro_gruppe`` je Gruppe.
 - Von Hand gesetzte Einträge (quelle = MANUAL) und fremde Rollen (z. B. Korrektur) bleiben unverändert.
@@ -36,7 +37,7 @@ PLAN_FILE = "einsatz-plan.yaml"
 DEFAULT_FORM_ID = 59
 FIELD_MATRIKEL, FIELD_WISH = "1", "4"
 WISHES = ("Aufsicht", "Hof")
-T_TEILNAHME, T_5PK, T_RESERVE = "teilnahme", "5pk", "reserve"
+T_TEILNAHME, T_5PK, T_RESERVE, T_NONE = "teilnahme", "5pk", "reserve", "ohne"
 
 
 class EinsatzError(RoomError):
@@ -84,7 +85,7 @@ def hof_target(number: int) -> str:
 def target_label(target: str) -> str:
     kind, _sep, rest = target.partition(":")
     return {"aufsicht": f"Aufsicht Raum {rest}", "hof": f"Hof Gruppe {rest}", "reserve": "Reserve",
-            "teilnahme": "Teilnahme", "5pk": "5. PK", "sonst": f"({rest})"}.get(kind, target)
+            "teilnahme": "Teilnahme", "5pk": "5. PK", "ohne": "ohne Rolle", "sonst": f"({rest})"}.get(kind, target)
 
 
 def build_assignment(persons: list[Person], rooms: list[str], settings: Settings,
@@ -118,10 +119,8 @@ def build_assignment(persons: list[Person], rooms: list[str], settings: Settings
                        if settings.hof_pro_gruppe is None or size < settings.hof_pro_gruppe]
         return min(open_groups, key=lambda n: (group_size[n], n)) if open_groups else None
 
-    def place_hof(person: Person, force: bool = False) -> bool:
+    def place_hof(person: Person) -> bool:
         group = free_group()
-        if group is None and force and group_size:
-            group = min(group_size, key=lambda n: (group_size[n], n))
         if group is None:
             return False
         group_size[group] += 1
@@ -149,9 +148,8 @@ def build_assignment(persons: list[Person], rooms: list[str], settings: Settings
         if room_slots:
             slots.remove(room_slots[0])
             assign[person.matrikel] = room_slots[0]
-        elif not place_hof(person, force=True):
-            raise EinsatzError("Schüler der Stufe 11 ohne Platz: Es gibt keine Hofgruppe (hof_gruppen ≥ 1 setzen "
-                               "oder mehr Aufsichten/Reserve einplanen). Die Rolle 5PK gilt nur für Stufe 12.")
+        elif not place_hof(person):
+            assign[person.matrikel] = T_NONE
     return assign
 
 
@@ -183,7 +181,7 @@ class EinsatzModel:
 
     def targets(self) -> list[str]:
         out = [aufsicht_target(code) for code in self.rooms] + [T_RESERVE]
-        out += [hof_target(n) for n in range(1, self.settings.hof_gruppen + 1)] + [T_5PK, T_TEILNAHME]
+        out += [hof_target(n) for n in range(1, self.settings.hof_gruppen + 1)] + [T_5PK, T_NONE, T_TEILNAHME]
         return out
 
     def movable(self, matrikel: int) -> bool:
@@ -212,7 +210,7 @@ class EinsatzModel:
         have = len(self.members(T_RESERVE))
         if have < self.settings.reserve:
             out.append(f"Reserve: {have} von {self.settings.reserve}")
-        open_ = [p.label for p in self.persons.values() if p.matrikel not in self.assign]
+        open_ = [p.label for p in self.persons.values() if self.assign.get(p.matrikel, T_NONE) == T_NONE]
         if open_:
             out.append(f"Nicht verplant ({len(open_)}): " + "; ".join(sorted(open_)[:15]) + (" …" if len(open_) > 15 else ""))
         for n in range(1, self.settings.hof_gruppen + 1):
@@ -234,6 +232,8 @@ class EinsatzModel:
             return T_RESERVE
         if low in ("5pk", "pk", "5.pk"):
             return T_5PK
+        if low in ("ohne", "keine", "-", "none"):
+            return T_NONE
         match = re.fullmatch(r"(?:hof|h)(\d+)", low)
         if match and 1 <= int(match.group(1)) <= self.settings.hof_gruppen:
             return hof_target(int(match.group(1)))
@@ -261,6 +261,10 @@ class EinsatzModel:
         if target not in self.targets() or target == T_TEILNAHME:
             raise EinsatzError("Unbekanntes Ziel")
         self._check_5pk(matrikel, target)
+        cap = self.settings.hof_pro_gruppe
+        if target.startswith("hof:") and cap is not None and self.assign.get(matrikel) != target \
+                and len(self.members(target)) >= cap:
+            raise EinsatzError(f"Hof Gruppe {target[4:]} ist voll ({cap}); hof_pro_gruppe erhöhen oder jemanden verschieben")
         self._remember()
         self.assign[matrikel] = target
 
@@ -301,6 +305,9 @@ class EinsatzModel:
                          + "  " + "; ".join(p.label for p in group))
         lines.append(f"  5. PK          {len(self.members(T_5PK))}")
         lines.append(f"  Teilnahme      {len(self.members(T_TEILNAHME))}")
+        none = self.members(T_NONE)
+        if none:
+            lines.append(f"  OHNE ROLLE     {len(none)}  " + "; ".join(p.label for p in none))
         fixed = sum(1 for t in self.assign.values() if t.startswith("sonst:"))
         if fixed:
             lines.append(f"  Fremde Rollen  {fixed} (unverändert)")
@@ -335,7 +342,7 @@ def plan_text(model: EinsatzModel, name: Path = Path(PLAN_FILE)) -> str:
         members = model.members(hof_target(n))
         lines.append(f"  \"{n}\": " + ("[]" if not members else ""))
         lines += [f"    - {_item(p)}" for p in members]
-    for key, target in (("5pk", T_5PK), ("teilnahme", T_TEILNAHME)):
+    for key, target in (("5pk", T_5PK), ("ohne_rolle", T_NONE), ("teilnahme", T_TEILNAHME)):
         members = model.members(target)
         lines.append(f"\"{key}\":" + (" []" if not members else ""))
         lines += [f"  - {_item(p)}" for p in members]
@@ -373,6 +380,7 @@ def parse_plan(text: str, persons: Mapping[int, Person]) -> tuple[dict[str, Any]
     for number, items in (data.get("hof") or {}).items():
         take(items, hof_target(int(number)), f"hof.{number}")
     take(data.get("5pk"), T_5PK, "5pk")
+    take(data.get("ohne_rolle"), T_NONE, "ohne_rolle")
     take(data.get("teilnahme"), T_TEILNAHME, "teilnahme")
     return data.get("einstellungen") or {}, assign
 
@@ -566,7 +574,8 @@ def diff(model: EinsatzModel, ctx: Context) -> dict[str, list[Any]]:
             changed.append((matrikel, row))
         else:
             same += 1
-    outside = sorted(m for m, old in ctx.existing.items() if old[4] != "MANUAL" and m not in model.assign and m not in ctx.locked)
+    outside = sorted(m for m, old in ctx.existing.items()
+                     if old[4] != "MANUAL" and model.assign.get(m, T_NONE) == T_NONE and m not in ctx.locked)
     return {"neu": new, "geaendert": changed, "unveraendert": [same], "nicht_im_plan": outside}
 
 
@@ -613,7 +622,7 @@ def write_plan(db: Any, ctx: Context, changes: Mapping[str, list[Any]]) -> int:
 
 HELP = """Befehle:
   l                 Übersicht (Räume, Reserve, Hof, 5. PK)
-  l ZIEL            Personen eines Ziels, z. B. l 107 · l reserve · l hof1 · l 5pk
+  l ZIEL            Personen eines Ziels, z. B. l 107 · l reserve · l hof1 · l 5pk · l ohne
   s TEXT            Person suchen (Name, Klasse oder Matrikelnummer)
   v PERSON ZIEL     verschieben, z. B. v mueller hof2 · v 123456 107
   t PERSON PERSON   zwei Personen tauschen (Personen in Anführungszeichen, wenn sie Leerzeichen enthalten)
