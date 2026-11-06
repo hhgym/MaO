@@ -290,9 +290,10 @@ datasets:
         COALESCE(r.raumcode, '') AS raum,
         CASE WHEN st.stufen IS NULL THEN '' ELSE CONCAT('[', st.stufen, ']') END AS klassenstufen,
         a.rolle AS rolle,
-        -- Standard: nur die Bemerkung; Reserve/Fachaufsicht: Rolle (und Bemerkung)
+        -- Standard: nur die Bemerkung; Reserve/Fachaufsicht: Rolle, Bemerkung; Abiturerstellung: Rolle Bemerkung
         CASE WHEN a.rolle = 'Standard' THEN COALESCE(a.bemerkung, '')
              WHEN COALESCE(a.bemerkung, '') = '' THEN a.rolle
+             WHEN a.rolle = 'Abiturerstellung' THEN CONCAT(a.rolle, ' ', a.bemerkung)
              ELSE CONCAT(a.rolle, ', ', a.bemerkung) END AS bemerkungen
       FROM {{table.aufsichten_table}} a
       JOIN {{table.teachers_table}} t ON t.id = a.lehrkraft_id
