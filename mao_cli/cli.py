@@ -168,6 +168,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     gf_mode = gf.add_mutually_exclusive_group()
     gf_mode.add_argument("--apply", action="store_true", help="Erstbefüllung der LEEREN Organisationstabelle durchführen")
     gf_mode.add_argument("--dry-run", action="store_true", help="Nur Meldungen und Zuordnungen prüfen (Standard)")
+    gf.add_argument("--abgleich", action="store_true",
+                    help="Befüllte Organisationstabelle mit dem Formular abgleichen: neue Meldungen und nicht mehr "
+                         "vorhandene zeigen; mit --apply nach Rückfrage nachtragen bzw. löschen")
     gf.add_argument("--no-mandatory", action="store_true", help="Pflichtteilnahmen ausnahmsweise nicht ergänzen")
     gf.add_argument("--report", type=Path, metavar="DATEI.json|DATEI.csv",
                     help="Prüfbericht im Workspace speichern (ohne vorhandene Datei zu überschreiben)")
@@ -580,7 +583,8 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                     if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
                         raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
                     stats = import_participants(db, config_dir, target, dry_run=not args.apply,
-                                                no_mandatory=args.no_mandatory, report=report)
+                                                no_mandatory=args.no_mandatory, report=report,
+                                                sync=args.abgleich, ask=input if sys.stdin.isatty() else None)
             except Exception as exc:
                 if str(exc) not in report["issues"] and not (
                     report["issues"] and "Einzelheiten im Prüfbericht" in str(exc)
@@ -592,10 +596,10 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                 raise
             LOGGER.info("GF-Import | Formular-Einträge: %s | inaktive Meldungen: %s | Leermeldungen: %s | "
                         "Pflichtteilnahmen ergänzt: %s | Teilnehmende: %s | Lehrkraft fehlt: %s | "
-                        "Kurs fehlt (11/12): %s | geschrieben: %s | Modus: %s",
+                        "Kurs fehlt (11/12): %s | geschrieben: %s | gelöscht: %s | Modus: %s",
                         stats["gf_entries"], stats["inactive_entries"], stats["empty_reports"], stats["mandatory_added"],
                         stats["participants"], stats["missing_teacher"], stats["missing_course"],
-                        stats["inserted"], "APPLY" if args.apply else "DRY-RUN")
+                        stats["inserted"], stats.get("removed", 0), "APPLY" if args.apply else "DRY-RUN")
             for item in report["classes"]:
                 LOGGER.info("  Klasse %-5s | GF: %s | Leermeldungen: %s | Pflicht ergänzt: %s | Gesamt: %s",
                             item["klasse"], item["gf"], item.get("empty_reports", 0), item["mandatory"], item["participants"])
