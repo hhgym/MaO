@@ -188,7 +188,7 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
 - `mao raumzuteilung --dry-run --report raum.json` plant die Verteilung nach
   `raumregeln.yaml` und zeigt sie im Log (Raum, Belegung, Stufen, offene
   Teilnehmende). Der Bericht enthält keine Namen. Es wird nichts geschrieben.
-- `mao raumzuteilung --statistik` zeigt nur an, welche Stufen mit welcher Anzahl in welchem Raum sitzen (Hauptwettbewerb und Externe, dazu die Zahl ohne Raum). Top-15-Räume (`T15/7` …) und Sammelräume (`Sammel`) laut `raumregeln.yaml` sind gekennzeichnet. Es plant und schreibt nichts.
+- `mao raumzuteilung --statistik` zeigt nur an, welche Stufen mit welcher Anzahl in welchem Raum sitzen (Hauptwettbewerb und Externe, dazu die Zahl ohne Raum). Top-15-Räume (`T/7` …) und Sammelräume (`S`) laut `raumregeln.yaml` sind gekennzeichnet. Es plant und schreibt nichts.
 - `mao raumzuteilung --seed 123 --apply` schreibt `raum_id` in die
   Organisationstabelle (Transaktion, Sperre, Zählabgleich). Mit demselben
   `--seed` entsteht dieselbe Verteilung wie im Dry-Run (der Seed steht im Log).
@@ -252,7 +252,7 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
   - `--entfernen` löscht die genannten Einträge. Eingetragen werden können alle aktiven Lehrkräfte, nicht nur Mathematik.
     Ist jemand schon in einem anderen Raum eingeteilt, gibt es eine Warnung (Eintrag erfolgt trotzdem).
   - **Tabelle mit Cursor:** `mao aufsichten --interaktiv [--apply]` öffnet eine Tabelle aller belegten Räume (plus
-    Fachaufsicht, Reserve und Abiturerstellung; `K` = Kurzraum, `T15/7` = Top-15-Raum der Stufe 7, `Sammel` = Sammelraum (laut `raumregeln.yaml`); Spalte **Bemerkung** zeigt die Bemerkungen der Lehrkräfte je Zeile). Mit den Pfeiltasten die Zeile wählen, `Enter` bearbeitet sie (Kürzel eintippen, `Tab`
+    Fachaufsicht, Reserve und Abiturerstellung; `K` = Kurzraum, `T/7` = Top-15-Raum der Stufe 7, `S` = Sammelraum (laut `raumregeln.yaml`); Spalte **Bemerkung** zeigt die Bemerkungen der Lehrkräfte je Zeile). Mit den Pfeiltasten die Zeile wählen, `Enter` bearbeitet sie (Kürzel eintippen, `Tab`
     ergänzt, `+KÜ`/`-KÜ` ändert nur), `b` setzt eine Bemerkung zu einer Lehrkraft der Zeile (`KÜRZEL Text`, ohne Text löscht), `Leertaste` markiert eine Zeile und tauscht sie mit der nächsten markierten,
     `r` zeigt den Rotationsvorschlag für Kurzräume (`j` übernimmt), `u` nimmt zurück, `l`/`L` zeigen die Lehrkräfte
     (Mathematik/alle) getrennt nach „noch nicht verplant“ und „schon verplant“ (mit Raum bzw. Fach/Reserve) in der aktuellen Sitzung, `s` prüft (Diff `+`/`−`) und schreibt mit `--apply` nach `j` alles in einer Transaktion, `q` beendet.

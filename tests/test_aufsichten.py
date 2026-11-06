@@ -569,11 +569,11 @@ def test_top15_rooms_are_marked_from_rules(tmp_path):
         'rooms:\n  grade_rooms: {"5": [R1]}\n  top15:\n    by_grade: {"7": R1}\n    oberstufe: X1\n', encoding="utf-8")
     db = sdb(SCur(extern=((2, 12),), sups=((1, 1, "Aufsicht"), (2, 2, "Aufsicht"))))
     m = a.load_supervision_model(db, tmp_path, TABLES_IA, tmp_path)
-    assert m.mark("R1") == "T15/7" and m.mark("X1") == "T15/11+12" and m.mark("R9") == ""
-    assert m.room_label("R1") == "R1 K T15/7" if "R1" in m.short else m.room_label("R1").endswith("T15/7")
-    assert "T15/n" in m.legend()
+    assert m.mark("R1") == "T/7" and m.mark("X1") == "T/11+12" and m.mark("R9") == ""
+    assert m.room_label("R1") == "R1 K T/7" if "R1" in m.short else m.room_label("R1").endswith("T/7")
+    assert "T/n" in m.legend()
     frame = tui.render(m, tui.Ui(), 30, 100)
-    assert "T15/7" in frame and "T15/11+12" in frame
+    assert "T/7" in frame and "T/11+12" in frame
 
 
 def test_tui_uses_more_rows_and_requests_resize(tmp_path):
