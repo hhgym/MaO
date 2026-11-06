@@ -5,7 +5,8 @@ Regeln:
 - Stufe 12 ohne Teilnahme: Rolle ``5PK``.
 - Stufe 11 ohne Teilnahme: Wunsch aus dem Gravity-Forms-Formular (Aufsicht oder Hof). Wünsche werden erfüllt;
   gibt es mehr Wünsche als Plätze, entscheidet das Los. Wer nichts gewünscht hat oder nicht zum Zug kam, füllt
-  freie Aufsichtsplätze, dann die Hofgruppen; der Rest bekommt ``5PK``.
+  freie Aufsichtsplätze, dann die Hofgruppen. ``5PK`` gibt es nie für Stufe 11; ist ``hof_pro_gruppe`` erreicht,
+  kommt der Überhang trotzdem in die kleinste Hofgruppe (Warnung).
 - Aufsicht: ``aufsichten_pro_raum`` Schüler je belegtem Raum plus ``reserve`` Reserve (Modus Reserve ohne Raum).
 - Hof: ``hof_gruppen`` Gruppen (Modus Gruppe, gruppe_nr), optional mit höchstens ``hof_pro_gruppe`` je Gruppe.
 - Von Hand gesetzte Einträge (quelle = MANUAL) und fremde Rollen (z. B. Korrektur) bleiben unverändert.
@@ -117,8 +118,10 @@ def build_assignment(persons: list[Person], rooms: list[str], settings: Settings
                        if settings.hof_pro_gruppe is None or size < settings.hof_pro_gruppe]
         return min(open_groups, key=lambda n: (group_size[n], n)) if open_groups else None
 
-    def place_hof(person: Person) -> bool:
+    def place_hof(person: Person, force: bool = False) -> bool:
         group = free_group()
+        if group is None and force and group_size:
+            group = min(group_size, key=lambda n: (group_size[n], n))
         if group is None:
             return False
         group_size[group] += 1
@@ -144,8 +147,9 @@ def build_assignment(persons: list[Person], rooms: list[str], settings: Settings
     for person in wished_first + overflow:
         if slots:
             assign[person.matrikel] = slots.pop(0)
-        elif not place_hof(person):
-            assign[person.matrikel] = T_5PK
+        elif not place_hof(person, force=True):
+            raise EinsatzError("Schüler der Stufe 11 ohne Platz: Es gibt keine Hofgruppe (hof_gruppen ≥ 1 setzen "
+                               "oder mehr Aufsichten/Reserve einplanen). Die Rolle 5PK gilt nur für Stufe 12.")
     return assign
 
 
@@ -206,6 +210,13 @@ class EinsatzModel:
         have = len(self.members(T_RESERVE))
         if have < self.settings.reserve:
             out.append(f"Reserve: {have} von {self.settings.reserve}")
+        for n in range(1, self.settings.hof_gruppen + 1):
+            size = len(self.members(hof_target(n)))
+            if self.settings.hof_pro_gruppe is not None and size > self.settings.hof_pro_gruppe:
+                out.append(f"Hof Gruppe {n}: {size} statt höchstens {self.settings.hof_pro_gruppe}")
+        wrong = [p.label for p in self.members(T_5PK) if p.stufe != 12]
+        if wrong:
+            out.append("5. PK bei Stufe 11 (nicht zulässig): " + "; ".join(sorted(wrong)[:10]))
         missed = [p.label for p in self.persons.values() if self.wish_met(p) is False]
         if missed:
             out.append(f"Wunsch nicht erfüllt ({len(missed)}): " + "; ".join(sorted(missed)[:15]) + (" …" if len(missed) > 15 else ""))
@@ -244,12 +255,19 @@ class EinsatzModel:
             raise EinsatzError("Dieser Eintrag ist fest (Teilnahme oder von Hand gesetzt)")
         if target not in self.targets() or target == T_TEILNAHME:
             raise EinsatzError("Unbekanntes Ziel")
+        self._check_5pk(matrikel, target)
         self._remember()
         self.assign[matrikel] = target
+
+    def _check_5pk(self, matrikel: int, target: str) -> None:
+        if target == T_5PK and self.persons[matrikel].stufe != 12:
+            raise EinsatzError("5. PK gibt es nur für Schüler der Stufe 12")
 
     def swap(self, first: int, second: int) -> None:
         if not (self.movable(first) and self.movable(second)):
             raise EinsatzError("Mindestens ein Eintrag ist fest (Teilnahme oder von Hand gesetzt)")
+        self._check_5pk(first, self.assign[second])
+        self._check_5pk(second, self.assign[first])
         self._remember()
         self.assign[first], self.assign[second] = self.assign[second], self.assign[first]
 
@@ -390,6 +408,7 @@ class Draft:
         for matrikel, target in assign.items():
             if matrikel in model.locked or model.persons[matrikel].participates:
                 continue
+            model._check_5pk(matrikel, target)
             model.assign[matrikel] = target
         model.mark_saved()
         return f"Entwurf {self.name.name} übernommen ({len(assign)} Einträge)"
