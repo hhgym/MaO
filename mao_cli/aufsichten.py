@@ -721,7 +721,7 @@ class SupervisionModel:
                  history: Mapping[str, list[int]], need: int, teachers: list[tuple[str, str, str, bool]],
                  levels: Mapping[str, list[str]] | None = None, marks: Mapping[str, str] | None = None) -> None:
         self.state, self.known, self.counts, self.short = state, known, dict(counts), list(short)
-        self.marks = dict(marks or {})  # Raumcode → Kennzeichnung, z. B. "T15/7" (Top-15-Raum der Stufe 7)
+        self.marks = dict(marks or {})  # Raumcode → Kennzeichnung, z. B. "T/7" (Top-15-Raum der Stufe 7)
         for key in self.ROLE_KEYS:
             self.state.setdefault(key, [])
         self.state.setdefault("bemerkungen", {})
@@ -744,7 +744,7 @@ class SupervisionModel:
         return self.marks.get(row, "")
 
     def room_label(self, row: str) -> str:
-        """Raumcode mit Kennzeichnungen (K = Kurzraum, T15/n = Top-15-Raum der Stufe n)."""
+        """Raumcode mit Kennzeichnungen (K = Kurzraum, T/n = Top-15-Raum der Stufe n)."""
         return " ".join(x for x in (row, "K" if row in self.short else "", self.mark(row)) if x)
 
     def legend(self) -> str:

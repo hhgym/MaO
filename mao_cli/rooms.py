@@ -65,21 +65,21 @@ RULES_FILE = "raumregeln.yaml"
 
 
 def room_marks(rules: RoomRules) -> dict[str, str]:
-    """Kennzeichnung besonderer Räume: T15/<Stufen> für die Top-15-Räume, Sammel für Sammelräume."""
+    """Kennzeichnung besonderer Räume: T/<Stufen> für die Top-15-Räume, Sammel für Sammelräume."""
     top: dict[str, list[str]] = {}
     for level, code in rules.top15_by_grade.items():
         top.setdefault(code, []).append(str(level))
     if rules.top15_oberstufe:
         top.setdefault(rules.top15_oberstufe, []).extend(["11", "12"])
-    marks = {code: "T15/" + "+".join(sorted(set(levels), key=int)) for code, levels in top.items()}
+    marks = {code: "T/" + "+".join(sorted(set(levels), key=int)) for code, levels in top.items()}
     for code in rules.flex_rooms:
-        marks[code] = f"{marks[code]} Sammel" if code in marks else "Sammel"
+        marks[code] = f"{marks[code]} S" if code in marks else "S"
     return marks
 
 
 def marks_legend(marks: Mapping[str, str]) -> str:
-    parts = (["T15/n = Top-15-Raum der Stufe n"] if any(m.startswith("T15/") for m in marks.values()) else []) + (
-        ["Sammel = Sammelraum"] if any(m.endswith("Sammel") for m in marks.values()) else [])
+    parts = (["T/n = Top-15-Raum der Stufe n"] if any(m.startswith("T/") for m in marks.values()) else []) + (
+        ["S = Sammelraum"] if any(m.split()[-1] == "S" for m in marks.values()) else [])
     return " · ".join(parts)
 
 

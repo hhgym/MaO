@@ -631,8 +631,8 @@ def test_room_marks_for_top15_and_sammelraum():
     rules = r.RoomRules(grade_rooms={"5": ["A"]}, top15_by_grade={"7": "T7", "8": "T7"}, top15_oberstufe="Aula",
                         flex_rooms=("S1", "T7"))
     marks = r.room_marks(rules)
-    assert marks == {"T7": "T15/7+8 Sammel", "Aula": "T15/11+12", "S1": "Sammel"}
-    assert r.marks_legend(marks) == "T15/n = Top-15-Raum der Stufe n · Sammel = Sammelraum"
+    assert marks == {"T7": "T/7+8 S", "Aula": "T/11+12", "S1": "S"}
+    assert r.marks_legend(marks) == "T/n = Top-15-Raum der Stufe n · S = Sammelraum"
     assert r.marks_legend({}) == ""
 
 
@@ -652,5 +652,5 @@ def test_room_statistics_marks_special_rooms(monkeypatch):
     result = r.room_statistics(_db(StatCur()), TABLES2 | {"extern_teilnahmen_table": "extern", "points_last_year_view": "punkte"},
                                out=lines.append, rules=rules)
     text = "\n".join(lines)
-    assert "[T15/7]" in text and "[Sammel]" in text and "Sammel = Sammelraum" in text
-    assert [x["kennzeichnung"] for x in result["raeume"]] == ["T15/7", "Sammel"]
+    assert "[T/7]" in text and "[S]" in text and "S = Sammelraum" in text
+    assert [x["kennzeichnung"] for x in result["raeume"]] == ["T/7", "S"]
