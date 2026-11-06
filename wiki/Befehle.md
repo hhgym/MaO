@@ -244,7 +244,7 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
 - Gemeldet werden: Räume mit zu wenigen Aufsichten (`fehlt`), Plätze ohne Lehrkraft, eine Lehrkraft
   in mehreren Räumen, nicht mehr aktive oder unbekannte Lehrkräfte (`fehler`) sowie Hinweise
   (überzählige Aufsichten, Aufsicht in einem leeren Raum, Eintrag ohne Raum).
-- Regeln in `raumregeln.yaml` (je Jahrgang): `aufsichten: {lehrkraefte_pro_raum: 1, zaehlende_rollen: ["Standard"]}`.
+- Regeln in `raumregeln.yaml` (je Jahrgang): `aufsichten: {lehrkraefte_pro_raum: 1, zaehlende_rollen: ["Aufsicht"]}`.
   Die Rollen `Reserve` (Springer), `Fachaufsicht` (Wettkampfleitung: beantwortet Fragen zu den Aufgaben) und `Abiturerstellung` (Lehrkräfte, die statt der Aufsicht eine Abituraufgabe erstellen; muss in der Rollenspalte der Aufsichtentabelle vorhanden sein) gehören keinem Raum an und zählen standardmäßig nicht als Raumaufsicht. Fehlt eine Fachaufsicht, gibt es einen Hinweis; ist sie einem Raum zugeordnet, ebenfalls.
 - **Aufsichten setzen** (Dry-Run ist Standard, `--apply` schreibt):
   - `mao aufsichten --raum 105 --lehrkraft GER NIX [--apply]` trägt Lehrkräfte per Kürzel als Raumaufsicht ein.

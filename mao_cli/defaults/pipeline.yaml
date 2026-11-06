@@ -289,7 +289,7 @@ datasets:
         TRIM(CONCAT_WS(' ', NULLIF(t.titel, ''), NULLIF(t.vorname, ''), t.nachname)) AS name,
         COALESCE(r.raumcode, '') AS raum,
         CASE WHEN st.stufen IS NULL THEN '' ELSE CONCAT('[', st.stufen, ']') END AS klassenstufen,
-        CASE WHEN a.rolle = 'Standard' THEN 'Aufsicht' ELSE a.rolle END AS rolle,
+        a.rolle AS rolle,
         -- Bemerkung = Datenbankspalte bemerkung; bei Fachaufsicht und Abiturerstellung steht davor die Rolle (mit Leerzeichen)
         CASE WHEN a.rolle IN ('Fachaufsicht', 'Abiturerstellung') THEN TRIM(CONCAT_WS(' ', a.rolle, NULLIF(a.bemerkung, '')))
              ELSE COALESCE(a.bemerkung, '') END AS bemerkungen

@@ -16,7 +16,7 @@ TEACHERS = {1: {"kuerzel": "AB", "aktiv": 1, "austritt": None}, 2: {"kuerzel": "
 RULES = r.RoomRules(grade_rooms={"5": ["R1"]})
 
 
-def sup(raum, lk, rolle="Standard"):
+def sup(raum, lk, rolle="Aufsicht"):
     return {"raum": raum, "lehrkraft_id": lk, "rolle": rolle}
 
 
@@ -38,14 +38,14 @@ def test_missing_surplus_and_open_slots():
 def test_reserve_does_not_count_and_roles_are_configurable():
     _, findings = a.check_supervision({"R1": 5}, [sup("R1", 1, "Reserve")], TEACHERS, RULES)
     assert "fehlt" in kinds(findings)
-    both = r.RoomRules(grade_rooms={"5": ["R1"]}, supervisor_roles=("Standard", "Fachaufsicht"))
+    both = r.RoomRules(grade_rooms={"5": ["R1"]}, supervisor_roles=("Aufsicht", "Fachaufsicht"))
     _, findings = a.check_supervision({"R1": 5}, [sup("R1", 1, "Fachaufsicht")], TEACHERS, both)
     assert "fehlt" not in kinds(findings)
 
 
 def test_double_booking_inactive_unknown_and_orphans():
     _, findings = a.check_supervision({"R1": 5, "R2": 5}, [sup("R1", 1), sup("R2", 1), sup("R1", 3), sup("R2", 4), sup("R2", 99),
-                                                           sup("R9", 2), sup(None, 2, "Standard"), sup(None, 2, "Reserve")],
+                                                           sup("R9", 2), sup(None, 2, "Aufsicht"), sup(None, 2, "Reserve")],
                                       TEACHERS, RULES, date(2026, 11, 11))
     texts = [f["text"] for f in findings]
     assert any("mehreren Räumen" in t and "AB" in t for t in texts)
@@ -68,8 +68,8 @@ def test_rules_section_is_validated(tmp_path):
     def load(extra):
         (tmp_path / "raumregeln.yaml").write_text('rooms:\n  grade_rooms: {"5": [R1]}\n' + extra, encoding="utf-8")
         return r.load_room_rules(tmp_path / "raumregeln.yaml")
-    loaded = load("aufsichten:\n  lehrkraefte_pro_raum: 2\n  zaehlende_rollen: [Standard, Fachaufsicht]\n")
-    assert loaded.supervisors_per_room == 2 and loaded.supervisor_roles == ("Standard", "Fachaufsicht")
+    loaded = load("aufsichten:\n  lehrkraefte_pro_raum: 2\n  zaehlende_rollen: [Aufsicht, Fachaufsicht]\n")
+    assert loaded.supervisors_per_room == 2 and loaded.supervisor_roles == ("Aufsicht", "Fachaufsicht")
     assert load("").supervisors_per_room == 1
     for bad in ("aufsichten: {lehrkraefte_pro_raum: 0}\n", "aufsichten: {zaehlende_rollen: [Boss]}\n", "aufsichten: {x: 1}\n"):
         with pytest.raises(ConfigurationError, match="aufsichten"):
@@ -77,7 +77,7 @@ def test_rules_section_is_validated(tmp_path):
 
 
 class Cur:
-    def __init__(self, orga=((1, 15),), extern=(), sups=((1, 1, "Standard"),)):
+    def __init__(self, orga=((1, 15),), extern=(), sups=((1, 1, "Aufsicht"),)):
         self.orga, self.extern, self.sups, self.sql, self.writes = list(orga), list(extern), list(sups), "", []
     def execute(self, sql, params=None):
         self.sql = sql
@@ -168,8 +168,8 @@ def test_set_supervision_dry_run_apply_and_guards():
     assert stats["betroffen"] == ["AB", "CD"] and not cur.writes
     cur = SCur(sups=())
     a.set_supervision(sdb(cur), TABLES, room="R1", kuerzel=["AB"], dry_run=False)
-    assert cur.writes[0][1] == (7, 1, 1, "Standard")
-    cur = SCur(sups=((1, 1, "Standard"),))
+    assert cur.writes[0][1] == (7, 1, 1, "Aufsicht")
+    cur = SCur(sups=((1, 1, "Aufsicht"),))
     stats = a.set_supervision(sdb(cur), TABLES, room="R1", kuerzel=["AB"], dry_run=False)
     assert stats["bereits_so"] == ["AB"] and not cur.writes
     with pytest.raises(r.RoomError, match="Unbekannte"):
@@ -188,12 +188,12 @@ def test_set_supervision_roomless_remove_and_double_booking_warning():
     cur = SCur(sups=())
     a.set_supervision(sdb(cur), TABLES, room=None, kuerzel=["CD"], role="Fachaufsicht", dry_run=False)
     assert cur.writes[0][1] == (7, None, 2, "Fachaufsicht")
-    cur = SCur(sups=((1, 1, "Standard"),))
+    cur = SCur(sups=((1, 1, "Aufsicht"),))
     stats = a.set_supervision(sdb(cur), TABLES, room="X1", kuerzel=["AB"])
     assert stats["hinweise"] and "R1" in stats["hinweise"][0]
-    cur = SCur(sups=((1, 1, "Standard"),))
+    cur = SCur(sups=((1, 1, "Aufsicht"),))
     a.set_supervision(sdb(cur), TABLES, room="R1", kuerzel=["AB"], remove=True, dry_run=False)
-    assert cur.writes[0][0].startswith("DELETE") and cur.writes[0][1] == (7, 1, "Standard", 1)
+    assert cur.writes[0][0].startswith("DELETE") and cur.writes[0][1] == (7, 1, "Aufsicht", 1)
     with pytest.raises(r.RoomError, match="Nichts zu entfernen"):
         a.set_supervision(sdb(SCur(sups=())), TABLES, room="R1", kuerzel=["AB"], remove=True)
 
@@ -203,7 +203,7 @@ def pdb(cur):
 
 
 def test_export_plan_writes_editable_file_and_never_overwrites(tmp_path):
-    cur = SCur(extern=((2, 12),), sups=((1, 1, "Standard"), (None, 2, "Fachaufsicht")))
+    cur = SCur(extern=((2, 12),), sups=((1, 1, "Aufsicht"), (None, 2, "Fachaufsicht")))
     path = a.export_plan(pdb(cur), tmp_path / "cfg", TABLES, tmp_path)
     import yaml
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -223,11 +223,11 @@ def write_plan(tmp_path, text):
 
 def test_apply_plan_diff_swap_and_single_transaction(tmp_path):
     plan = write_plan(tmp_path, 'raeume:\n  R1: [CD]\n  X1: [AB]\nfachaufsicht: [AB]\n')
-    cur = SCur(sups=((1, 1, "Standard"),))
+    cur = SCur(sups=((1, 1, "Aufsicht"),))
     stats = a.apply_plan(pdb(cur), tmp_path / "cfg", TABLES, tmp_path, plan, dry_run=True)
-    assert stats["hinzu"] == ["Fachaufsicht ohne Raum: AB", "Standard R1: CD", "Standard X1: AB"]
-    assert stats["entfernt"] == ["Standard R1: AB"] and not cur.writes
-    cur = SCur(sups=((1, 1, "Standard"),))
+    assert stats["hinzu"] == ["Aufsicht R1: CD", "Aufsicht X1: AB", "Fachaufsicht ohne Raum: AB"]
+    assert stats["entfernt"] == ["Aufsicht R1: AB"] and not cur.writes
+    cur = SCur(sups=((1, 1, "Aufsicht"),))
     a.apply_plan(pdb(cur), tmp_path / "cfg", TABLES, tmp_path, plan, dry_run=False)
     kinds_ = [w[0].split()[0] for w in cur.writes]
     assert kinds_ == ["DELETE", "INSERT", "INSERT", "INSERT"]
@@ -235,9 +235,9 @@ def test_apply_plan_diff_swap_and_single_transaction(tmp_path):
 
 def test_apply_plan_scope_validation_and_warnings(tmp_path):
     plan = write_plan(tmp_path, "raeume:\n  R1: [AB]\n")
-    cur = SCur(sups=((2, 2, "Standard"), (None, 1, "Reserve")))
+    cur = SCur(sups=((2, 2, "Aufsicht"), (None, 1, "Reserve")))
     stats = a.apply_plan(pdb(cur), tmp_path / "cfg", TABLES, tmp_path, plan, dry_run=True)
-    assert stats["entfernt"] == [] and stats["hinzu"] == ["Standard R1: AB"]  # X1 und Reserve nicht im Plan: unverändert
+    assert stats["entfernt"] == [] and stats["hinzu"] == ["Aufsicht R1: AB"]  # X1 und Reserve nicht im Plan: unverändert
     for text, msg in (("raeume:\n  ZZ: [AB]\n", "Raum ZZ"), ("raeume:\n  R1: [QQ]\n", "Unbekanntes"), ("raeume:\n  R1: [EF]\n", "nicht aktiv"),
                       ("raeume:\n  R1: [AB, ab]\n", "doppelt"), ("foo: 1\n", "erlaubt"), ("raeume: 5\n", "Zuordnung")):
         with pytest.raises(r.RoomError, match=msg):
@@ -263,7 +263,7 @@ TABLES_IA = {**TABLES, "archive_table": "arch", "teacher_subjects_table": "lf", 
 
 def session(tmp_path, inputs, apply=False, cur=None, tables=None):
     (tmp_path / "raumregeln.yaml").write_text('rooms:\n  grade_rooms: {"5": [R1]}\n', encoding="utf-8")
-    cur = cur or SCur(extern=((2, 12),), sups=((1, 1, "Standard"), (2, 2, "Standard")))
+    cur = cur or SCur(extern=((2, 12),), sups=((1, 1, "Aufsicht"), (2, 2, "Aufsicht")))
     lines, answers = [], iter(inputs)
     result = a.interactive_supervision(sdb(cur), tmp_path, tables or TABLES_IA, apply=apply, workspace=tmp_path,
                                        ask=lambda _p: next(answers), out=lines.append)
@@ -306,7 +306,7 @@ from mao_cli import aufsichten_tui as tui  # noqa: E402
 
 def make_model(tmp_path, **kw):
     (tmp_path / "raumregeln.yaml").write_text('rooms:\n  grade_rooms: {"5": [R1]}\n', encoding="utf-8")
-    cur = kw.pop("cur", None) or SCur(extern=((2, 12),), sups=((1, 1, "Standard"), (2, 2, "Standard")))
+    cur = kw.pop("cur", None) or SCur(extern=((2, 12),), sups=((1, 1, "Aufsicht"), (2, 2, "Aufsicht")))
     db = sdb(cur)
     return db, cur, a.load_supervision_model(db, tmp_path, TABLES_IA, tmp_path)
 
@@ -527,15 +527,15 @@ def test_abitur_role_and_notes_roundtrip(tmp_path):
 
 
 def test_apply_plan_writes_abitur_role_and_notes():
-    cur = SCur(sups=((1, 1, "Standard"),))
-    cur.notes = [(1, 1, "Standard", "alt")]
+    cur = SCur(sups=((1, 1, "Aufsicht"),))
+    cur.notes = [(1, 1, "Aufsicht", "alt")]
     plan = {"raeume": {"R1": ["AB"]}, "abitur": ["CD"], "bemerkungen": {"R1|AB": "neu", "abitur|CD": "Mathe-Abitur"}}
     stats = a.apply_plan_data(sdb(cur), TABLES, plan, dry_run=False)
     assert stats["hinzu"] == ["Abiturerstellung ohne Raum: CD"] and len(stats["bemerkungen"]) == 1
     inserts = [w for w in cur.writes if isinstance(w, tuple) and w[0].startswith("INSERT")]
     assert inserts and inserts[0][1] == (7, None, 2, "Abiturerstellung", "Mathe-Abitur")
     updates = [w for w in cur.writes if isinstance(w, tuple) and w[0].startswith("UPDATE")]
-    assert updates and updates[0][1] == ("neu", 7, 1, "Standard", 1)
+    assert updates and updates[0][1] == ("neu", 7, 1, "Aufsicht", 1)
     with pytest.raises(r.RoomError, match="nicht eingeteilt"):
         a.apply_plan_data(sdb(SCur(sups=())), TABLES, {"raeume": {"R1": ["AB"]}, "bemerkungen": {"R1|CD": "x"}}, dry_run=True)
 
@@ -555,7 +555,7 @@ def test_missing_enum_value_is_reported_with_alter_statement():
     class EnumCur(SCur):
         def fetchall(self):
             if "SHOW COLUMNS" in self.sql:
-                return [("rolle", "enum('Standard','Reserve','Fachaufsicht')")]
+                return [("rolle", "enum('Aufsicht','Reserve','Fachaufsicht')")]
             return super().fetchall()
     cur = EnumCur(sups=())
     with pytest.raises(r.RoomError, match="ALTER TABLE .*'Abiturerstellung'"):

@@ -1,5 +1,6 @@
 # Changelog
 - Konfigurationsordner neben Editable-Quelle automatisch erkennen; `students_table` statt `students_view`; Gravity-Forms-Leermeldung (Checkbox 10) in Statistik und Bericht berücksichtigen.
+- Aufsichten: Die Rolle der Regelaufsicht heißt jetzt durchgehend `Aufsicht` (wie im ENUM der Datenbank, vorher `Standard`): `--rolle`, Plandatei, Prüfungen, Pipeline (`Aufsichten-Lehrkraefte.csv` unverändert). Ältere `raumregeln.yaml` mit `zaehlende_rollen: ["Standard"]` werden weiter gelesen.
 - Editable-Installationen mit `pip install -e .` werden direkt am Quellort aktualisiert (Prüfsumme, Sicherung, Selbsttest, Rollback); klassische Wheel-Installationen bleiben verwaltet.
 - `mao config init` legt private `db.config`, `gf.config` und `gf-import.yaml` ohne `.example` an (ohne Überschreiben); GF-SQL nutzt dieselben geprüften `{{table.*}}`-Kennungen aus `tables.ini` wie die Pipeline.
 
