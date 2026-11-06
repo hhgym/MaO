@@ -290,8 +290,8 @@ datasets:
         COALESCE(r.raumcode, '') AS raum,
         CASE WHEN st.stufen IS NULL THEN '' ELSE CONCAT('[', st.stufen, ']') END AS klassenstufen,
         a.rolle AS rolle,
-        -- Bemerkung = Datenbankspalte bemerkung; bei Fachaufsicht und Abiturerstellung steht davor die Rolle (mit Leerzeichen)
-        CASE WHEN a.rolle IN ('Fachaufsicht', 'Abiturerstellung') THEN TRIM(CONCAT_WS(' ', a.rolle, NULLIF(a.bemerkung, '')))
+        -- Bemerkung = Datenbankspalte bemerkung; bei Fachaufsicht, Reserve und Abiturerstellung steht davor die Rolle (mit Leerzeichen)
+        CASE WHEN a.rolle IN ('Fachaufsicht', 'Reserve', 'Abiturerstellung') THEN TRIM(CONCAT_WS(' ', a.rolle, NULLIF(a.bemerkung, '')))
              ELSE COALESCE(a.bemerkung, '') END AS bemerkungen
       FROM {{table.aufsichten_table}} a
       JOIN {{table.teachers_table}} t ON t.id = a.lehrkraft_id
