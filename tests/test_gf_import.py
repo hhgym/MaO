@@ -468,3 +468,60 @@ def test_sorting_sek_i_first_oberstufe_last_in_gf_order():
     ]
     items, _ = g.build_participants(entries, students, [], {7}, {(100, 7): 83}, opts)
     assert [r["matrikelnummer"] for r in items] == [3, 2, 1, 6, 5, 4]
+
+
+class SyncCursor(FakeCursor):
+    def __init__(self, existing):
+        super().__init__()
+        self.existing = existing
+    def fetchall(self):
+        if "SELECT matrikelnummer, tnr" in self.last:
+            self.unread = False
+            return [(m, t) for m, t in self.existing]
+        if "MAX(tnr)" in self.last:
+            self.unread = False
+            return [(max(t for _, t in self.existing),)]
+        return super().fetchall()
+
+
+def _sync(existing, wanted, answers, dry_run=False):
+    cnx = FakeConn()
+    cnx.cursor_obj = SyncCursor(existing)
+    lines = []
+    asked = iter(answers)
+    participants = [{"matrikelnummer": m, "tnr": i, "lehrkraft_id": 1, "kurs_id": None} for i, m in enumerate(wanted, 1)]
+    names = {m: f"Name{m}" for m in set(wanted) | {m for m, _ in existing}}
+    result = g.sync_participants(SimpleNamespace(conn=cnx), "SAMPLE_TABLE", participants, names, dry_run=dry_run,
+                                 ask=lambda _q: next(asked), out=lines.append)
+    return result, cnx, lines
+
+
+def test_sync_dry_run_only_reports():
+    result, cnx, lines = _sync([(1, 1), (2, 2)], [2, 3], [], dry_run=True)
+    assert result == (0, 0) and cnx.commits == 0
+    assert any("Neu im Formular: Name3" in l for l in lines) and any("Nicht mehr im Formular: Name1" in l for l in lines)
+    assert not any(sql.startswith(("DELETE", "INSERT")) for sql, _ in cnx.cursor_obj.executed)
+
+
+def test_sync_applies_only_after_confirmation():
+    result, cnx, _ = _sync([(1, 1), (2, 2)], [2, 3, 4], ["j", "n"])           # neue ja, löschen nein
+    assert result == (2, 0) and cnx.commits == 1
+    inserts = [p for sql, p in cnx.cursor_obj.executed if isinstance(p, list)]
+    assert [row[0] for row in inserts[0]] == [3, 4]                             # tnr setzt hinter dem Maximum fort
+    assert not any(sql.startswith("DELETE") for sql, _ in cnx.cursor_obj.executed)
+    result, cnx, _ = _sync([(1, 1), (2, 2)], [2], ["j"])                        # löschen ja
+    assert result == (0, 1)
+    assert any(sql.startswith("DELETE") and p == (1,) for sql, p in cnx.cursor_obj.executed)
+
+
+def test_sync_individual_choice_and_no_answer_changes_nothing():
+    result, cnx, _ = _sync([(1, 1)], [1, 2, 3], ["e", "j", "n"])
+    assert result == (1, 0)
+    result, cnx, _ = _sync([(1, 1)], [2], ["", ""])
+    assert result == (0, 0) and cnx.commits == 0
+    cnx = FakeConn()
+    cnx.cursor_obj = SyncCursor([(1, 1)])
+    lines: list[str] = []
+    result = g.sync_participants(SimpleNamespace(conn=cnx), "SAMPLE_TABLE", [{"matrikelnummer": 2, "tnr": 1}], {},
+                                 dry_run=False, ask=None, out=lines.append)
+    assert result == (0, 0) and cnx.commits == 0 and any("Keine Rückfrage" in l for l in lines)

@@ -13,7 +13,7 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Literal, Mapping, overload
+from typing import Any, Callable, Iterable, Literal, Mapping, overload
 from urllib.parse import urlsplit
 
 import yaml
@@ -624,7 +624,9 @@ def review_foreign_keys(targets: Mapping[str, str | None],
 
 
 def import_participants(db: Any, config_dir: Path, target_table: str, *, dry_run: bool,
-                        no_mandatory: bool = False, report: dict[str, Any] | None = None) -> dict[str, int]:
+                        no_mandatory: bool = False, report: dict[str, Any] | None = None,
+                        sync: bool = False, ask: Callable[[str], str] | None = None,
+                        out: Callable[[str], Any] = print) -> dict[str, int]:
     """Alle Datenquellen prüfen, dann berichtsfähig planen, erst zuletzt schreiben."""
     config = load_import_settings(config_dir / "gf-import.yaml")
     credentials = load_gf_credentials(config_dir / "gf.config")
@@ -680,15 +682,139 @@ def import_participants(db: Any, config_dir: Path, target_table: str, *, dry_run
                                  "missing_course_oberstufe": missing_course,
                                  "missing_course_total": missing_course,
                                  "target_table": target_table}
-        inserted = persist_import(db, target_table, mapped, dry_run=dry_run,
-                                  foreign_keys=config.foreign_keys, report=report)
+        removed = 0
+        if sync:
+            names = {int(r["matrikelnummer"]): f"{r.get('nachname') or ''}, {r.get('vorname') or ''} ({r.get('klasse') or '?'})"
+                     for r in students if r.get("matrikelnummer") is not None}
+            inserted, removed = sync_participants(db, target_table, mapped, names, dry_run=dry_run,
+                                                  foreign_keys=config.foreign_keys, report=report, ask=ask, out=out)
+        else:
+            inserted = persist_import(db, target_table, mapped, dry_run=dry_run,
+                                      foreign_keys=config.foreign_keys, report=report)
         if report is not None:
             report["status"] = "ready" if dry_run else "applied"
             report["summary"]["inserted"] = inserted
-        return {**stats, "participants": len(mapped), "inserted": inserted,
+            report["summary"]["removed"] = removed
+        return {**stats, "participants": len(mapped), "inserted": inserted, "removed": removed,
                 "missing_teacher": missing_teacher, "missing_course": missing_course}
     finally:
         cursor.close()
+
+
+def _choose(question: str, items: list[str], ask: Callable[[str], str] | None, out: Callable[[str], Any]) -> list[int]:
+    """Indizes der bestätigten Einträge: j = alle, e = einzeln, sonst keiner (auch ohne Eingabemöglichkeit)."""
+    if not items:
+        return []
+    if ask is None:
+        out("  Keine Rückfrage möglich (keine Eingabe) – nichts geändert.")
+        return []
+    try:
+        answer = ask(f"{question} [j = alle / e = einzeln / N = keine] ").strip().lower()
+    except EOFError:
+        return []
+    if answer in ("j", "ja", "y", "yes"):
+        return list(range(len(items)))
+    if answer in ("e", "einzeln"):
+        chosen = []
+        for i, item in enumerate(items):
+            try:
+                if ask(f"  {item}? [j/N] ").strip().lower() in ("j", "ja", "y", "yes"):
+                    chosen.append(i)
+            except EOFError:
+                break
+        return chosen
+    return []
+
+
+def sync_participants(db: Any, target_table: str, participants: list[dict], names: Mapping[int, str], *,
+                      dry_run: bool, foreign_keys: Mapping[str, str] | None = None,
+                      report: dict[str, Any] | None = None, ask: Callable[[str], str] | None = None,
+                      out: Callable[[str], Any] = print) -> tuple[int, int]:
+    """Befüllte Organisationstabelle mit dem Formular abgleichen: neue Meldungen nachtragen, fehlende löschen.
+
+    Beides geschieht nur nach ausdrücklicher Rückfrage (und nur mit ``dry_run=False``). Rückgabe: (eingetragen, gelöscht).
+    """
+    if not IDENT.fullmatch(target_table) or target_table.startswith("DEMO_"):
+        raise ImportErrorGF("Ungültiger privater Zieltabellenname")
+    cnx = db.conn
+    if cnx is None:
+        raise ImportErrorGF("Keine DB-Verbindung")
+    cur = cnx.cursor()
+    lock_name = f"mao-gf-import-{target_table}"
+    lock_held = False
+    try:
+        if not dry_run:
+            cur.execute("SELECT GET_LOCK(%s, 10)", (lock_name,))
+            if cur.fetchall()[0][0] != 1:
+                raise ImportErrorGF("Konkurrierender Import oder Sperr-Timeout")
+            lock_held = True
+        cur.execute(f"SHOW COLUMNS FROM `{target_table}`")
+        columns = {row[0] for row in cur.fetchall()}
+        if not set(WRITE_COLUMNS).issubset(columns):
+            raise ImportErrorGF(f"Zieltabelle benötigt neue Spalten: {sorted(set(WRITE_COLUMNS) - columns)}")
+        targets = foreign_key_targets(cur, target_table)
+        fk_lines, fk_problems = review_foreign_keys(targets, foreign_keys or {})
+        if fk_problems:
+            raise ImportErrorGF("; ".join(fk_problems))
+        cur.execute(f"SELECT matrikelnummer, tnr FROM `{target_table}`")
+        existing = {int(m): (None if t is None else int(t)) for m, t in cur.fetchall() if m is not None}
+        wanted = {int(x["matrikelnummer"]): x for x in participants}
+        new = sorted((m for m in wanted if m not in existing), key=lambda m: wanted[m]["tnr"])
+        gone = sorted(m for m in existing if m not in wanted)
+        out(f"Abgleich mit dem Formular: {len(existing)} in der Tabelle, {len(wanted)} laut Formular · "
+            f"{len(new)} neu, {len(gone)} nicht mehr im Formular")
+        new_items = [f"{names.get(m, m)} [{m}]" for m in new]
+        gone_items = [f"{names.get(m, m)} [{m}]" for m in gone]
+        for title, items in (("Neu im Formular", new_items), ("Nicht mehr im Formular", gone_items)):
+            for item in items[:60]:
+                out(f"  {title}: {item}")
+            if len(items) > 60:
+                out(f"  {title}: … und {len(items) - 60} weitere")
+        if report is not None:
+            report["abgleich"] = {"in_tabelle": len(existing), "im_formular": len(wanted), "neu": len(new),
+                                  "nicht_mehr_im_formular": len(gone)}
+        if dry_run or not (new or gone):
+            if dry_run and (new or gone):
+                out("Dry-Run: nichts geändert. Mit --apply --abgleich wird einzeln nachgefragt.")
+            return 0, 0
+        add = [new[i] for i in _choose(f"{len(new)} neue Teilnehmende eintragen?", new_items, ask, out)]
+        drop = [gone[i] for i in _choose(
+            f"{len(gone)} Teilnehmende LÖSCHEN (Tnr, Raum und Lehrkraft gehen verloren)?", gone_items, ask, out)]
+        if not (add or drop):
+            out("Nichts geändert.")
+            return 0, 0
+        if cnx.in_transaction:
+            cnx.rollback()
+        cnx.start_transaction()
+        try:
+            if drop:
+                marks = ", ".join(["%s"] * len(drop))
+                cur.execute(f"DELETE FROM `{target_table}` WHERE matrikelnummer IN ({marks})", tuple(drop))
+            if add:
+                cur.execute(f"SELECT COALESCE(MAX(tnr), 0) FROM `{target_table}`")
+                next_tnr = int(cur.fetchall()[0][0]) + 1
+                rows = []
+                for offset, m in enumerate(add):
+                    row = dict(wanted[m])
+                    row["tnr"] = next_tnr + offset
+                    rows.append(tuple(row.get(key) for key in WRITE_COLUMNS))
+                sql = (f"INSERT INTO `{target_table}` ({', '.join('`' + col + '`' for col in WRITE_COLUMNS)}) "
+                       f"VALUES ({', '.join(['%s'] * len(WRITE_COLUMNS))})")
+                cur.executemany(sql, rows)
+            cnx.commit()
+        except Exception:
+            cnx.rollback()
+            raise
+        out(f"Geschrieben: {len(add)} eingetragen, {len(drop)} gelöscht.")
+        return len(add), len(drop)
+    finally:
+        if lock_held:
+            try:
+                cur.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
+                cur.fetchall()
+            except Exception:
+                LOGGER.warning("Konnte Importsperre nicht regulär freigeben (DB-Disconnect gibt sie frei)")
+        cur.close()
 
 
 def persist_import(db: Any, target_table: str, participants: list[dict], *, dry_run: bool,
@@ -724,7 +850,8 @@ def persist_import(db: Any, target_table: str, participants: list[dict], *, dry_
         cur.execute(f"SELECT COUNT(*) FROM `{target_table}`")
         existing = int(cur.fetchall()[0][0])
         if existing:
-            raise ImportErrorGF(f"{target_table} enthält bereits {existing} Zeilen; Import nur in leere Tabelle erlaubt")
+            raise ImportErrorGF(f"{target_table} enthält bereits {existing} Zeilen; Import nur in leere Tabelle erlaubt "
+                                f"(Nachträge und Streichungen: mao import-gf --abgleich)")
         if dry_run:
             return 0
         # Transaktion mit Advisory Lock schützt vor parallelen MaO-Importaufrufen.

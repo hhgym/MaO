@@ -161,6 +161,13 @@ Installation und Updates laufen über uv: [Updates](Updates.md).
   einen Abbruch abgelegt. Bestehende Berichte werden nicht überschrieben.
 - `mao import-gf --apply` fügt die Teilnehmenden ausschließlich in eine
   nachweislich leere Organisationstabelle ein.
+- `mao import-gf --abgleich` vergleicht die **bereits befüllte** Organisationstabelle
+  mit dem Formular: Es zeigt Meldungen, die seit dem Import neu hinzugekommen sind,
+  und Teilnehmende, die nicht mehr im Formular stehen. Im Dry-Run wird nur
+  angezeigt. Mit `--apply --abgleich` fragt es nach (`j` = alle, `e` = einzeln,
+  sonst keine), ob die neuen eingetragen und die fehlenden **gelöscht** werden
+  (Tnr, Raum und Lehrkraft gehen dabei verloren). Neue erhalten die nächsten freien
+  Tnr; ohne Eingabemöglichkeit (z. B. in einem Skript) wird nichts geändert.
 - `mao import-gf --no-mandatory` unterdrückt ausnahmsweise Pflichtteilnahmen.
 - `--report` ist ausschließlich für den Dry-Run vorgesehen; mit `--apply` unzulässig.
 - `mao --config-dir "D:/MaO/Config" --year 2026-27 import-gf` verwendet die
