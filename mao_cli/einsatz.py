@@ -210,6 +210,9 @@ class EinsatzModel:
         have = len(self.members(T_RESERVE))
         if have < self.settings.reserve:
             out.append(f"Reserve: {have} von {self.settings.reserve}")
+        open_ = [p.label for p in self.persons.values() if p.matrikel not in self.assign]
+        if open_:
+            out.append(f"Nicht verplant ({len(open_)}): " + "; ".join(sorted(open_)[:15]) + (" …" if len(open_) > 15 else ""))
         for n in range(1, self.settings.hof_gruppen + 1):
             size = len(self.members(hof_target(n)))
             if self.settings.hof_pro_gruppe is not None and size > self.settings.hof_pro_gruppe:
@@ -494,7 +497,8 @@ def load_context(db: Any, config_dir: Path, tables: Mapping[str, str], settings:
         participants = {int(m) for (m,) in cur.fetchall()}
         cur.execute(f"SELECT matrikelnummer, nachname, vorname, klasse FROM `{students_t}` "
                     "WHERE SUBSTRING_INDEX(klasse, '-', 1) IN ('11', '12')")
-        students = [(int(m), str(n or ""), str(v or ""), str(k or "")) for m, n, v, k in cur.fetchall() if m is not None]
+        student_rows = cur.fetchall()
+        students = [(int(m), str(n or ""), str(v or ""), str(k or "")) for m, n, v, k in student_rows if m is not None]
         rooms = load_rooms(cur, tables)
         by_id = {info["id"]: code for code, info in rooms.items()}
         counts = _room_counts(cur, tables, by_id, jahrgang_id)
@@ -508,6 +512,9 @@ def load_context(db: Any, config_dir: Path, tables: Mapping[str, str], settings:
     notes: list[str] = []
     if use_wishes:
         wishes = _gf_wishes(config_dir, form_id, role_codes)
+    no_matrikel = sum(1 for m, *_ in student_rows if m is None)
+    if no_matrikel:
+        notes.append(f"{no_matrikel} Schüler der Stufe 11/12 ohne Matrikelnummer können nicht verplant werden")
     known = {m for m, *_ in students}
     stray = sorted(m for m in wishes if m not in known)
     if stray:
