@@ -186,6 +186,7 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
 ## Raumzuteilung
 
 - `mao raumzuteilung --dry-run --report raum.json` plant die Verteilung nach
+- `mao raumzuteilung --statistik` zeigt nur an, welche Stufen mit welcher Anzahl in welchem Raum sitzen (Hauptwettbewerb und Externe, dazu die Zahl ohne Raum). Es plant und schreibt nichts.
   `raumregeln.yaml` und zeigt sie im Log (Raum, Belegung, Stufen, offene
   Teilnehmende). Der Bericht enthält keine Namen. Es wird nichts geschrieben.
 - `mao raumzuteilung --seed 123 --apply` schreibt `raum_id` in die
