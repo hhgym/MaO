@@ -93,6 +93,8 @@ class Cur:
             return self.orga
         if "FROM `teiln`" in s:
             return self.extern
+        if "FROM `auf`" in s and "bemerkung" in s:
+            return getattr(self, "notes", [])
         if "FROM `auf`" in s:
             return self.sups
         if "FROM `lk`" in s:
@@ -151,7 +153,7 @@ class SCur(Cur):
         return super().fetchall()
     def execute(self, sql, params=None):
         super().execute(sql, params)
-        if sql.startswith(("INSERT", "DELETE")):
+        if sql.startswith(("INSERT", "DELETE", "UPDATE")):
             self.writes[-1] = (sql, params)
 
 
@@ -270,7 +272,7 @@ def session(tmp_path, inputs, apply=False, cur=None, tables=None):
 
 def test_session_shows_table_with_short_room_and_math_list(tmp_path):
     _cur, result, text = session(tmp_path, ["l", "la", "q"])
-    assert any(x.startswith("R1") and " K " in x for x in text.splitlines()) and "X1" in text and "Fachaufsicht: -" in text and "schon verplant (2): AB (R1); CD (X1)" in text and result["eintraege"] == 0
+    assert any(x.startswith("R1") and " K " in x for x in text.splitlines()) and "X1" in text and "Fachaufsicht:" in text and "Abiturerstellung:" in text and "Bemerkung" in text and "schon verplant (2): AB (R1); CD (X1)" in text and result["eintraege"] == 0
 
 
 def test_session_kurz_proposal_and_apply_in_one_go(tmp_path):
@@ -321,7 +323,7 @@ def typed(text):
 
 def test_model_edit_swap_undo_and_proposal(tmp_path):
     _db, _cur, m = make_model(tmp_path)
-    assert m.rows() == ["R1", "X1", "fachaufsicht", "reserve"] and not m.changed
+    assert m.rows() == ["R1", "X1", "fachaufsicht", "reserve", "abitur"] and not m.changed
     assert m.edit("R1", ["zz"]).startswith("Unbekannte") and m.edit("R1", ["ab", "AB"]) == "Kürzel doppelt"
     assert m.edit("X1", ["+AB"]).startswith("Hinweis") and m.team("X1") == ["CD", "AB"]
     assert m.swap_rows("R1", "X1") == "" and m.team("R1") == ["CD", "AB"] and m.swap_rows("R1", "R1")
@@ -488,6 +490,8 @@ def test_line_mode_saves_draft_on_dry_run_fertig_and_w(tmp_path):
 def test_tui_render_keeps_supervisors_visible_with_long_level_text():
     model = a.SupervisionModel.__new__(a.SupervisionModel)
     model.ROLE_KEYS = a.SupervisionModel.ROLE_KEYS
+    model.ROLE_TITLES = a.SupervisionModel.ROLE_TITLES
+    model.notes_text = lambda row: "Nur bis 10 Uhr" if row == "107" else ""
     model.short = set()
     model.counts = {"107": 14}
     model.rows = lambda: ["107", "fachaufsicht"]
@@ -497,10 +501,40 @@ def test_tui_render_keeps_supervisors_visible_with_long_level_text():
     ui = tui.Ui()
     text = tui.render(model, ui, 30, 100)
     row = next(line for line in text.splitlines() if "107" in line)
-    assert "ABC DEF" in row and "…" in row
+    assert "ABC DEF" in row and "…" in row and "Nur bis 10 Uhr" in row
 
 
 def test_tui_terminal_size_is_lines_then_columns(monkeypatch):
     import os
     monkeypatch.setattr(tui.shutil, "get_terminal_size", lambda fallback=(100, 30): os.terminal_size((120, 40)))
     assert tui.terminal_size() == (40, 120)
+
+
+def test_abitur_role_and_notes_roundtrip(tmp_path):
+    _db, _cur, m = make_model(tmp_path)
+    assert m.edit("abitur", ["ab"]) == "" and m.team("abitur") == ["AB"]
+    assert m.set_note("abitur", "ab", "Informatik-Abitur") == "" and m.notes_text("abitur") == "AB: Informatik-Abitur"
+    assert m.set_note("abitur", "cd", "x").endswith("nicht eingeteilt") and m.set_note("R1", "ab", "x" * 300).startswith("Bemerkung zu lang")
+    assert m.swap_rows("abitur", "reserve") == "" and m.notes_text("reserve") == "AB: Informatik-Abitur" and m.notes_text("abitur") == ""
+    assert m.edit("reserve", ["-"]) == "" and m.state["bemerkungen"] == {}          # Bemerkung geht mit der Person
+    m.edit("abitur", ["ab"])
+    m.set_note("abitur", "AB", "Info")
+    assert m.plan()["abitur"] == ["AB"] and m.plan()["bemerkungen"] == {"abitur|AB": "Info"}
+    text = a.plan_text(m.state, m.counts, m.levels, Path("p.yaml"))
+    import yaml
+    data = yaml.safe_load(text)
+    assert data["abitur"] == ["AB"] and data["bemerkungen"] == {"abitur|AB": "Info"}
+
+
+def test_apply_plan_writes_abitur_role_and_notes():
+    cur = SCur(sups=((1, 1, "Standard"),))
+    cur.notes = [(1, 1, "Standard", "alt")]
+    plan = {"raeume": {"R1": ["AB"]}, "abitur": ["CD"], "bemerkungen": {"R1|AB": "neu", "abitur|CD": "Mathe-Abitur"}}
+    stats = a.apply_plan_data(sdb(cur), TABLES, plan, dry_run=False)
+    assert stats["hinzu"] == ["Abiturerstellung ohne Raum: CD"] and len(stats["bemerkungen"]) == 1
+    inserts = [w for w in cur.writes if isinstance(w, tuple) and w[0].startswith("INSERT")]
+    assert inserts and inserts[0][1] == (7, None, 2, "Abiturerstellung", "Mathe-Abitur")
+    updates = [w for w in cur.writes if isinstance(w, tuple) and w[0].startswith("UPDATE")]
+    assert updates and updates[0][1] == ("neu", 7, 1, "Standard", 1)
+    with pytest.raises(r.RoomError, match="nicht eingeteilt"):
+        a.apply_plan_data(sdb(SCur(sups=())), TABLES, {"raeume": {"R1": ["AB"]}, "bemerkungen": {"R1|CD": "x"}}, dry_run=True)

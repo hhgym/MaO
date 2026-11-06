@@ -1,7 +1,7 @@
 """Tabellenansicht mit Cursor zum Bearbeiten aller Aufsichten (ohne Zusatzpaket: ANSI-Ausgabe, msvcrt/termios).
 
 Bedienung: Pfeiltasten wählen die Zeile, Enter bearbeitet sie (Kürzel, Tab vervollständigt), Leertaste markiert eine Zeile
-und tauscht sie mit der nächsten markierten, r = Rotationsvorschlag für Kurzräume, u = zurück, l/L = Lehrkräfte,
+und tauscht sie mit der nächsten markierten, b = Bemerkung zu einer Lehrkraft der Zeile, r = Rotationsvorschlag für Kurzräume, u = zurück, l/L = Lehrkräfte,
 s = prüfen und abschicken, q = beenden. Die Logik steckt in SupervisionModel; hier liegen nur Tasten und Darstellung.
 """
 from __future__ import annotations
@@ -90,6 +90,7 @@ class Ui:
         self.cursor, self.top, self.mode = 0, 0, "browse"
         self.message, self.panel = "", []  # type: str, list[str]
         self.buffer, self.pos, self.mark = "", 0, None  # type: str, int, str | None
+        self.field = "team"  # Eingabefeld im Modus edit: team (Kürzel) oder note (KÜRZEL Text)
         self.confirm_text, self.confirm_actions = "", {}  # type: str, dict[str, Callable[[], None]]
 
 
@@ -110,16 +111,19 @@ def render(model: SupervisionModel, ui: Ui, height: int, width: int) -> str:
     # Stufen-Spalte passt sich dem Inhalt an (Externe: E3, E4 …), lässt aber Platz für die Aufsicht
     wanted = max([len(model.level_text(r)) for r in rows if r not in model.ROLE_KEYS] + [6])
     level_w = max(8, min(wanted, 30, width - 45)) + 2
-    lines = ["Aufsichten  ↑↓ wählen · Enter bearbeiten · Leertaste tauschen · r Rotation · u zurück · l Lehrkräfte · w Entwurf · s Diff/abschicken · q Ende",
-             f"{'':2}{'Raum':<12}{'Tn':>4}  {'Stufen':<{level_w}}Aufsicht"]
+    who_w = max(10, min(28, max(len(" ".join(model.team(r))) + (12 if model.gap(r) else 0) for r in rows) + 2))
+    lines = ["Aufsichten  ↑↓ wählen · Enter bearbeiten · b Bemerkung · Leertaste tauschen · r Rotation · u zurück · l Lehrkräfte · w Entwurf · s Diff/abschicken · q Ende",
+             f"{'':2}{'Raum':<17}{'Tn':>4}  {'Stufen':<{level_w}}{'Aufsicht':<{who_w}}Bemerkung"]
     for index in range(ui.top, min(len(rows), ui.top + body_h)):
         row = rows[index]
         if row in model.ROLE_KEYS:
-            name, count = ("Fachaufsicht" if row == "fachaufsicht" else "Reserve"), ""
+            name, count = model.ROLE_TITLES[row], ""
         else:
             name, count = row + ("  K" if row in model.short else ""), str(model.counts.get(row, 0))
         gap = "  <-- fehlt" if model.gap(row) else ""
-        text = f"{'*' if ui.mark == row else ' '} {name:<12}{count:>4}  {_clip(model.level_text(row), level_w - 2):<{level_w}}{' '.join(model.team(row)) or '-'}{gap}"
+        who = _clip((' '.join(model.team(row)) or '-') + gap, who_w - 1)
+        text = (f"{'*' if ui.mark == row else ' '} {name:<17}{count:>4}  {_clip(model.level_text(row), level_w - 2):<{level_w}}"
+                f"{who:<{who_w}}{model.notes_text(row)}")
         text = text[:max(20, width - 1)]
         lines.append(f"{REVERSE}{text:<{max(20, width - 1)}}{RESET}" if index == ui.cursor and ui.mode != "edit" else text)
     lines.append(f"{DIM}K = Kurzraum (Stufe ≤ 6, 2 Stunden){RESET}" if model.short else "")
@@ -128,7 +132,9 @@ def render(model: SupervisionModel, ui: Ui, height: int, width: int) -> str:
     if ui.mode == "edit":
         row = rows[ui.cursor]
         before, here, after = ui.buffer[:ui.pos], ui.buffer[ui.pos:ui.pos + 1] or " ", ui.buffer[ui.pos + 1:]
-        lines.append(f"{row} › {before}{REVERSE}{here}{RESET}{after}   (Enter ok · Esc abbrechen · Tab ergänzt · +KÜ/-KÜ ändert)")
+        hint = ("(Enter ok · Esc abbrechen · Format: KÜRZEL Text, ohne Text löscht)" if ui.field == "note"
+                else "(Enter ok · Esc abbrechen · Tab ergänzt · +KÜ/-KÜ ändert)")
+        lines.append(f"{row} {'Bemerkung' if ui.field == 'note' else ''}› {before}{REVERSE}{here}{RESET}{after}   {hint}")
     elif ui.mode == "confirm":
         lines.append(ui.confirm_text)
     else:
@@ -188,11 +194,12 @@ def run_tui(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, appl
         except RoomError as exc:
             ui.message = str(exc)
             return
-        lines = [f"Änderungen: +{len(stats['hinzu'])} −{len(stats['entfernt'])}"]
+        lines = [f"Änderungen: +{len(stats['hinzu'])} −{len(stats['entfernt'])} Bemerkungen {len(stats['bemerkungen'])}"]
         lines += [f"  − {x}" for x in stats["entfernt"]] + [f"  + {x}" for x in stats["hinzu"]]
+        lines += [f"  Bemerkung {x}" for x in stats["bemerkungen"]]
         lines += [f"  Hinweis: {x}" for x in stats["hinweise"]]
         ui.panel = lines[:8] + (["  …"] if len(lines) > 8 else [])
-        changes = len(stats["hinzu"]) + len(stats["entfernt"])
+        changes = len(stats["hinzu"]) + len(stats["entfernt"]) + len(stats["bemerkungen"])
         result["eintraege"] = changes
         if not changes:
             ui.message = "Keine Änderungen"
@@ -224,6 +231,14 @@ def run_tui(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, appl
             if key == "esc":
                 ui.mode, ui.message = "browse", ""
             elif key == "enter":
+                if ui.field == "note":
+                    who, _sep, text = ui.buffer.strip().partition(" ")
+                    msg = model.set_note(row, who, text) if who else "Format: KÜRZEL Text"
+                    if msg:
+                        ui.message = msg
+                    else:
+                        ui.mode, ui.message = "browse", ""
+                    continue
                 msg = model.edit(row, ui.buffer.replace(",", " ").split())
                 if msg and not msg.startswith("Hinweis"):
                     ui.message = msg
@@ -241,7 +256,7 @@ def run_tui(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, appl
                 ui.pos = 0
             elif key == "end":
                 ui.pos = len(ui.buffer)
-            elif key == "tab":
+            elif key == "tab" and ui.field == "team":
                 _complete(model, ui)
             elif key == "space":
                 ui.buffer, ui.pos = ui.buffer[:ui.pos] + " " + ui.buffer[ui.pos:], ui.pos + 1
@@ -263,8 +278,16 @@ def run_tui(model: SupervisionModel, db: Any, tables: Mapping[str, str], *, appl
         elif key == "end":
             ui.cursor = count - 1
         elif key in ("enter", "e"):
-            ui.mode, ui.buffer = "edit", " ".join(model.team(rows()[ui.cursor]))
+            ui.mode, ui.field, ui.buffer = "edit", "team", " ".join(model.team(rows()[ui.cursor]))
             ui.pos = len(ui.buffer)
+        elif key == "b":
+            row = rows()[ui.cursor]
+            if not model.team(row):
+                ui.message = "Erst Lehrkräfte eintragen (Enter)"
+            else:
+                ui.mode, ui.field, ui.buffer = "edit", "note", ""
+                ui.pos = 0
+                ui.message = "Eingeteilt: " + " ".join(model.team(row))
         elif key == "space":
             row = rows()[ui.cursor]
             if ui.mark is None:

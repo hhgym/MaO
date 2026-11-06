@@ -211,8 +211,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     sup_mode.add_argument("--dry-run", action="store_true", help="Beim Setzen nur prüfen und berichten (Standard)")
     sup.add_argument("--lehrkraft", nargs="+", metavar="KÜRZEL", help="Aufsicht(en) für diese Lehrkräfte setzen")
     sup.add_argument("--raum", metavar="CODE", help="Raumcode (nur Rolle Standard)")
-    sup.add_argument("--rolle", default="Standard", choices=["Standard", "Reserve", "Fachaufsicht"],
-                     help="Rolle; Reserve und Fachaufsicht gehören zu keinem Raum")
+    sup.add_argument("--rolle", default="Standard", choices=["Standard", "Reserve", "Fachaufsicht", "Abiturerstellung"],
+                     help="Rolle; Reserve, Fachaufsicht und Abiturerstellung gehören zu keinem Raum")
     sup.add_argument("--entfernen", action="store_true", help="Die genannten Einträge entfernen statt eintragen")
     sup.add_argument("--plan-exportieren", nargs="?", const=Path("aufsichten-plan.yaml"), type=Path, metavar="DATEI.yaml",
                      help="Aktuellen Stand als Plandatei im Workspace anlegen (überschreibt nie); zum Bearbeiten aller Aufsichten auf einmal")

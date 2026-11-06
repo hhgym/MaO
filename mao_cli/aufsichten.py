@@ -18,8 +18,12 @@ from .extern import ExternError, _ident as _extern_ident, load_state_year
 from .rooms import RoomError, RoomRules, load_room_rules, load_rooms, log_rules_source, resolve_rules_file
 
 LOGGER = logging.getLogger(__name__)
-# Rollen ohne Raum: Reserve springt ein, die Fachaufsicht ist die Wettkampfleitung (beantwortet Fragen zu den Aufgaben).
-ROOMLESS_ROLES = ("Reserve", "Fachaufsicht")
+# Rollen ohne Raum: Reserve springt ein, die Fachaufsicht ist die Wettkampfleitung (beantwortet Fragen zu den Aufgaben),
+# Abiturerstellung: Lehrkräfte, die statt der Aufsicht eine Abituraufgabe erstellen.
+ROOMLESS_ROLES = ("Reserve", "Fachaufsicht", "Abiturerstellung")
+# Zeilen ohne Raum in Plandatei und Konsole: Schlüssel → Rolle
+ROLE_ROWS = {"fachaufsicht": "Fachaufsicht", "reserve": "Reserve", "abitur": "Abiturerstellung"}
+NOTE_MAX = 200
 
 
 def _ident(tables: Mapping[str, str], key: str) -> str:
@@ -155,7 +159,7 @@ def check_aufsichten(db: Any, config_dir: Path, tables: Mapping[str, str], *, wo
     return stats
 
 
-ROLES = ("Standard", "Reserve", "Fachaufsicht")
+ROLES = ("Standard", "Reserve", "Fachaufsicht", "Abiturerstellung")
 
 
 PREFERRED_SUBJECT = "Mathematik"
@@ -276,6 +280,7 @@ def set_supervision(db: Any, tables: Mapping[str, str], *, room: str | None, kue
 
 
 PLAN_FILE = "aufsichten-plan.yaml"
+PLAN_KEYS = {"raeume", "fachaufsicht", "reserve", "abitur", "bemerkungen"}
 
 
 def _plan_path(workspace: Path, config_dir: Path, name: Path) -> Path:
@@ -300,8 +305,32 @@ def _load_plan_context(cur: Any, tables: Mapping[str, str]) -> dict[str, Any]:
     current = {(None if r is None else int(r), int(lk), str(ro)) for r, lk, ro in cur.fetchall() if lk is not None}
     cur.execute(f"SELECT id, kuerzel, aktiv FROM `{teachers_t}`")
     teachers = {int(i): (str(k) if k else str(i), a) for i, k, a in cur.fetchall()}
-    return {"sup_t": sup_t, "jahrgang_id": jahrgang_id, "rooms": rooms, "by_id": by_id, "current": current,
+    cur.execute(f"SELECT raum_id, lehrkraft_id, rolle, bemerkung FROM `{sup_t}` WHERE mao_jahrgang_id = %s "
+                "AND bemerkung IS NOT NULL AND bemerkung <> ''", (jahrgang_id,))
+    notes = {(None if r is None else int(r), int(lk), str(ro)): str(b).strip() for r, lk, ro, b in cur.fetchall() if lk is not None}
+    return {"sup_t": sup_t, "jahrgang_id": jahrgang_id, "rooms": rooms, "by_id": by_id, "current": current, "notes": notes,
             "teachers": teachers, "counts": _room_counts(cur, tables, by_id, jahrgang_id)}
+
+
+def state_from_context(ctx: Mapping[str, Any]) -> dict[str, Any]:
+    """Bearbeitungsstand (Räume, Rollen ohne Raum, Bemerkungen) aus dem Datenbankstand."""
+    names = ctx["teachers"]
+    state: dict[str, Any] = {"raeume": {}, "fachaufsicht": [], "reserve": [], "abitur": [], "bemerkungen": {}}
+    by_role = {role: key for key, role in ROLE_ROWS.items()}
+    for room_id, lk, role in sorted(ctx["current"], key=lambda t: (str(t[0]), t[1])):
+        who = names.get(lk, (str(lk), None))[0].upper()
+        if role == "Standard" and room_id is not None:
+            row = ctx["by_id"].get(room_id, "?")
+            state["raeume"].setdefault(row, []).append(who)
+        elif role in by_role:
+            row = by_role[role]
+            state[row].append(who)
+        else:
+            continue
+        note = ctx["notes"].get((room_id, lk, role))
+        if note:
+            state["bemerkungen"][f"{row}|{who}"] = note
+    return state
 
 
 def export_plan(db: Any, config_dir: Path, tables: Mapping[str, str], workspace: Path, name: Path = Path(PLAN_FILE)) -> Path:
@@ -315,17 +344,10 @@ def export_plan(db: Any, config_dir: Path, tables: Mapping[str, str], workspace:
         ctx = _load_plan_context(cur, tables)
     finally:
         cur.close()
-    names = ctx["teachers"]
-    standard: dict[str, list[str]] = {}
-    roleless: dict[str, list[str]] = {"Fachaufsicht": [], "Reserve": []}
-    for room_id, lk, role in sorted(ctx["current"], key=lambda t: (str(t[0]), t[1])):
-        if role == "Standard" and room_id is not None:
-            standard.setdefault(ctx["by_id"].get(room_id, "?"), []).append(names.get(lk, (str(lk), None))[0])
-        elif role in roleless:
-            roleless[role].append(names.get(lk, (str(lk), None))[0])
-    codes = sorted(set(ctx["counts"]) | set(standard))
-    state = {"raeume": {c: standard.get(c, []) for c in codes}, "fachaufsicht": roleless["Fachaufsicht"],
-             "reserve": roleless["Reserve"]}
+    state = state_from_context(ctx)
+    for code in sorted(set(ctx["counts"]) | set(state["raeume"])):
+        state["raeume"].setdefault(code, [])
+    state["raeume"] = {c: state["raeume"][c] for c in sorted(state["raeume"])}
     target.parent.mkdir(parents=True, exist_ok=True)
     try:
         with target.open("x", encoding="utf-8", newline="") as file:
@@ -346,8 +368,13 @@ def plan_text(state: Mapping[str, Any], counts: Mapping[str, int], levels: Mappi
         stufen = f", Stufe {', '.join(levels[code])}" if levels.get(code) else ""
         lines.append(f'  "{code}": [{who}]  # {counts.get(code, 0)} Teilnehmende{stufen}')
     lines += ["", "# Wettkampfleitung (ohne Raum)", f"fachaufsicht: [{', '.join(state['fachaufsicht'])}]",
-              "# Springer (ohne Raum)", f"reserve: [{', '.join(state['reserve'])}]", ""]
-    return "\n".join(lines)
+              "# Springer (ohne Raum)", f"reserve: [{', '.join(state['reserve'])}]",
+              "# Abiturerstellung statt Aufsicht (ohne Raum)", f"abitur: [{', '.join(state.get('abitur', []))}]",
+              "# Bemerkungen je Eintrag (\"Raum|KÜRZEL\": Text); fehlt ein Eintrag, wird die Bemerkung gelöscht"]
+    notes = state.get("bemerkungen") or {}
+    lines.append("bemerkungen:" + ("" if notes else " {}"))
+    lines += [f"  {json.dumps(key, ensure_ascii=False)}: {json.dumps(text, ensure_ascii=False)}" for key, text in sorted(notes.items())]
+    return "\n".join(lines) + "\n"
 
 
 class Draft:
@@ -380,8 +407,8 @@ class Draft:
             data = yaml.safe_load(self.path.read_text(encoding="utf-8")) or {}
         except (OSError, yaml.YAMLError) as exc:
             raise RoomError(f"Entwurf {self.name} nicht lesbar: {exc}") from exc
-        if not isinstance(data, dict) or not set(data) <= {"raeume", "fachaufsicht", "reserve"}:
-            raise RoomError(f"Entwurf {self.name}: erlaubt sind nur die Abschnitte raeume, fachaufsicht, reserve")
+        if not isinstance(data, dict) or not set(data) <= PLAN_KEYS:
+            raise RoomError(f"Entwurf {self.name}: erlaubt sind nur die Abschnitte {', '.join(sorted(PLAN_KEYS))}")
 
         def names_of(value: Any, where: str) -> list[str]:
             if value is None:
@@ -404,6 +431,12 @@ class Draft:
         for key in model.ROLE_KEYS:
             if key in data:
                 model.state[key] = names_of(data[key], key)
+        if "bemerkungen" in data:
+            model.state["bemerkungen"] = {}
+            for key, text in (data["bemerkungen"] or {}).items():
+                row, _sep, who = str(key).partition("|")
+                if row in model.rows() and who.upper() in model.team(row) and str(text or "").strip():
+                    model.state["bemerkungen"][f"{row}|{who.upper()}"] = str(text).strip()[:NOTE_MAX]
         model.mark_saved()
         note = f"Entwurf {self.name} geladen"
         return note + (f" (nicht belegte Räume ignoriert: {', '.join(ignored)})" if ignored else "")
@@ -423,8 +456,8 @@ def apply_plan(db: Any, config_dir: Path, tables: Mapping[str, str], workspace: 
 
 def apply_plan_data(db: Any, tables: Mapping[str, str], plan: Any, *, dry_run: bool = True) -> dict[str, Any]:
     """Plan (raeume/fachaufsicht/reserve) mit der Datenbank abgleichen: alles auf einmal, eine Transaktion."""
-    if not isinstance(plan, dict) or not set(plan) <= {"raeume", "fachaufsicht", "reserve"} or not plan:
-        raise RoomError("Plandatei: erlaubt sind nur die Abschnitte raeume, fachaufsicht, reserve")
+    if not isinstance(plan, dict) or not set(plan) <= PLAN_KEYS or not plan:
+        raise RoomError(f"Plandatei: erlaubt sind nur die Abschnitte {', '.join(sorted(PLAN_KEYS))}")
 
     def names_of(value: Any, where: str) -> list[str]:
         if value is None:
@@ -470,7 +503,7 @@ def apply_plan_data(db: Any, tables: Mapping[str, str], plan: Any, *, dry_run: b
                 for n in names_of(value, f"Raum {code}"):
                     desired.add((info["id"], lookup(n), "Standard"))
                     per_teacher.setdefault(n, []).append(str(code))
-        for key, role in (("fachaufsicht", "Fachaufsicht"), ("reserve", "Reserve")):
+        for key, role in ROLE_ROWS.items():
             if key in plan:
                 scope_roles.add(role)
                 for n in names_of(plan[key], key):
@@ -480,22 +513,48 @@ def apply_plan_data(db: Any, tables: Mapping[str, str], plan: Any, *, dry_run: b
                 warnings.append(f"{n} ist in mehreren Räumen eingeteilt: {', '.join(places)}")
         scoped = {t for t in current if (t[2] == "Standard" and t[0] in scope_rooms) or t[2] in scope_roles}
         to_add, to_del = desired - scoped, scoped - desired
+        wanted_notes: dict[tuple[int | None, int, str], str] = {}
+        note_changes: list[tuple[tuple[int | None, int, str], str]] = []
+        if "bemerkungen" in plan:
+            raw_notes = plan["bemerkungen"] or {}
+            if not isinstance(raw_notes, dict):
+                raise RoomError("Plandatei: bemerkungen muss eine Zuordnung \"Raum|KÜRZEL\" → Text sein")
+            room_by_code = {c: i["id"] for c, i in rooms.items()}
+            for key, text in raw_notes.items():
+                row, _sep, who = str(key).partition("|")
+                who = who.strip().upper()
+                triple = ((room_by_code.get(row), lookup(who), "Standard") if row in room_by_code
+                          else (None, lookup(who), ROLE_ROWS[row]) if row in ROLE_ROWS else None)
+                if triple is None or triple not in desired:
+                    raise RoomError(f"Plandatei: Bemerkung für {key} – diese Person ist dort nicht eingeteilt")
+                text = str(text or "").strip()
+                if len(text) > NOTE_MAX:
+                    raise RoomError(f"Plandatei: Bemerkung für {key} ist länger als {NOTE_MAX} Zeichen")
+                if text:
+                    wanted_notes[triple] = text
+            old_notes = ctx.get("notes", {})
+            note_changes = sorted(((t, wanted_notes.get(t, "")) for t in (scoped & desired)
+                                   if wanted_notes.get(t, "") != old_notes.get(t, "")), key=lambda x: str(x[0]))
         label = {i: k for i, (k, _a) in ctx["teachers"].items()}
 
         def show(t: tuple[int | None, int, str]) -> str:
             place = ctx["by_id"].get(t[0], "?") if t[0] is not None else "ohne Raum"
             return f"{t[2]} {place}: {label.get(t[1], t[1])}"
         added, removed = sorted(show(t) for t in to_add), sorted(show(t) for t in to_del)
-        stats = {"hinzu": added, "entfernt": removed, "unveraendert": len(scoped & desired), "hinweise": warnings}
-        LOGGER.info("Aufsichtenplan | +%d −%d unverändert %d | Modus: %s", len(added), len(removed), stats["unveraendert"],
-                    "DRY-RUN" if dry_run else "APPLY")
+        noted = [f"{show(t)}: {text or '(gelöscht)'}" for t, text in note_changes]
+        stats = {"hinzu": added, "entfernt": removed, "bemerkungen": noted,
+                 "unveraendert": len(scoped & desired), "hinweise": warnings}
+        LOGGER.info("Aufsichtenplan | +%d −%d Bemerkungen %d unverändert %d | Modus: %s", len(added), len(removed), len(noted),
+                    stats["unveraendert"], "DRY-RUN" if dry_run else "APPLY")
+        for line in noted:
+            LOGGER.info("Aufsichtenplan | Bemerkung %s", line)
         for line in removed:
             LOGGER.info("Aufsichtenplan | − %s", line)
         for line in added:
             LOGGER.info("Aufsichtenplan | + %s", line)
         for note in warnings:
             LOGGER.warning("Aufsichtenplan | %s", note)
-        if dry_run or not (to_add or to_del):
+        if dry_run or not (to_add or to_del or note_changes):
             return stats
         lock_name = f"mao-aufsichten-{ctx['sup_t']}"
         cur.execute("SELECT GET_LOCK(%s, 10)", (lock_name,))
@@ -510,8 +569,17 @@ def apply_plan_data(db: Any, tables: Mapping[str, str], plan: Any, *, dry_run: b
                             + ("raum_id IS NULL" if room_id is None else "raum_id = %s"),
                             (ctx["jahrgang_id"], lk, role) + (() if room_id is None else (room_id,)))
             for room_id, lk, role in sorted(to_add, key=str):
-                cur.execute(f"INSERT INTO `{ctx['sup_t']}` (mao_jahrgang_id, raum_id, lehrkraft_id, rolle) VALUES (%s, %s, %s, %s)",
-                            (ctx["jahrgang_id"], room_id, lk, role))
+                new_note = wanted_notes.get((room_id, lk, role))
+                if new_note:
+                    cur.execute(f"INSERT INTO `{ctx['sup_t']}` (mao_jahrgang_id, raum_id, lehrkraft_id, rolle, bemerkung) "
+                                "VALUES (%s, %s, %s, %s, %s)", (ctx["jahrgang_id"], room_id, lk, role, new_note))
+                else:
+                    cur.execute(f"INSERT INTO `{ctx['sup_t']}` (mao_jahrgang_id, raum_id, lehrkraft_id, rolle) VALUES (%s, %s, %s, %s)",
+                                (ctx["jahrgang_id"], room_id, lk, role))
+            for (room_id, lk, role), text in note_changes:
+                cur.execute(f"UPDATE `{ctx['sup_t']}` SET bemerkung = %s WHERE mao_jahrgang_id = %s AND lehrkraft_id = %s "
+                            "AND rolle = %s AND " + ("raum_id IS NULL" if room_id is None else "raum_id = %s"),
+                            (text or None, ctx["jahrgang_id"], lk, role) + (() if room_id is None else (room_id,)))
             cnx.commit()
         except Exception:
             cnx.rollback()
@@ -613,12 +681,16 @@ def _short_rooms_and_history(cur: Any, tables: Mapping[str, str], by_id: Mapping
 class SupervisionModel:
     """Bearbeitungsstand aller Aufsichten (Räume, Fachaufsicht, Reserve) mit Rückgängig; unabhängig von der Oberfläche."""
 
-    ROLE_KEYS = ("fachaufsicht", "reserve")
+    ROLE_KEYS = ("fachaufsicht", "reserve", "abitur")
+    ROLE_TITLES = {"fachaufsicht": "Fachaufsicht", "reserve": "Reserve", "abitur": "Abiturerstellung"}
 
     def __init__(self, state: dict[str, Any], known: set[str], counts: Mapping[str, int], short: list[str],
                  history: Mapping[str, list[int]], need: int, teachers: list[tuple[str, str, str, bool]],
                  levels: Mapping[str, list[str]] | None = None) -> None:
         self.state, self.known, self.counts, self.short = state, known, dict(counts), list(short)
+        for key in self.ROLE_KEYS:
+            self.state.setdefault(key, [])
+        self.state.setdefault("bemerkungen", {})
         self.levels = dict(levels or {})
         self.history, self.need, self.teachers = dict(history), need, teachers
         self.stack: list[str] = []
@@ -642,6 +714,33 @@ class SupervisionModel:
 
     def _push(self) -> None:
         self.stack.append(json.dumps(self.state))
+
+    # --- Bemerkungen (Spalte bemerkung der Aufsichtentabelle), Schlüssel "Zeile|KÜRZEL"
+    def note(self, row: str, who: str) -> str:
+        return str(self.state["bemerkungen"].get(f"{row}|{who}", ""))
+
+    def notes_text(self, row: str) -> str:
+        return "; ".join(f"{k}: {self.note(row, k)}" for k in self.team(row) if self.note(row, k))
+
+    def set_note(self, row: str, who: str, text: str) -> str:
+        who = who.upper()
+        if row not in self.rows():
+            return f"Unbekannte Zeile {row}"
+        if who not in self.team(row):
+            return f"{who} ist in {row} nicht eingeteilt"
+        text = text.strip()
+        if len(text) > NOTE_MAX:
+            return f"Bemerkung zu lang (höchstens {NOTE_MAX} Zeichen)"
+        self._push()
+        if text:
+            self.state["bemerkungen"][f"{row}|{who}"] = text
+        else:
+            self.state["bemerkungen"].pop(f"{row}|{who}", None)
+        return ""
+
+    def _prune_notes(self) -> None:
+        self.state["bemerkungen"] = {k: v for k, v in self.state["bemerkungen"].items()
+                                     if k.partition("|")[0] in self.rows() and k.partition("|")[2] in self.team(k.partition("|")[0])}
 
     def undo(self) -> bool:
         if not self.stack:
@@ -681,8 +780,10 @@ class SupervisionModel:
         self._push()
         if row in self.ROLE_KEYS:
             self.state[row] = new
+            self._prune_notes()
             return ""
         self.state["raeume"][row] = new
+        self._prune_notes()
         dup = sorted({k for k in new for c, t in self.state["raeume"].items() if c != row and k in t})
         return f"Hinweis: {', '.join(dup)} ist auch in einem anderen Raum eingeteilt" if dup else ""
 
@@ -691,6 +792,13 @@ class SupervisionModel:
             return "Zwei verschiedene Zeilen wählen"
         self._push()
         ta, tb = list(self.team(a)), list(self.team(b))
+        notes = self.state["bemerkungen"]
+        moved = {k: v for k, v in notes.items() if k.partition("|")[0] in (a, b)}
+        for k in moved:
+            notes.pop(k)
+        for k, v in moved.items():
+            row, _sep, who = k.partition("|")
+            notes[f"{b if row == a else a}|{who}"] = v
         for row, new in ((a, tb), (b, ta)):
             if row in self.ROLE_KEYS:
                 self.state[row] = new
@@ -712,6 +820,9 @@ class SupervisionModel:
         for row in set(self.where(x)) | set(self.where(y)):
             team = self.team(row)
             team[:] = [y if t == x else x if t == y else t for t in team]
+        notes = self.state["bemerkungen"]
+        self.state["bemerkungen"] = {f"{k.partition('|')[0]}|{y if k.partition('|')[2] == x else x if k.partition('|')[2] == y else k.partition('|')[2]}": v
+                                     for k, v in notes.items()}
         return ""
 
     def proposal(self) -> dict[str, Any]:
@@ -720,9 +831,11 @@ class SupervisionModel:
     def adopt(self, prop: Mapping[str, Any]) -> None:
         self._push()
         self.state["raeume"] = {c: list(t) for c, t in prop["raeume"].items()}
+        self._prune_notes()
 
     def plan(self) -> dict[str, Any]:
-        return {"raeume": self.state["raeume"], "fachaufsicht": self.state["fachaufsicht"], "reserve": self.state["reserve"]}
+        return {"raeume": self.state["raeume"], "fachaufsicht": self.state["fachaufsicht"], "reserve": self.state["reserve"],
+                "abitur": self.state["abitur"], "bemerkungen": dict(self.state["bemerkungen"])}
 
     def gap(self, row: str) -> bool:
         return row not in self.ROLE_KEYS and bool(self.counts.get(row)) and len(self.team(row)) < self.need
@@ -731,7 +844,7 @@ class SupervisionModel:
         """Lehrkräfte (Mathematik, sonst alle) in dieser Sitzung: (noch frei, schon verplant mit Ort, Überschrift)."""
         math = [t for t in self.teachers if t[3]]
         shown = self.teachers if everyone or not math else math
-        names = {"fachaufsicht": "Fach", "reserve": "Reserve"}
+        names = {"fachaufsicht": "Fach", "reserve": "Reserve", "abitur": "Abitur"}
         free: list[str] = []
         placed: list[str] = []
         for k, v, n, _m in shown:
@@ -764,15 +877,7 @@ def load_supervision_model(db: Any, config_dir: Path, tables: Mapping[str, str],
     if not ctx["counts"]:
         raise RoomError("Keine Teilnehmenden mit Raum (erst raumzuteilung ausführen)")
     names = ctx["teachers"]
-    state: dict[str, Any] = {"raeume": {}, "fachaufsicht": [], "reserve": []}
-    for room_id, lk, role in sorted(ctx["current"], key=lambda t: (str(t[0]), t[1])):
-        who = names.get(lk, (str(lk), None))[0].upper()
-        if role == "Standard" and room_id is not None:
-            state["raeume"].setdefault(ctx["by_id"].get(room_id, "?"), []).append(who)
-        elif role == "Fachaufsicht":
-            state["fachaufsicht"].append(who)
-        elif role == "Reserve":
-            state["reserve"].append(who)
+    state = state_from_context(ctx)
     for code in ctx["counts"]:
         state["raeume"].setdefault(code, [])
     history = {names[i][0].upper(): sorted(nrs) for i, nrs in history_ids.items() if i in names}
@@ -788,14 +893,16 @@ def finish_supervision(db: Any, tables: Mapping[str, str], model: SupervisionMod
     except RoomError as exc:
         out(f"  {exc}")
         return "fehler", 0
-    out(f"\nÄnderungen: +{len(stats['hinzu'])} −{len(stats['entfernt'])}")
+    out(f"\nÄnderungen: +{len(stats['hinzu'])} −{len(stats['entfernt'])} Bemerkungen {len(stats['bemerkungen'])}")
     for x in stats["entfernt"]:
         out(f"  − {x}")
     for x in stats["hinzu"]:
         out(f"  + {x}")
+    for x in stats["bemerkungen"]:
+        out(f"  Bemerkung {x}")
     for x in stats["hinweise"]:
         out(f"  Hinweis: {x}")
-    changes = len(stats["hinzu"]) + len(stats["entfernt"])
+    changes = len(stats["hinzu"]) + len(stats["entfernt"]) + len(stats["bemerkungen"])
     if not changes:
         out("Keine Änderungen")
         return "leer", 0
@@ -816,19 +923,22 @@ def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str]
     has_math = any(t[3] for t in model.teachers)
 
     def table() -> None:
-        out("\nRaum   Teilnehmende  Stufen          Aufsicht")
+        out("\nRaum   Teilnehmende  Stufen          Aufsicht                  Bemerkung")
         for code in sorted(model.state["raeume"]):
             flag = " K" if code in model.short else "  "
             gap = "   <-- fehlt" if model.gap(code) else ""
+            who = (' '.join(model.team(code)) or '-') + gap
             out(f"{code:<6}{flag} {model.counts.get(code, 0):>5}      {model.level_text(code):<14}  "
-                f"{' '.join(model.team(code)) or '-'}{gap}")
-        out(f"Fachaufsicht: {' '.join(model.state['fachaufsicht']) or '-'} | Reserve: {' '.join(model.state['reserve']) or '-'}")
+                f"{who:<24}  {model.notes_text(code)}".rstrip())
+        for key in model.ROLE_KEYS:
+            out(f"{model.ROLE_TITLES[key] + ':':<17} {' '.join(model.state[key]) or '-':<24}  {model.notes_text(key)}".rstrip())
         if model.short:
             out("(K = Kurzraum, Stufe ≤ 6: 2 Stunden Aufsicht)")
 
     out("Alle Aufsichten bearbeiten. Befehle:\n"
         "  <Raum> KÜRZEL...   Raum neu besetzen (+KÜ / -KÜ ändert nur, '-' leert)   z. B. 105 GER NIX\n"
-        "  fach KÜRZEL... | reserve KÜRZEL...   Fachaufsicht / Reserve setzen\n"
+        "  fach KÜRZEL... | reserve KÜRZEL... | abitur KÜRZEL...   Fachaufsicht / Reserve / Abiturerstellung setzen\n"
+        "  bem <Raum|fach|reserve|abitur> KÜRZEL [Text]   Bemerkung zu einer Lehrkraft setzen (ohne Text: löschen)\n"
         "  tausch <Raum> <Raum> | tausch KÜ KÜ   Teams bzw. Personen tauschen\n"
         "  kurz   Rotationsvorschlag für Kurzräume zeigen, 'kurz ok' übernimmt ihn\n"
         f"  l = {'Mathematik-Lehrkräfte' if has_math else 'Lehrkräfte'}, la = alle, z = Tabelle, u = zurück, "
@@ -901,12 +1011,17 @@ def interactive_supervision(db: Any, config_dir: Path, tables: Mapping[str, str]
                 out(f"  {msg}")
             else:
                 table()
-        elif low in ("fach", "fachaufsicht", "reserve"):
+        elif low in ("fach", "fachaufsicht", "reserve", "abitur"):
             if not args:
                 out("  Kürzel angeben (z. B. fach MEI)")
                 continue
-            msg = model.edit("reserve" if low == "reserve" else "fachaufsicht", args)
-            out(f"  {msg}" if msg else f"  {low}: {' '.join(model.state['reserve' if low == 'reserve' else 'fachaufsicht']) or '-'}")
+            key = "fachaufsicht" if low.startswith("fach") else low
+            msg = model.edit(key, args)
+            out(f"  {msg}" if msg else f"  {low}: {' '.join(model.state[key]) or '-'}")
+        elif low in ("bem", "bemerkung") and len(args) >= 2:
+            row = args[0] if args[0] in model.state["raeume"] else ("fachaufsicht" if args[0].lower().startswith("fach") else args[0].lower())
+            msg = model.set_note(row, args[1], " ".join(args[2:]))
+            out(f"  {msg}" if msg else f"  Bemerkung {row}/{args[1].upper()}: {model.note(row, args[1].upper()) or '(gelöscht)'}")
         elif cmd in model.state["raeume"]:
             if not args:
                 out(f"  {cmd}: {' '.join(model.team(cmd)) or '-'}")
