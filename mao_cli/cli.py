@@ -606,6 +606,14 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
             if args.report:
                 saved = write_import_report(workspace, config_dir, args.report, report)
                 LOGGER.info("GF-Prüfbericht: %s", saved)
+            if args.abgleich and args.apply and stats["inserted"] and sys.stdin.isatty():
+                # Nachgetragene Teilnehmende haben keinen Raum; bestehende Zuteilungen bleiben unberührt.
+                if input(f"{stats['inserted']} neue Teilnehmende ohne Raum. Jetzt von Hand Räumen zuteilen? [j/N] ").strip().lower() == "j":
+                    rules_path = resolve_rules_file(workspace, config_dir)
+                    with DB(db_config) as db:
+                        interactive_assign(db, tables, apply=True, max_per_room=load_room_rules(rules_path).max_per_room)
+            elif args.abgleich and args.apply and stats["removed"]:
+                LOGGER.info("Gelöschte Teilnehmende haben ihre Raumzuordnung mit der Zeile verloren; andere Zuteilungen bleiben unverändert")
             return 0
         if args.command == "schulen-sync":
             tables = load_tables(resolve_config_file(config_dir, "tables.ini"))
