@@ -246,15 +246,15 @@ def test_reserve_only_for_aufsicht_wishers():
         m < 200 for m, t in assign.items() if t == "reserve")
 
 
-def test_hard_hof_cap_leaves_rest_without_role_and_manual_move_respects_it(tmp_path):
+def test_hard_hof_cap_leaves_rest_without_role_and_manual_move_may_exceed_it(tmp_path):
     persons = free_people(5, "Hof")
     settings = e.Settings(aufsichten_pro_raum=0, reserve=0, hof_gruppen=2, hof_pro_gruppe=2, seed=1)
     model = e.EinsatzModel(persons, [], settings)
     assert sorted(model.assign.values()) == ["hof:1", "hof:1", "hof:2", "hof:2", "ohne"]
     assert any("Nicht verplant (1)" in w for w in model.warnings()) and any("OHNE ROLLE" in l for l in model.overview())
     loose = model.members("ohne")[0].matrikel
-    with pytest.raises(e.EinsatzError, match="voll"):
-        model.move(loose, "hof:1")
+    model.move(loose, "hof:1")                    # von Hand erlaubt, mit Warnung
+    assert model.assign[loose] == "hof:1" and any("Hof Gruppe 1: 3 statt höchstens 2" in w for w in model.warnings())
     model.move(loose, "reserve")
     assert model.assign[loose] == "reserve" and not any("Nicht verplant" in w for w in model.warnings())
     model.move(loose, "ohne")

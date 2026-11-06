@@ -261,10 +261,6 @@ class EinsatzModel:
         if target not in self.targets() or target == T_TEILNAHME:
             raise EinsatzError("Unbekanntes Ziel")
         self._check_5pk(matrikel, target)
-        cap = self.settings.hof_pro_gruppe
-        if target.startswith("hof:") and cap is not None and self.assign.get(matrikel) != target \
-                and len(self.members(target)) >= cap:
-            raise EinsatzError(f"Hof Gruppe {target[4:]} ist voll ({cap}); hof_pro_gruppe erhöhen oder jemanden verschieben")
         self._remember()
         self.assign[matrikel] = target
 
