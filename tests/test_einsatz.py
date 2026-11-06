@@ -226,3 +226,11 @@ def test_raumregeln_einsatz_section_is_loaded_and_validated(tmp_path):
         path.write_text(base.replace("  reserve: 3 ", bad), encoding="utf-8")
         with pytest.raises(ConfigurationError, match="einsatz"):
             load_room_rules(path)
+
+
+def test_unassigned_persons_are_reported():
+    persons = [person(1), person(2)]
+    model = e.EinsatzModel(persons, ["101"], e.Settings(hof_gruppen=1))
+    assert not any("Nicht verplant" in w for w in model.warnings())
+    del model.assign[2]
+    assert any("Nicht verplant (1)" in w for w in model.warnings())
