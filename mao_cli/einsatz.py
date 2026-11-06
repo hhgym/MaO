@@ -194,6 +194,15 @@ class EinsatzModel:
         target = self.assign.get(person.matrikel, "")
         return target.startswith("hof:") if person.wish == "Hof" else (target.startswith("aufsicht:") or target == T_RESERVE)
 
+    def tag(self, person: Person) -> str:
+        """Name mit Wunschstatus, z. B. "Müller, Anna (Wunsch Hof, erfüllt)" (nur Stufe 11 ohne Teilnahme)."""
+        if person.stufe != 11 or not self.movable(person.matrikel):
+            return person.label
+        met = self.wish_met(person)
+        if met is None:
+            return f"{person.label} (ohne Wunsch)"
+        return f"{person.label} (Wunsch {person.wish}, {'erfüllt' if met else 'nicht erfüllt'})"
+
     def stats(self) -> dict[str, int]:
         free = [p for p in self.persons.values() if p.stufe == 11 and self.movable(p.matrikel)]
         wished = [p for p in free if p.wish in WISHES]
@@ -292,18 +301,18 @@ class EinsatzModel:
         lines = []
         for code in self.rooms:
             team = self.members(aufsicht_target(code))
-            lines.append(f"  Raum {code:<8} {len(team)}/{self.settings.aufsichten_pro_raum}  " + "; ".join(p.label for p in team))
+            lines.append(f"  Raum {code:<8} {len(team)}/{self.settings.aufsichten_pro_raum}  " + "; ".join(self.tag(p) for p in team))
         reserve = self.members(T_RESERVE)
-        lines.append(f"  Reserve        {len(reserve)}/{self.settings.reserve}  " + "; ".join(p.label for p in reserve))
+        lines.append(f"  Reserve        {len(reserve)}/{self.settings.reserve}  " + "; ".join(self.tag(p) for p in reserve))
         for n in range(1, self.settings.hof_gruppen + 1):
             group = self.members(hof_target(n))
             lines.append(f"  Hof Gruppe {n:<3} {len(group)}" + (f"/{self.settings.hof_pro_gruppe}" if self.settings.hof_pro_gruppe else "")
-                         + "  " + "; ".join(p.label for p in group))
+                         + "  " + "; ".join(self.tag(p) for p in group))
         lines.append(f"  5. PK          {len(self.members(T_5PK))}")
         lines.append(f"  Teilnahme      {len(self.members(T_TEILNAHME))}")
         none = self.members(T_NONE)
         if none:
-            lines.append(f"  OHNE ROLLE     {len(none)}  " + "; ".join(p.label for p in none))
+            lines.append(f"  OHNE ROLLE     {len(none)}  " + "; ".join(self.tag(p) for p in none))
         fixed = sum(1 for t in self.assign.values() if t.startswith("sonst:"))
         if fixed:
             lines.append(f"  Fremde Rollen  {fixed} (unverändert)")
@@ -691,7 +700,7 @@ def interactive_einsatz(model: EinsatzModel, db: Any, ctx: Context, *, apply: bo
                 if target is None:
                     out("Unbekanntes Ziel")
                 else:
-                    out(target_label(target) + ": " + ("; ".join(f"{p.label} ({p.klasse})" for p in model.members(target)) or "-"))
+                    out(target_label(target) + ": " + ("; ".join(f"{model.tag(p)} [{p.klasse}]" for p in model.members(target)) or "-"))
             elif cmd == "s" and args:
                 for p in model.find(" ".join(args))[:15]:
                     out(f"{p.label} ({p.klasse}, {p.matrikel}) – {target_label(model.assign.get(p.matrikel, '-'))}"
@@ -702,7 +711,7 @@ def interactive_einsatz(model: EinsatzModel, db: Any, ctx: Context, *, apply: bo
                     out("Unbekanntes Ziel")
                 elif person and target:
                     model.move(person.matrikel, target)
-                    out(f"{person.label} → {target_label(target)}")
+                    out(f"{model.tag(person)} → {target_label(target)}")
             elif cmd == "t" and len(args) == 2:
                 first, second = _resolve(model, args[0], out), _resolve(model, args[1], out)
                 if first and second:

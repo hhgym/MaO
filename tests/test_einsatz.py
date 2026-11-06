@@ -264,3 +264,12 @@ def test_hard_hof_cap_leaves_rest_without_role_and_manual_move_may_exceed_it(tmp
     other = e.EinsatzModel(persons, [], settings, assign={p.matrikel: "hof:1" for p in persons})
     draft.load_into(other)
     assert other.assign[loose] == "ohne"
+
+
+def test_tag_shows_wish_status():
+    a, b, c, d = person(1, wish="Hof"), person(2, wish="Aufsicht"), person(3), person(4, 12)
+    model = e.EinsatzModel([a, b, c, d], ["101"], e.Settings(aufsichten_pro_raum=1, reserve=0, hof_gruppen=1),
+                           assign={1: "hof:1", 2: "hof:1", 3: "hof:1", 4: "5pk"})
+    assert model.tag(a).endswith("(Wunsch Hof, erfüllt)") and model.tag(b).endswith("(Wunsch Aufsicht, nicht erfüllt)")
+    assert model.tag(c).endswith("(ohne Wunsch)") and model.tag(d) == d.label
+    assert any("(Wunsch Aufsicht, nicht erfüllt)" in line for line in model.overview())
