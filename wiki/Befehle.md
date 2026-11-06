@@ -239,22 +239,22 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
   in mehreren Räumen, nicht mehr aktive oder unbekannte Lehrkräfte (`fehler`) sowie Hinweise
   (überzählige Aufsichten, Aufsicht in einem leeren Raum, Eintrag ohne Raum).
 - Regeln in `raumregeln.yaml` (je Jahrgang): `aufsichten: {lehrkraefte_pro_raum: 1, zaehlende_rollen: ["Standard"]}`.
-  Die Rollen `Reserve` (Springer) und `Fachaufsicht` (Wettkampfleitung: beantwortet Fragen zu den Aufgaben) gehören keinem Raum an und zählen standardmäßig nicht als Raumaufsicht. Fehlt eine Fachaufsicht, gibt es einen Hinweis; ist sie einem Raum zugeordnet, ebenfalls.
+  Die Rollen `Reserve` (Springer), `Fachaufsicht` (Wettkampfleitung: beantwortet Fragen zu den Aufgaben) und `Abiturerstellung` (Lehrkräfte, die statt der Aufsicht eine Abituraufgabe erstellen; muss in der Rollenspalte der Aufsichtentabelle vorhanden sein) gehören keinem Raum an und zählen standardmäßig nicht als Raumaufsicht. Fehlt eine Fachaufsicht, gibt es einen Hinweis; ist sie einem Raum zugeordnet, ebenfalls.
 - **Aufsichten setzen** (Dry-Run ist Standard, `--apply` schreibt):
   - `mao aufsichten --raum 105 --lehrkraft GER NIX [--apply]` trägt Lehrkräfte per Kürzel als Raumaufsicht ein.
-  - `mao aufsichten --rolle Fachaufsicht --lehrkraft MEI [--apply]` (ebenso `Reserve`) trägt Lehrkräfte ohne Raum ein.
+  - `mao aufsichten --rolle Fachaufsicht --lehrkraft MEI [--apply]` (ebenso `Reserve`, `Abiturerstellung`) trägt Lehrkräfte ohne Raum ein.
   - `--entfernen` löscht die genannten Einträge. Eingetragen werden können alle aktiven Lehrkräfte, nicht nur Mathematik.
     Ist jemand schon in einem anderen Raum eingeteilt, gibt es eine Warnung (Eintrag erfolgt trotzdem).
   - **Tabelle mit Cursor:** `mao aufsichten --interaktiv [--apply]` öffnet eine Tabelle aller belegten Räume (plus
-    Fachaufsicht und Reserve). Mit den Pfeiltasten die Zeile wählen, `Enter` bearbeitet sie (Kürzel eintippen, `Tab`
-    ergänzt, `+KÜ`/`-KÜ` ändert nur), `Leertaste` markiert eine Zeile und tauscht sie mit der nächsten markierten,
+    Fachaufsicht, Reserve und Abiturerstellung; Spalte **Bemerkung** zeigt die Bemerkungen der Lehrkräfte je Zeile). Mit den Pfeiltasten die Zeile wählen, `Enter` bearbeitet sie (Kürzel eintippen, `Tab`
+    ergänzt, `+KÜ`/`-KÜ` ändert nur), `b` setzt eine Bemerkung zu einer Lehrkraft der Zeile (`KÜRZEL Text`, ohne Text löscht), `Leertaste` markiert eine Zeile und tauscht sie mit der nächsten markierten,
     `r` zeigt den Rotationsvorschlag für Kurzräume (`j` übernimmt), `u` nimmt zurück, `l`/`L` zeigen die Lehrkräfte
     (Mathematik/alle) getrennt nach „noch nicht verplant“ und „schon verplant“ (mit Raum bzw. Fach/Reserve) in der aktuellen Sitzung, `s` prüft (Diff `+`/`−`) und schreibt mit `--apply` nach `j` alles in einer Transaktion, `q` beendet.
     Ohne Zusatzpaket; braucht ein Terminal. Mit `--einfach` gibt es stattdessen die zeilenweise Eingabe:
     `mao aufsichten --interaktiv --einfach` zeigt eine Tabelle aller belegten Räume
     mit der Aufsicht und bearbeitet sie in einer Sitzung; abgeschickt wird erst am Ende:
-    `105 GER NIX` besetzt einen Raum neu (`+KÜ`/`-KÜ` ändert nur, `-` leert), `fach MEI` und `reserve KRE` setzen
-    Fachaufsicht und Reserve, `tausch 105 204` tauscht zwei Raum-Teams, `tausch GER NIX` zwei Personen, `u` nimmt zurück,
+    `105 GER NIX` besetzt einen Raum neu (`+KÜ`/`-KÜ` ändert nur, `-` leert), `fach MEI`, `reserve KRE` und `abitur GER` setzen
+    Fachaufsicht, Reserve und Abiturerstellung, `bem 105 GER nur bis 10 Uhr` setzt eine Bemerkung (ohne Text: löschen), `tausch 105 204` tauscht zwei Raum-Teams, `tausch GER NIX` zwei Personen, `u` nimmt zurück,
     `z` zeigt die Tabelle, `l`/`la` listen die Lehrkräfte (Mathematik zuerst/alle). `fertig` zeigt die Änderungen (`+`/`−`)
     und schreibt mit `--apply` nach `j` alles in einer Transaktion; `q` bricht ab.
   - **Stufen und Entwurf:** Die Tabelle zeigt je Raum die schreibenden Stufen (`5, 6`; Externe als `E4`). Im Dry-Run
