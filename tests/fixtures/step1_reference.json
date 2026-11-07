@@ -19,6 +19,7 @@
     "db/Include/Tabellen-Teilnehmende-Klasse.tex": "e133881496f49449ef12b738a02c7c4e8bd56a9c5717d9a9a4dc3af92700e003",
     "db/Include/Tabellen-Teilnehmende-Kurse.tex": "ebb725f2b1f91d168ea3a6401748e3b1592205ff21f4979900482fa23f6d0c33",
     "db/Include/Tabellen-Teilnehmende-Lehrkraft.tex": "cfb2fdb29102eec336299eb4c4f518862083e5d6649bbb432bcdcf602dcf8a90",
+    "db/Include/Tabellen-Teilnehmende-Raum.tex": "21d44080172db60c133c4349fe0486cecddba7c4c72a9abd2157a3030d8edba3",
     "db/Include/Tabellen-Teilnehmende-Stufe.tex": "3bae74dabef9e113e2b75ec9cfecdce3867331f8ecb8ad9a686b9e5f9d9cc373",
     "db/Kopierliste/Kopierliste-Raum-R001.csv": "49dbdfac6493cbda98edf33adea2af6d94a89410b226b0689c5f28dae4ea8d1a",
     "db/Kopierliste/Kopierliste.csv": "49dbdfac6493cbda98edf33adea2af6d94a89410b226b0689c5f28dae4ea8d1a",
@@ -46,6 +47,7 @@
     "db/Teilnehmende/Klasse/Teilnehmende-Klasse-7-1.csv": "d5938dc96751a3fa7d6df83187d050426c99b77709cb89ad08e21a5fe2ab8d05",
     "db/Teilnehmende/Kurse/Teilnehmende-Kurse-Ma7.csv": "d5938dc96751a3fa7d6df83187d050426c99b77709cb89ad08e21a5fe2ab8d05",
     "db/Teilnehmende/Lehrkraft/Teilnehmende-Lehrkraft-AB.csv": "d5938dc96751a3fa7d6df83187d050426c99b77709cb89ad08e21a5fe2ab8d05",
+    "db/Teilnehmende/Raum/Teilnehmende-Raum-R001.csv": "d5938dc96751a3fa7d6df83187d050426c99b77709cb89ad08e21a5fe2ab8d05",
     "db/Teilnehmende/Stufe/Teilnehmende-Stufe-7.csv": "d5938dc96751a3fa7d6df83187d050426c99b77709cb89ad08e21a5fe2ab8d05"
   },
   "reference": "Synthetische Exportdaten, ohne reale SQL-Tabellenbezeichnungen"

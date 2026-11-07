@@ -319,6 +319,10 @@ mao einsatz --interaktiv                                           # prüfen und
 mao einsatz --apply                                                # schreiben
 ```
 
+## Raum-Anwesenheitslisten
+
+Der Job `anwesenheitslisten` (`tex/Raum-Anwesenheitslisten/Raum-Anwesenheitslisten.tex`) druckt je Raum eine Anwesenheitsliste (Vorname, Nachname) und auf der Rückseite die Hinweise für die Aufsicht. Er braucht die Exporte `teilnehmende_raum` (Liste je Raum), `aufsichten_lehrkraefte_nach_raum` (Aufsicht der Lehrkräfte) und `einsatz_oberstufe_raum` (Aufsicht der Oberstufe). Die beiden Aufsichten sind optional; fehlt die Datei, bleibt das Feld leer.
+
 ## Kopierliste
 
 Der Job `kopierliste` (`tex/Kopierliste/Kopierliste.tex`, standardmäßig deaktiviert) zeigt auf Seite 1 alle Räume mit der Zahl der Teilnehmenden je Stufe 5–12 samt Summenzeile, danach je Raum eine Seite zum Abhaken. Die Abfrage `kopierliste` liest die View `kopierliste_view` ohne deren GESAMT-Zeile (die Vorlage summiert selbst). Der Export schreibt `db/Kopierliste/Kopierliste.csv`, je Raum `Kopierliste-Raum-<Raum>.csv` und die Makrodatei `db/Include/Tabellen-Kopierliste.tex` (`\Kopierraumliste`). Da die CSV-Dateien erst entstehen müssen: `mao run --job kopierliste` (nicht nur `mao latex`).

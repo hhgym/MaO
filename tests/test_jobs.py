@@ -146,3 +146,20 @@ def test_default_pipeline_kopierliste_dataset_uses_view_without_gesamt_and_int_c
     assert all(v == "Int64" for v in ds["cast"].values())
     exp = next(e for e in cfg["exports"] if e["id"] == "kopierliste")
     assert exp["from_dataset"] == "kopierliste"
+
+
+def test_default_pipeline_raum_anwesenheitslisten_exports(tmp_path):
+    from pathlib import Path
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    tex = tmp_path / "tex"
+    (tex / "Raum-Anwesenheitslisten").mkdir(parents=True)
+    (tex / "Raum-Anwesenheitslisten" / "Raum-Anwesenheitslisten.tex").write_text(
+        "\\input{\\MaOdb Include/Tabellen-Teilnehmende-Raum.tex}\n"
+        "\\DTLloaddb{Aufsichten}{\\MaOdb Aufsichten/Aufsichten-Raeume.csv}\n"
+        "\\DTLloaddb{OberstufeRaum}{\\MaOdb Einsatz-Oberstufe/Einsatz-Oberstufe-Raum.csv}\n", encoding="utf-8")
+    job = {"name": "anwesenheitslisten", "workdir": "D", "tex": "@tex/Raum-Anwesenheitslisten/Raum-Anwesenheitslisten.tex"}
+    assert j.job_exports(cfg, job, tmp_path, tex) == {
+        "teilnehmende_raum", "aufsichten_lehrkraefte_nach_raum", "einsatz_oberstufe_raum"}
+    ex = next(e for e in cfg["exports"] if j.export_id(e) == "teilnehmende_raum")
+    assert ex["sort_by"] == ["raum", "vorname", "nachname"]
+    assert ex["splits"][0]["macro"]["list_macro"] == "TeilnehmendeRaumListe"
