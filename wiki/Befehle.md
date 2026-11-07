@@ -87,7 +87,7 @@ weiterhin weder Datenbank noch Internetzugang.
 
 ## `mao plan`
 
-Führt nur lesende SQL-Abfragen aus und plant alle im Profil aktivierten Exportdateien. Eine bestehende Manifestdatei wird zur Unterscheidung von `NEU`, `AKTUALISIEREN`, `UNVERÄNDERT` und `ENTFERNEN` eingelesen. **Keine Datenexporte werden geschrieben oder gelöscht.**
+Führt nur lesende SQL-Abfragen aus und plant die gewählten Exportdateien (Auswahlmenü, `--job` oder mit `--pipeline`/`--profile` die in der Pipeline aktivierten). Eine bestehende Manifestdatei wird zur Unterscheidung von `NEU`, `AKTUALISIEREN`, `UNVERÄNDERT` und `ENTFERNEN` eingelesen. **Keine Datenexporte werden geschrieben oder gelöscht.**
 
 ```bash
 mao plan --workspace "D:/MaO/2026-27" --profile vorbereitung
@@ -95,7 +95,7 @@ mao plan --workspace "D:/MaO/2026-27" --profile ergebnisse --no-latex
 mao plan --workspace "D:/MaO/2026-27" --output export_plan.md
 ```
 
-Optionen: `--output MARKDOWN` (legt die Plan-Datei im Arbeitsordner ab, wenn relativ angegeben), `--no-latex` (LaTeX-Jobs aus Liste entfernen) und `--mao NUMMER` (Dokumentnummer, **kein SQL-Wechsel**).
+Optionen: `--job NAME`, `--pipeline`, `--alle-exporte`, `--output MARKDOWN` (legt die Plan-Datei im Arbeitsordner ab, wenn relativ angegeben), `--no-latex` (LaTeX-Jobs aus Liste entfernen) und `--mao NUMMER` (Dokumentnummer, **kein SQL-Wechsel**).
 
 ## `mao run`
 
@@ -107,9 +107,13 @@ mao run --workspace "D:/MaO/2026-27" --profile turniertag --no-latex
 mao run --workspace "D:/MaO/2026-27" --profile ergebnisse --mao 66
 ```
 
-Optionen: `--no-latex`, `--mao NUMMER` (nur Dokumentnummer), `--job NAME` (nur dieser LaTeX-Job, mehrfach angebbar) und `--auswahl`.
+Optionen: `--no-latex`, `--mao NUMMER` (nur Dokumentnummer), `--job NAME` (nur dieser LaTeX-Job, mehrfach angebbar), `--pipeline` und `--alle-exporte`.
 
-**Auswahl der Jobs:** `mao run --auswahl` zeigt alle LaTeX-Jobs mit Kästchen (`[x]` = in der `pipeline.yaml` aktiviert). Nummern oder Bereiche (`1 4 6-8`) schalten um, `a` wählt alle, `n` keine, `s` den Standard, Enter bestätigt, `q` bricht ab. Danach steht, welche Exporte und SQL-Abfragen nötig sind, und `Jetzt ausführen? [J/n]` fragt nach. Bei `--auswahl` und `--job` werden **nur die CSV-/TeX-Dateien erzeugt, die die gewählten Jobs brauchen**; es werden auch nur die dafür nötigen SQL-Abfragen ausgeführt. Welche Exporte ein Job braucht, wird aus seiner Vorlage erkannt (Pfade der CSV- und Makrodateien, auch in eingebundenen Dateien; TeX-Kommentare zählen nicht). Man kann es im Job mit `exports: [id, …]` festlegen. Lässt es sich nicht erkennen, werden wie bisher alle aktivierten Exporte erzeugt. `--alle-exporte` erzwingt das auch bei `--job`/`--auswahl`. Ohne diese Optionen läuft `mao run` wie bisher.
+**Auswahlmenü (Standard):** `mao run`, `mao latex` und `mao plan` ohne weitere Angaben öffnen ein Menü mit Pfeiltasten. **Nichts ist vorausgewählt.** `↑`/`↓` wählen, Leertaste setzt oder entfernt das Häkchen, `a` wählt alle Einträge der Gruppe, `n` keine, Enter führt aus, `q` oder Esc bricht ab. Das Menü hat zwei Gruppen: *LaTeX-Jobs* und *Exporte (nur Daten, ohne PDF)*; `mao latex` zeigt nur die Jobs. Exporte, die ein gewählter Job braucht, erscheinen automatisch als `[+]`. Unten steht, wie viele Jobs und Exporte gewählt sind.
+
+Es werden **nur die CSV-/TeX-Dateien erzeugt (und nur die SQL-Abfragen ausgeführt), die zu den gewählten Jobs und Exporten gehören**. Welche Exporte ein Job braucht, wird aus seiner Vorlage erkannt (Pfade der CSV- und Makrodateien, auch in eingebundenen Dateien; TeX-Kommentare zählen nicht). Man kann es im Job mit `exports: [id, …]` festlegen. Lässt es sich nicht erkennen, kommen die in der Pipeline aktivierten Exporte dazu.
+
+**Ohne Menü:** `--pipeline` führt Jobs und Exporte so aus, wie sie in `pipeline.yaml` (und im Profil) aktiviert sind; das ist die Form für Skripte und geplante Aufgaben. `--profile NAME` und `--no-latex` übernehmen ebenfalls die Pipeline-Auswahl. `--job NAME` wählt Jobs direkt und erzeugt nur die nötigen Exporte; `--alle-exporte` erzeugt dabei trotzdem alle aktivierten. Ohne Terminal und ohne eine dieser Angaben bricht der Befehl mit einem Hinweis ab.
 
 ## `mao latex`
 
@@ -121,7 +125,7 @@ mao latex --workspace "D:/MaO/2026-27" --profile ergebnisse --mao 66
 
 Wenn `--mao` fehlt, wird die Jahrgangsnummer rechnerisch anhand des Datums bestimmt. Für vergangene oder künftige Wettbewerbsjahrgänge deshalb `--mao` ausdrücklich setzen.
 
-Einzelne Jobs: `mao latex --job aufsichten_lehrkraefte` (mehrfach angebbar) oder `mao latex --auswahl` zum Ankreuzen (siehe `mao run`); fehlen Dateien der nötigen Exporte, erscheint eine Warnung, dass erst `mao run` laufen muss. Der Job läuft auch, wenn er in der Pipeline ausgeschaltet ist; alle anderen entfallen. Unbekannte Namen werden mit der Liste der vorhandenen Jobs abgelehnt. Die Namen stehen unter `latex.jobs` in der `pipeline.yaml`.
+Einzelne Jobs: `mao latex --job aufsichten_lehrkraefte` (mehrfach angebbar) oder das Auswahlmenü (siehe `mao run`); fehlen Dateien der nötigen Exporte, erscheint eine Warnung, dass erst `mao run` laufen muss. Der Job läuft auch, wenn er in der Pipeline ausgeschaltet ist; alle anderen entfallen. Unbekannte Namen werden mit der Liste der vorhandenen Jobs abgelehnt. Die Namen stehen unter `latex.jobs` in der `pipeline.yaml`.
 
 ## `mao update`
 

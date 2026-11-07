@@ -127,28 +127,34 @@ def job_exports(cfg: Mapping[str, Any], job: Mapping[str, Any], workspace: Path,
     return found or None
 
 
-def restrict_exports(cfg: dict[str, Any], workspace: Path, tex_dir: Path | None) -> set[str] | None:
+def restrict_exports(cfg: dict[str, Any], workspace: Path, tex_dir: Path | None,
+                     extra: Iterable[str] = ()) -> set[str] | None:
     """Nur die Exporte (und Datasets) aktivieren, die die aktiven LaTeX-Jobs brauchen.
 
-    Gibt die benötigten Export-IDs zurück oder ``None``, wenn (für mindestens einen Job) keine
-    Zuordnung möglich war – dann bleibt die Auswahl der Exporte unverändert.
+    ``extra``: zusätzlich ausdrücklich gewählte Exporte (ohne PDF). Gibt die benötigten Export-IDs zurück
+    oder ``None``, wenn (für mindestens einen Job) keine Zuordnung möglich war – dann gelten die in der
+    Pipeline aktivierten Exporte plus ``extra``.
     """
     jobs = [j for j in _as_list((cfg.get("latex") or {}).get("jobs")) if j.get("enabled", True)]
-    needed: set[str] = set()
+    needed: set[str] = set(extra)
+    unknown = False
     for job in jobs:
         ids = job_exports(cfg, job, workspace, tex_dir)
         if ids is None:
             LOGGER.warning("LaTeX-Job '%s': benötigte Exporte nicht erkennbar – alle aktivierten Exporte werden erzeugt "
                            "(oder im Job mit 'exports: [id, …]' festlegen)", job.get("name"))
-            return None
-        needed |= ids
+            unknown = True
+        else:
+            needed |= ids
+    if unknown:
+        needed |= {export_id(e) for e in _as_list(cfg.get("exports")) if e.get("enabled", True)}
     for export in _as_list(cfg.get("exports")):
         export["enabled"] = export_id(export) in needed
     wanted_sets = {e.get("from_dataset") for e in _as_list(cfg.get("exports")) if e.get("enabled")}
     for dataset in _as_list(cfg.get("datasets")):
         if dataset.get("name") in wanted_sets:
             dataset["enabled"] = True
-    return needed
+    return None if unknown else needed
 
 
 def missing_outputs(cfg: Mapping[str, Any], workspace: Path, ids: Iterable[str]) -> list[str]:
@@ -167,70 +173,6 @@ def missing_outputs(cfg: Mapping[str, Any], workspace: Path, ids: Iterable[str])
             if rel and not (workspace / str(rel)).is_file():
                 missing.append(f"{eid}: {rel}")
     return missing
-
-
-def _parse_numbers(text: str, count: int) -> set[int]:
-    result: set[int] = set()
-    for token in re.split(r"[,\s]+", text.strip()):
-        if not token:
-            continue
-        match = re.fullmatch(r"(\d+)(?:-(\d+))?", token)
-        if not match:
-            raise ValueError(token)
-        lo, hi = int(match.group(1)), int(match.group(2) or match.group(1))
-        if lo < 1 or hi > count or lo > hi:
-            raise ValueError(token)
-        result.update(range(lo, hi + 1))
-    return result
-
-
-def choose_jobs(cfg: Mapping[str, Any], workspace: Path, tex_dir: Path | None, *,
-                ask: Callable[[str], str] = input, out: Callable[[str], None] = print,
-                with_data: bool = True) -> list[str] | None:
-    """Alle Jobs anzeigen und ankreuzen lassen. ``None`` = abgebrochen."""
-    jobs = [j for j in _as_list((cfg.get("latex") or {}).get("jobs")) if j.get("name")]
-    if not jobs:
-        out("Keine LaTeX-Jobs definiert.")
-        return []
-    needs = {str(j["name"]): job_exports(cfg, j, workspace, tex_dir) for j in jobs}
-    marked = [bool(j.get("enabled", True)) for j in jobs]
-    width = max(len(str(j["name"])) for j in jobs)
-
-    def show() -> None:
-        out("\nLaTeX-Jobs ([x] = ausgewählt, Standard = in pipeline.yaml aktiviert):")
-        for i, job in enumerate(jobs, 1):
-            ids = needs[str(job["name"])]
-            data = "Daten: ?" if ids is None else f"Daten: {len(ids)} Export(e)"
-            off = "" if job.get("enabled", True) else "  (in pipeline.yaml aus)"
-            out(f"  {i:>2} [{'x' if marked[i - 1] else ' '}] {str(job['name']):<{width}}  {data}{off}")
-        out("Eingabe: Nummern/Bereiche umschalten (z. B. 1 4 6-8) · a alle · n keine · s Standard · Enter ausführen · q abbrechen")
-
-    show()
-    while True:
-        answer = ask("Auswahl> ").strip()
-        low = answer.lower()
-        if low in ("q", "quit", "abbrechen"):
-            return None
-        if low == "":
-            chosen = [str(j["name"]) for j, m in zip(jobs, marked) if m]
-            if not chosen:
-                out("Nichts ausgewählt (Enter ohne Auswahl bricht nicht ab; q = abbrechen).")
-                continue
-            return chosen
-        if low == "a":
-            marked = [True] * len(jobs)
-        elif low == "n":
-            marked = [False] * len(jobs)
-        elif low == "s":
-            marked = [bool(j.get("enabled", True)) for j in jobs]
-        else:
-            try:
-                for number in _parse_numbers(answer, len(jobs)):
-                    marked[number - 1] = not marked[number - 1]
-            except ValueError as exc:
-                out(f"Ungültige Eingabe: {exc}")
-                continue
-        show()
 
 
 def summarize(cfg: Mapping[str, Any], names: list[str], needed: set[str] | None, out: Callable[[str], None] = print) -> None:
