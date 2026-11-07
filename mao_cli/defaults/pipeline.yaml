@@ -354,16 +354,15 @@ datasets:
       ) x
 
   # Kopierliste: Teilnehmende je Raum und Klassenstufe aus der Datenbank-View (Nullen = leer).
-  # Die GESAMT-Zeile der View entfällt, die Vorlage summiert selbst (sonst würde doppelt gezählt
-  # und es entstünde eine Seite "Raum GESAMT").
+  # Die Zeile GESAMT (Summen je Stufe) stammt aus der View und steht zuletzt; die Vorlage setzt sie als Summenzeile
+  # und überspringt sie bei den Raumseiten.
   - name: kopierliste
     id: kopierliste
     enabled: true
     sql: |
       SELECT *
       FROM {{table.kopierliste_view}}
-      WHERE raum <> 'GESAMT'
-      ORDER BY raum
+      ORDER BY (raum = 'GESAMT'), raum
     cast:
       stufe_5: Int64
       stufe_6: Int64
