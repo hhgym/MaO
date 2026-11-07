@@ -49,7 +49,7 @@ def test_no_wish_fills_open_slots_then_hof_rest_without_role():
     persons = free_people(6)
     settings = e.Settings(aufsichten_pro_raum=1, reserve=1, hof_gruppen=2, hof_pro_gruppe=1, seed=1)
     assign = e.build_assignment(persons, ["101"], settings)
-    assert sorted(assign.values()) == ["aufsicht:101", "hof:1", "hof:2", "ohne", "ohne", "ohne"]   # Reserve bleibt leer, Hof hart begrenzt
+    assert sorted(assign.values()) == ["aufsicht:101", "hof:1", "hof:2", "ohne", "ohne", "reserve"]   # Hof hart begrenzt, Reserve als Notlösung
 
 
 def test_seed_makes_the_draw_reproducible_and_reroll_changes_it():
@@ -273,3 +273,15 @@ def test_tag_shows_wish_status():
     assert model.tag(a) == "1 H+" and model.tag(b) == "2 A!" and model.tag(c) == "3 -" and model.tag(d) == "4"
     assert "2 A!" in " ".join(model.room_lines() + [model.tag(b)])
     assert not any(person.nachname in line for line in model.overview() + model.room_lines() for person in (a, b, c, d))
+
+
+def test_reserve_is_filled_only_as_last_resort_after_rooms_and_hof():
+    persons = free_people(8)
+    settings = e.Settings(aufsichten_pro_raum=1, reserve=3, hof_gruppen=1, hof_pro_gruppe=2, seed=3)
+    assign = e.build_assignment(persons, ["101"], settings)
+    values = sorted(assign.values())
+    assert values.count("reserve") == 3 and values.count("hof:1") == 2 and values.count("aufsicht:101") == 1
+    assert values.count("ohne") == 2
+    # Wunsch Aufsicht bleibt vorrangig: ohne Notlage bleibt die Reserve leer
+    few = e.build_assignment(free_people(3), ["101"], e.Settings(aufsichten_pro_raum=1, reserve=2, hof_gruppen=1, hof_pro_gruppe=5, seed=3))
+    assert list(few.values()).count("reserve") == 0
