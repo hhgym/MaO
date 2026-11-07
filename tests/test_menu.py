@@ -1,4 +1,4 @@
-from tests.test_jobs import make_cfg, tex  # noqa: F401  (Fixture)
+from tests.test_jobs import make_cfg
 from mao_cli import menu as m
 
 
