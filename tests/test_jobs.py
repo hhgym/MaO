@@ -1,7 +1,7 @@
 import pytest
 
 from mao_cli import jobs as j
-from mao_cli.config import ConfigurationError
+from mao_cli.config import ConfigurationError, load_config
 
 
 def make_cfg():
@@ -104,3 +104,34 @@ def test_explicit_empty_exports_means_none(tmp_path, tex):
     cfg = make_cfg()
     job = {"name": "leer", "workdir": "F", "tex": "@tex/Fest/Fest.tex", "exports": []}
     assert j.job_exports(cfg, job, tmp_path, tex) == set()
+
+
+OBERSTUFE_DOKUMENTE = {
+    "Einsatz-Oberstufe/Einsatz-Oberstufe.csv": {"einsatz_oberstufe"},
+    "Einsatz-Oberstufe/Einsatz-Oberstufe-Gruppe-1.csv": {"einsatz_oberstufe"},
+    "Einsatz-Oberstufe/Einsatz-Oberstufe-Klasse.csv": {"einsatz_oberstufe_klasse"},
+    "Einsatz-Oberstufe/Einsatz-Oberstufe-Raum.csv": {"einsatz_oberstufe_raum"},
+}
+
+
+@pytest.mark.parametrize("csv", sorted(OBERSTUFE_DOKUMENTE))
+def test_default_pipeline_oberstufe_exports_are_told_apart(tmp_path, csv):
+    from pathlib import Path
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    tex = tmp_path / "tex"
+    (tex / "Doc").mkdir(parents=True)
+    (tex / "Doc" / "Doc.tex").write_text(f"\\DTLloaddb[]{{x}}{{\\MaOdb {csv}}}\n", encoding="utf-8")
+    job = {"name": "doc", "workdir": "D", "tex": "@tex/Doc/Doc.tex"}
+    assert j.job_exports(cfg, job, tmp_path, tex) == OBERSTUFE_DOKUMENTE[csv]
+
+
+def test_default_pipeline_oberstufe_jobs_and_exports_exist():
+    from pathlib import Path
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    jobs = {x["name"]: x for x in cfg["latex"]["jobs"]}
+    for name in ("oberstufe_anwesenheitslisten", "oberstufe_einteilungslisten", "oberstufe_uebersicht", "aufsichten_schueler"):
+        assert jobs[name]["tex"].startswith("@tex/")
+    ids = {j.export_id(e) for e in cfg["exports"]}
+    assert {"einsatz_oberstufe", "einsatz_oberstufe_klasse", "einsatz_oberstufe_raum"} <= ids
+    sql = next(d["sql"] for d in cfg["datasets"] if d["name"] == "einsatz_oberstufe")
+    assert "AS entitaet" in sql
