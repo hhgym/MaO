@@ -318,27 +318,40 @@ datasets:
                                  WHERE s.aktiv = 1 ORDER BY j.id DESC LIMIT 1)
 
   # Einsätze der Oberstufe des aktuellen Jahrgangs (Pflege: mao einsatz). bemerkung = Raum, "Reserve" oder "Gruppe n";
-  # gruppe = Hofgruppe (leer sonst). Grundlage der Aufsichts- und Einsatzlisten der Oberstufe.
+  # gruppe = Hofgruppe (leer sonst). entitaet = bemerkung; ist sie leer (Teilnahme), der Raum der Teilnahme aus der
+  # Orga-Sicht. Grundlage der Aufsichts- und Einsatzlisten der Oberstufe.
   - name: einsatz_oberstufe
     id: einsatz_oberstufe
     enabled: true
     sql: |
       SELECT
-        s.nachname AS nachname,
-        s.vorname AS vorname,
-        s.klasse AS klasse,
-        r.code AS rolle,
-        CASE WHEN e.modus = 'Reserve' THEN 'Reserve'
-             WHEN e.modus = 'Gruppe' THEN CONCAT('Gruppe ', e.gruppe_nr)
-             ELSE COALESCE(ra.raumcode, COALESCE(e.bemerkung, '')) END AS bemerkung,
-        COALESCE(e.gruppe_nr, '') AS gruppe
-      FROM {{table.oberstufe_einsaetze_table}} e
-      JOIN {{table.oberstufe_rollen_table}} r ON r.id = e.rolle_id
-      JOIN {{table.students_table}} s ON s.matrikelnummer = e.matrikelnummer
-      LEFT JOIN {{table.rooms_table}} ra ON ra.id = e.raum_id
-      WHERE e.mao_jahrgang_id = (SELECT j.id FROM {{table.jahrgaenge_table}} j
-                                 JOIN {{table.schuljahre_table}} sj ON sj.id = j.schuljahr_id
-                                 WHERE sj.aktiv = 1 ORDER BY j.id DESC LIMIT 1)
+        x.nachname AS nachname,
+        x.vorname AS vorname,
+        x.klasse AS klasse,
+        x.rolle AS rolle,
+        x.bemerkung AS bemerkung,
+        x.gruppe AS gruppe,
+        COALESCE(NULLIF(x.bemerkung, ''), x.teilnahmeraum, '') AS entitaet
+      FROM (
+        SELECT
+          s.nachname AS nachname,
+          s.vorname AS vorname,
+          s.klasse AS klasse,
+          r.code AS rolle,
+          CASE WHEN e.modus = 'Reserve' THEN 'Reserve'
+               WHEN e.modus = 'Gruppe' THEN CONCAT('Gruppe ', e.gruppe_nr)
+               ELSE COALESCE(ra.raumcode, COALESCE(e.bemerkung, '')) END AS bemerkung,
+          COALESCE(e.gruppe_nr, '') AS gruppe,
+          o.raum AS teilnahmeraum
+        FROM {{table.oberstufe_einsaetze_table}} e
+        JOIN {{table.oberstufe_rollen_table}} r ON r.id = e.rolle_id
+        JOIN {{table.students_table}} s ON s.matrikelnummer = e.matrikelnummer
+        LEFT JOIN {{table.rooms_table}} ra ON ra.id = e.raum_id
+        LEFT JOIN {{table.orga_view}} o ON o.matrikelnummer = e.matrikelnummer
+        WHERE e.mao_jahrgang_id = (SELECT j.id FROM {{table.jahrgaenge_table}} j
+                                   JOIN {{table.schuljahre_table}} sj ON sj.id = j.schuljahr_id
+                                   WHERE sj.aktiv = 1 ORDER BY j.id DESC LIMIT 1)
+      ) x
 
   - name: kopierliste
     id: kopierliste
@@ -903,7 +916,9 @@ exports:
       columns: "*"
     sort_by: [raum, kuerzel]
 
-  # Einsatz der Oberstufe (Vorlagen: tex/Einsatz-Oberstufe, tex/Aufsichten-Schueler)
+  # Einsatz der Oberstufe. Vorlagen: tex/Oberstufe-Anwesenheitslisten, tex/Oberstufe-Einteilungslisten,
+  # tex/Oberstufe-Uebersicht, tex/Aufsichten-Schueler (gemeinsame Bausteine in tex/base/Oberstufe-*.tex)
+  # Nach Name sortiert, dazu je Hofgruppe eine Datei (Anwesenheitslisten, Aufsichten-Schueler)
   - name: einsatz_oberstufe
     id: einsatz_oberstufe
     enabled: true
@@ -919,8 +934,18 @@ exports:
         by: "gruppe"
         filename_template: "db/Einsatz-Oberstufe/Einsatz-Oberstufe-Gruppe-{key}.csv"
 
-  # Dieselben Einsätze nach Raum sortiert (für die Raumübersicht in tex/Aufsichten-Schueler; das Sortieren
-  # in LaTeX mit \dtlsort funktioniert mit datatool 3 nicht zuverlässig).
+  # Nach Klasse sortiert (Einteilungslisten, Übersicht)
+  - name: einsatz_oberstufe_klasse
+    id: einsatz_oberstufe_klasse
+    enabled: true
+    from_dataset: einsatz_oberstufe
+    output:
+      path: "db/Einsatz-Oberstufe/Einsatz-Oberstufe-Klasse.csv"
+      sep: ";"
+      columns: "*"
+    sort_by: [klasse, nachname, vorname]
+
+  # Nach Raum sortiert (Raumübersicht in tex/Aufsichten-Schueler; \dtlsort bricht mit datatool 3 ab)
   - name: einsatz_oberstufe_raum
     id: einsatz_oberstufe_raum
     enabled: true
@@ -1110,14 +1135,34 @@ latex:
       define_mao: true
       pdf_name: "MaO_{mao}_Teilnehmendenlisten"
 
-    - name: einsatz_oberstufe
-      id: einsatz_oberstufe
-      enabled: false
-      workdir: "Einsatz-Oberstufe"
-      tex: "@tex/Einsatz-Oberstufe/Einsatz-Oberstufe.tex"
-      jobname: "Einsatz-Oberstufe"
+    # Oberstufe: je Dokument ein Job, Ergebnis im Jahrgangsordner unter Oberstufe/.
+    # Nur bestimmte Einsätze: extra_defs: ["\\def\\OberstufeEinsaetze{Aufsicht,Hof}"] (siehe Kopf der Vorlage).
+    - name: oberstufe_anwesenheitslisten
+      id: oberstufe_anwesenheitslisten
+      enabled: true
+      workdir: "Oberstufe"
+      tex: "@tex/Oberstufe-Anwesenheitslisten/Oberstufe-Anwesenheitslisten.tex"
+      jobname: "Oberstufe-Anwesenheitslisten"
       define_mao: true
-      pdf_name: "MaO_{mao}_Einsatz-Oberstufe"
+      pdf_name: "MaO_{mao}_Oberstufe-Anwesenheitslisten"
+
+    - name: oberstufe_einteilungslisten
+      id: oberstufe_einteilungslisten
+      enabled: true
+      workdir: "Oberstufe"
+      tex: "@tex/Oberstufe-Einteilungslisten/Oberstufe-Einteilungslisten.tex"
+      jobname: "Oberstufe-Einteilungslisten"
+      define_mao: true
+      pdf_name: "MaO_{mao}_Oberstufe-Einteilungslisten"
+
+    - name: oberstufe_uebersicht
+      id: oberstufe_uebersicht
+      enabled: true
+      workdir: "Oberstufe"
+      tex: "@tex/Oberstufe-Uebersicht/Oberstufe-Uebersicht.tex"
+      jobname: "Oberstufe-Uebersicht"
+      define_mao: true
+      pdf_name: "MaO_{mao}_Oberstufe-Uebersicht"
 
     - name: aufsichten_lehrkraefte
       id: aufsichten_lehrkraefte
