@@ -49,7 +49,7 @@ def test_no_wish_fills_open_slots_then_hof_rest_without_role():
     persons = free_people(6)
     settings = e.Settings(aufsichten_pro_raum=1, reserve=1, hof_gruppen=2, hof_pro_gruppe=1, seed=1)
     assign = e.build_assignment(persons, ["101"], settings)
-    assert sorted(assign.values()) == ["aufsicht:101", "hof:1", "hof:2", "ohne", "ohne", "reserve"]   # Hof hart begrenzt, Reserve als Notlösung
+    assert sorted(assign.values()) == ["aufsicht:101", "hof:1", "hof:2", "ohne", "ohne", "ohne"]   # Reserve bleibt ohne Wünsche leer, Hof hart begrenzt
 
 
 def test_seed_makes_the_draw_reproducible_and_reroll_changes_it():
@@ -238,8 +238,8 @@ def test_reserve_only_for_aufsicht_wishers():
     settings = e.Settings(aufsichten_pro_raum=1, reserve=3, hof_gruppen=2, seed=4)
     assign = e.build_assignment(persons, ["101"], settings)
     reserve = [m for m, t in assign.items() if t == "reserve"]
-    assert reserve == [] or all(m in (100, 101) for m in reserve)
-    assert sum(1 for t in assign.values() if t in ("reserve", "aufsicht:101")) == 2   # nur die zwei Aufsicht-Wünsche
+    assert sorted(reserve) == [100, 101]                 # beide Wünscher füllen zuerst die Reserve
+    assert [m for m, t in assign.items() if t == "aufsicht:101"][0] >= 200   # der Raum geht an jemanden ohne Wunsch
     many = free_people(5, "Aufsicht", 100) + free_people(3, None, 200)
     assign = e.build_assignment(many, ["101"], settings)
     assert sorted(m for m, t in assign.items() if t == "reserve") and all(
@@ -275,13 +275,17 @@ def test_tag_shows_wish_status():
     assert not any(person.nachname in line for line in model.overview() + model.room_lines() for person in (a, b, c, d))
 
 
-def test_reserve_is_filled_only_as_last_resort_after_rooms_and_hof():
-    persons = free_people(8)
-    settings = e.Settings(aufsichten_pro_raum=1, reserve=3, hof_gruppen=1, hof_pro_gruppe=2, seed=3)
-    assign = e.build_assignment(persons, ["101"], settings)
-    values = sorted(assign.values())
-    assert values.count("reserve") == 3 and values.count("hof:1") == 2 and values.count("aufsicht:101") == 1
-    assert values.count("ohne") == 2
-    # Wunsch Aufsicht bleibt vorrangig: ohne Notlage bleibt die Reserve leer
+def test_aufsicht_wishers_fill_reserve_before_rooms():
+    persons = free_people(4, "Aufsicht", 100) + free_people(2, None, 200)
+    settings = e.Settings(aufsichten_pro_raum=2, reserve=2, hof_gruppen=1, hof_pro_gruppe=5, seed=3)
+    assign = e.build_assignment(persons, ["101", "102"], settings)
+    values = list(assign.values())
+    assert values.count("reserve") == 2          # die Reserve ist mit Wünschern besetzt
+    wishers = {p.matrikel for p in persons[:4]}
+    assert {m for m, t_ in assign.items() if t_ == "reserve"} <= wishers
+    assert sum(1 for v in values if v.startswith("aufsicht:")) == 4
+
+
+def test_reserve_stays_empty_without_wishers():
     few = e.build_assignment(free_people(3), ["101"], e.Settings(aufsichten_pro_raum=1, reserve=2, hof_gruppen=1, hof_pro_gruppe=5, seed=3))
     assert list(few.values()).count("reserve") == 0
