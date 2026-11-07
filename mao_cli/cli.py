@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import logging
 import random
 import sys
@@ -20,6 +21,7 @@ from .config import (
 )
 from .db import DB, active_jahrgang_db, current_MaO_number_db, current_MaO_number_fallback, load_db_config
 from .exports import ExportPlan, load_datasets, render_plan, run_exports
+from .jobs import choose_jobs, missing_outputs, restrict_exports, summarize
 from .latex import run_latex_jobs
 from .updater import UpdateError, plan_update, run_update, update_notice
 from .workspaces import (resolve_config_dir, find_conflict_copies, write_pointer, CONFIG_FOLDER, TEX_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
@@ -100,7 +102,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
                      help="LaTeX-Hilfsdateien (.aux, .log, ...) nach erfolgreichem Lauf löschen")
     run.add_argument("--mao", type=int, help="MaO-Nummer für Dokumente (nicht Datenquelle!)")
     run.add_argument("--job", action="append", metavar="NAME",
-                       help="Nur diesen LaTeX-Job ausführen (auch wenn ausgeschaltet; mehrfach angebbar)")
+                       help="Nur diesen LaTeX-Job ausführen (auch wenn ausgeschaltet; mehrfach angebbar); "
+                            "erzeugt nur die dafür nötigen Exporte")
+    run.add_argument("--auswahl", action="store_true",
+                     help="Alle LaTeX-Jobs anzeigen und ankreuzen; erzeugt nur die dafür nötigen Exporte")
+    run.add_argument("--alle-exporte", action="store_true",
+                     help="Mit --job/--auswahl trotzdem alle aktivierten Exporte erzeugen")
 
     plan = commands.add_parser("plan", help="Exportplan ermitteln (kein CSV/PDF schreiben)")
     common(plan, profile=True)
@@ -115,6 +122,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     latex.add_argument("--mao", type=int, help="MaO-Nummer für Dokumente (nicht Datenquelle!)")
     latex.add_argument("--job", action="append", metavar="NAME",
                        help="Nur diesen LaTeX-Job ausführen (auch wenn ausgeschaltet; mehrfach angebbar)")
+    latex.add_argument("--auswahl", action="store_true", help="Alle LaTeX-Jobs anzeigen und ankreuzen")
 
     validate = commands.add_parser("validate", help="Konfiguration prüfen; optional mit Datenbank und Gravity Forms")
     common(validate, profile=True)
@@ -881,9 +889,32 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                 LOGGER.info("Online-Validierung abgeschlossen (nur lesende Abfragen)")
             return 0
         LOGGER.info("Profil: %s", profile_name)
-        if getattr(args, "job", None):
+        narrowed = False
+        if getattr(args, "auswahl", False):
+            if not sys.stdin.isatty():
+                raise ConfigurationError("--auswahl braucht ein interaktives Terminal")
+            names = choose_jobs(cfg, workspace, tex_dir)
+            if names is None:
+                print("Abgebrochen, nichts ausgeführt.")
+                return 0
+            select_latex_jobs(cfg, names)
+            narrowed = True
+        elif getattr(args, "job", None):
             select_latex_jobs(cfg, args.job)
             LOGGER.info("Nur LaTeX-Job(s): %s", ", ".join(args.job))
+            narrowed = True
+        if narrowed and args.command == "latex":
+            preview = copy.deepcopy(cfg)
+            needed = restrict_exports(preview, workspace, tex_dir)
+            if needed:
+                for item in missing_outputs(cfg, workspace, needed):
+                    LOGGER.warning("Daten fehlen (erst 'mao run' ausführen): %s", item)
+        if narrowed and args.command == "run" and not args.no_latex and not args.alle_exporte:
+            needed = restrict_exports(cfg, workspace, tex_dir)
+            summarize(cfg, [j["name"] for j in cfg["latex"]["jobs"] if j.get("enabled", True)], needed, print)
+            if getattr(args, "auswahl", False) and input("Jetzt ausführen? [J/n] ").strip().lower() in ("n", "nein"):
+                print("Abgebrochen, nichts ausgeführt.")
+                return 0
 
         if args.command == "latex":
             mao = args.mao or selection.mao_number or current_MaO_number_fallback()

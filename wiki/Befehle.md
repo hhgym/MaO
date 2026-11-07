@@ -107,7 +107,9 @@ mao run --workspace "D:/MaO/2026-27" --profile turniertag --no-latex
 mao run --workspace "D:/MaO/2026-27" --profile ergebnisse --mao 66
 ```
 
-Optionen: `--no-latex`, `--mao NUMMER` (nur Dokumentnummer) und `--job NAME` (nur dieser LaTeX-Job, mehrfach angebbar; die Exporte laufen wie gewohnt).
+Optionen: `--no-latex`, `--mao NUMMER` (nur Dokumentnummer), `--job NAME` (nur dieser LaTeX-Job, mehrfach angebbar) und `--auswahl`.
+
+**Auswahl der Jobs:** `mao run --auswahl` zeigt alle LaTeX-Jobs mit Kästchen (`[x]` = in der `pipeline.yaml` aktiviert). Nummern oder Bereiche (`1 4 6-8`) schalten um, `a` wählt alle, `n` keine, `s` den Standard, Enter bestätigt, `q` bricht ab. Danach steht, welche Exporte und SQL-Abfragen nötig sind, und `Jetzt ausführen? [J/n]` fragt nach. Bei `--auswahl` und `--job` werden **nur die CSV-/TeX-Dateien erzeugt, die die gewählten Jobs brauchen**; es werden auch nur die dafür nötigen SQL-Abfragen ausgeführt. Welche Exporte ein Job braucht, wird aus seiner Vorlage erkannt (Pfade der CSV- und Makrodateien, auch in eingebundenen Dateien; TeX-Kommentare zählen nicht). Man kann es im Job mit `exports: [id, …]` festlegen. Lässt es sich nicht erkennen, werden wie bisher alle aktivierten Exporte erzeugt. `--alle-exporte` erzwingt das auch bei `--job`/`--auswahl`. Ohne diese Optionen läuft `mao run` wie bisher.
 
 ## `mao latex`
 
@@ -119,7 +121,7 @@ mao latex --workspace "D:/MaO/2026-27" --profile ergebnisse --mao 66
 
 Wenn `--mao` fehlt, wird die Jahrgangsnummer rechnerisch anhand des Datums bestimmt. Für vergangene oder künftige Wettbewerbsjahrgänge deshalb `--mao` ausdrücklich setzen.
 
-Einzelne Jobs: `mao latex --job aufsichten_lehrkraefte` (mehrfach angebbar). Der Job läuft auch, wenn er in der Pipeline ausgeschaltet ist; alle anderen entfallen. Unbekannte Namen werden mit der Liste der vorhandenen Jobs abgelehnt. Die Namen stehen unter `latex.jobs` in der `pipeline.yaml`.
+Einzelne Jobs: `mao latex --job aufsichten_lehrkraefte` (mehrfach angebbar) oder `mao latex --auswahl` zum Ankreuzen (siehe `mao run`); fehlen Dateien der nötigen Exporte, erscheint eine Warnung, dass erst `mao run` laufen muss. Der Job läuft auch, wenn er in der Pipeline ausgeschaltet ist; alle anderen entfallen. Unbekannte Namen werden mit der Liste der vorhandenen Jobs abgelehnt. Die Namen stehen unter `latex.jobs` in der `pipeline.yaml`.
 
 ## `mao update`
 
