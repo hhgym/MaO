@@ -353,10 +353,37 @@ datasets:
                                    WHERE sj.aktiv = 1 ORDER BY j.id DESC LIMIT 1)
       ) x
 
+  # Kopierliste: Anzahl der Teilnehmenden je Raum und Klassenstufe (0 = leer), nur Räume mit Teilnehmenden.
+  # Direkt aus der Orga-Sicht berechnet (kein Umweg über die Datenbank-View kopierliste_view).
   - name: kopierliste
     id: kopierliste
     enabled: true
-    sql: "Select * FROM {{table.kopierliste_view}}"
+    sql: |
+      SELECT
+        m.raum AS raum,
+        CAST(NULLIF(SUM(m.stufe = 5), 0) AS SIGNED) AS stufe_5,
+        CAST(NULLIF(SUM(m.stufe = 6), 0) AS SIGNED) AS stufe_6,
+        CAST(NULLIF(SUM(m.stufe = 7), 0) AS SIGNED) AS stufe_7,
+        CAST(NULLIF(SUM(m.stufe = 8), 0) AS SIGNED) AS stufe_8,
+        CAST(NULLIF(SUM(m.stufe = 9), 0) AS SIGNED) AS stufe_9,
+        CAST(NULLIF(SUM(m.stufe = 10), 0) AS SIGNED) AS stufe_10,
+        CAST(NULLIF(SUM(m.stufe = 11), 0) AS SIGNED) AS stufe_11,
+        CAST(NULLIF(SUM(m.stufe = 12), 0) AS SIGNED) AS stufe_12,
+        COUNT(*) AS gesamt
+      FROM {{table.orga_view}} m
+      WHERE m.raum IS NOT NULL AND TRIM(m.raum) <> ''
+      GROUP BY m.raum
+      ORDER BY m.raum
+    cast:
+      stufe_5: Int64
+      stufe_6: Int64
+      stufe_7: Int64
+      stufe_8: Int64
+      stufe_9: Int64
+      stufe_10: Int64
+      stufe_11: Int64
+      stufe_12: Int64
+      gesamt: Int64
 
   # ------------------------------------------------------------
   # Statistik-Views
