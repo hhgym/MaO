@@ -302,7 +302,7 @@ Plant den Einsatz der Stufen 11 und 12 und schreibt ihn in die Einsatztabelle (`
 - **Schutz:** Einträge mit `quelle = MANUAL` und fremde Rollen (z. B. Korrektur) bleiben unverändert und belegen ihre Plätze. Automatische Einträge werden aktualisiert, nicht gelöscht.
 - **Dry-Run ist Standard.** Der Stand liegt als `einsatz-plan.yaml` im Jahrgangsordner (Matrikelnummer am Zeilenanfang jedes Eintrags; bearbeitbar). Ein erneuter Aufruf nutzt diese Datei (`--neu` lost neu aus, `--plan DATEI` wählt eine andere). `--apply` schreibt in einer Transaktion mit Sperre und löscht den Entwurf.
 - **`--interaktiv`:** Konsolensitzung mit `l` (Übersicht nur mit Anzahlen), `l ZIEL` (Matrikelnummern eines Ziels), `r` (alle Räume), `s TEXT` (Matrikelnummer oder Klasse suchen), `v NR ZIEL` (verschieben, z. B. `v 123456 hof2`), `t NR NR` (tauschen). Es werden nur Matrikelnummern angezeigt, mit Kennzeichen `A+`/`H+` (Wunsch Aufsicht/Hof erfüllt), `A!`/`H!` (nicht erfüllt) und `-` (ohne Wunsch), `n [SEED]` (neu auslosen), `w` (offene Wünsche), `u` (zurück), `d` (Entwurf speichern), `ok` (Änderungen zeigen, mit `--apply` nach Rückfrage schreiben) und `q`.
-- **PDF:** Der Export `db/Einsatz-Oberstufe/Einsatz-Oberstufe.csv` (und je Hofgruppe `…-Gruppe-N.csv`) speist die Vorlagen `Aufsichten-Schueler` und `Einsatz-Oberstufe`.
+- **PDF:** Der Export `db/Einsatz-Oberstufe/Einsatz-Oberstufe.csv` (und je Hofgruppe `…-Gruppe-N.csv`) speist die Vorlagen `Aufsichten-Schueler` und `Einsatz-Oberstufe`. `…/Einsatz-Oberstufe-Raum.csv` enthält dieselben Zeilen nach Raum sortiert (Raumübersicht in `Aufsichten-Schueler`).
 
 ```bash
 mao einsatz --aufsichten-pro-raum 1 --reserve 3 --hof-gruppen 2    # Plan + Entwurf

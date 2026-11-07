@@ -919,6 +919,18 @@ exports:
         by: "gruppe"
         filename_template: "db/Einsatz-Oberstufe/Einsatz-Oberstufe-Gruppe-{key}.csv"
 
+  # Dieselben Einsätze nach Raum sortiert (für die Raumübersicht in tex/Aufsichten-Schueler; das Sortieren
+  # in LaTeX mit \dtlsort funktioniert mit datatool 3 nicht zuverlässig).
+  - name: einsatz_oberstufe_raum
+    id: einsatz_oberstufe_raum
+    enabled: true
+    from_dataset: einsatz_oberstufe
+    output:
+      path: "db/Einsatz-Oberstufe/Einsatz-Oberstufe-Raum.csv"
+      sep: ";"
+      columns: "*"
+    sort_by: [bemerkung, nachname, vorname]
+
   - name: aufsichten_mit_schueler
     id: aufsichten_mit_schueler
     enabled: false

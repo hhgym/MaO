@@ -41,7 +41,7 @@ def make_datasets(config, df=None):
 
 def test_original_pipeline_validates(sample_config, tmp_path):
     assert validate_config(sample_config, tmp_path) == []
-    assert len(sample_config["exports"]) == 28
+    assert len(sample_config["exports"]) == 29
 
 
 def test_invalid_sort_is_not_silent():
