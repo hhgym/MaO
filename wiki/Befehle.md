@@ -319,6 +319,10 @@ mao einsatz --interaktiv                                           # prüfen und
 mao einsatz --apply                                                # schreiben
 ```
 
+## Kopierliste
+
+Der Job `kopierliste` (`tex/Kopierliste/Kopierliste.tex`, standardmäßig deaktiviert) zeigt auf Seite 1 alle Räume mit der Zahl der Teilnehmenden je Stufe 5–12 samt Summenzeile, danach je Raum eine Seite zum Abhaken. Die Abfrage `kopierliste` berechnet die Zahlen direkt aus `orga_view` (nur Räume mit Teilnehmenden). Der Export schreibt `db/Kopierliste/Kopierliste.csv`, je Raum `Kopierliste-Raum-<Raum>.csv` und die Makrodatei `db/Include/Tabellen-Kopierliste.tex` (`\Kopierraumliste`). Da die CSV-Dateien erst entstehen müssen: `mao run --job kopierliste` (nicht nur `mao latex`).
+
 ## Schulabgleich
 
 - `mao schulen-sync --dry-run --report schulen.json` lädt das Schulverzeichnis Berlin und

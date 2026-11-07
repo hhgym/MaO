@@ -30,7 +30,8 @@ def sample_dataset():
         "aufgabe_1": 3, "aufgabe_2": 3, "aufgabe_3": 4, "aufgabe_4": 2,
         "punkte": 12, "preis": "1. Preis", "preisgeld": 15, "delegierung": 1,
         "lehrkraft": "AB", "kurs": "Ma7", "raum": "R001", "lerngruppe": "7-1",
-        "kl": "AB", "stellvkl": "CD", "kuerzel": "AB", "klassenstufen": "7", "rolle": "Standard", "gruppe": ""
+        "kl": "AB", "stellvkl": "CD", "kuerzel": "AB", "klassenstufen": "7", "rolle": "Standard", "gruppe": "",
+        "stufe_5": 0, "stufe_6": 0, "stufe_7": 1, "stufe_8": 0, "stufe_9": 0, "stufe_10": 0, "stufe_11": 0, "stufe_12": 0, "gesamt": 1
     }])
 
 
