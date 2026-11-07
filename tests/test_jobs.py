@@ -81,3 +81,26 @@ def test_restrict_exports_adds_extra_and_falls_back_to_enabled_when_unknown(tmp_
     cfg["exports"][2]["enabled"] = False
     assert j.restrict_exports(cfg, tmp_path, tex, extra=["rangliste"]) is None
     assert [e["enabled"] for e in cfg["exports"]] == [True, True, True]  # aktivierte + extra
+
+
+def test_template_without_data_reference_needs_no_export(tmp_path):
+    tex = tmp_path / "tex"
+    (tex / "Hinweise").mkdir(parents=True)
+    (tex / "base").mkdir()
+    (tex / "Hinweise" / "Hinweise.tex").write_text("\\input{template.tex}\n\\input{Inhalt.tex}\n", encoding="utf-8")
+    (tex / "base" / "template.tex").write_text("\\usepackage{tikz}\n", encoding="utf-8")
+    (tex / "base" / "Inhalt.tex").write_text("Hinweise für \\MaO\n", encoding="utf-8")
+    cfg = make_cfg()
+    job = {"name": "hinweise", "workdir": "H", "tex": "@tex/Hinweise/Hinweise.tex"}
+    cfg["latex"]["jobs"] = [job]
+    assert j.job_exports(cfg, job, tmp_path, tex) == set()
+    assert j.restrict_exports(cfg, tmp_path, tex) == set()
+    assert not any(e["enabled"] for e in cfg["exports"])
+    (tex / "base" / "Inhalt.tex").write_text("\\DTLloaddb{x}{\\MaOdb Anderes/Datei.csv}\n", encoding="utf-8")
+    assert j.job_exports(cfg, job, tmp_path, tex) is None  # Datenbezug, aber unbekannter Export → wie bisher
+
+
+def test_explicit_empty_exports_means_none(tmp_path, tex):
+    cfg = make_cfg()
+    job = {"name": "leer", "workdir": "F", "tex": "@tex/Fest/Fest.tex", "exports": []}
+    assert j.job_exports(cfg, job, tmp_path, tex) == set()

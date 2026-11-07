@@ -288,6 +288,7 @@ Raumverteilung des historischen Skripts gehören **nicht** zu `import-gf`.
 - **PDF des Aufsichtsplans:** `mao run` exportiert die Aufsichten nach `db/Aufsichten/` und `mao latex` erzeugt
   `MaO_<Nr>_Aufsichten-Lehrkraefte.pdf` (Seite 1 nach Lehrkraft, Seite 2 nach Raum; Reserve und Fachaufsicht mit Rolle in
   „Bemerkungen“). Vorlagen: `tex/Aufsichten-Lehrkraefte/` und (noch ausgeschaltet) `tex/Aufsichten-Schueler/` im MaO-Ordner.
+  Das Hinweisblatt für Aufsichten (`mao latex --job hinweise_aufsichten`, Vorlage `tex/Hinweise-Aufsichten/`) braucht keine Exportdaten; sein Text steht in `tex/base/Hinweise-Aufsichten-Inhalt.tex` und ist auch auf der Rückseite der Raum-Anwesenheitslisten eingebunden.
 
 
 ## Einsatz der Oberstufe (`mao einsatz`)
