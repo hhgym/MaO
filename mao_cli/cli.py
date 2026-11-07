@@ -21,7 +21,8 @@ from .config import (
 )
 from .db import DB, active_jahrgang_db, current_MaO_number_db, current_MaO_number_fallback, load_db_config
 from .exports import ExportPlan, load_datasets, render_plan, run_exports
-from .jobs import choose_jobs, missing_outputs, restrict_exports, summarize
+from .jobs import missing_outputs, restrict_exports, summarize
+from .menu import choose as choose_menu
 from .latex import run_latex_jobs
 from .updater import UpdateError, plan_update, run_update, update_notice
 from .workspaces import (resolve_config_dir, find_conflict_copies, write_pointer, CONFIG_FOLDER, TEX_FOLDER, JAHRGANG_FOLDER, jahrgang_folder_name, normalize_config_dir, load_settings, save_settings, init_config,
@@ -104,16 +105,19 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     run.add_argument("--job", action="append", metavar="NAME",
                        help="Nur diesen LaTeX-Job ausführen (auch wenn ausgeschaltet; mehrfach angebbar); "
                             "erzeugt nur die dafür nötigen Exporte")
-    run.add_argument("--auswahl", action="store_true",
-                     help="Alle LaTeX-Jobs anzeigen und ankreuzen; erzeugt nur die dafür nötigen Exporte")
+    run.add_argument("--pipeline", action="store_true",
+                     help="Kein Auswahlmenü: Jobs und Exporte laut pipeline.yaml (und Profil) ausführen")
     run.add_argument("--alle-exporte", action="store_true",
-                     help="Mit --job/--auswahl trotzdem alle aktivierten Exporte erzeugen")
+                     help="Mit --job trotzdem alle aktivierten Exporte erzeugen")
 
     plan = commands.add_parser("plan", help="Exportplan ermitteln (kein CSV/PDF schreiben)")
     common(plan, profile=True)
     plan.add_argument("--output", type=Path, metavar="MARKDOWN", help="Plan als Markdown speichern")
     plan.add_argument("--no-latex", action="store_true", help="LaTeX-Jobs im Plan ausblenden")
     plan.add_argument("--mao", type=int, help="MaO-Nummer für Dokumente (nicht Datenquelle!)")
+    plan.add_argument("--job", action="append", metavar="NAME", help="Nur für diesen LaTeX-Job planen (mehrfach angebbar)")
+    plan.add_argument("--pipeline", action="store_true", help="Kein Auswahlmenü: Plan laut pipeline.yaml (und Profil)")
+    plan.add_argument("--alle-exporte", action="store_true", help="Mit --job trotzdem alle aktivierten Exporte planen")
 
     latex = commands.add_parser("latex", help="Nur LaTeX mit vorhandenen Dateien ausführen")
     latex.add_argument("--cleanup-latex", action="store_true",
@@ -122,7 +126,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     latex.add_argument("--mao", type=int, help="MaO-Nummer für Dokumente (nicht Datenquelle!)")
     latex.add_argument("--job", action="append", metavar="NAME",
                        help="Nur diesen LaTeX-Job ausführen (auch wenn ausgeschaltet; mehrfach angebbar)")
-    latex.add_argument("--auswahl", action="store_true", help="Alle LaTeX-Jobs anzeigen und ankreuzen")
+    latex.add_argument("--pipeline", action="store_true",
+                       help="Kein Auswahlmenü: die in pipeline.yaml (und Profil) aktivierten Jobs ausführen")
 
     validate = commands.add_parser("validate", help="Konfiguration prüfen; optional mit Datenbank und Gravity Forms")
     common(validate, profile=True)
@@ -889,32 +894,29 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                 LOGGER.info("Online-Validierung abgeschlossen (nur lesende Abfragen)")
             return 0
         LOGGER.info("Profil: %s", profile_name)
-        narrowed = False
-        if getattr(args, "auswahl", False):
-            if not sys.stdin.isatty():
-                raise ConfigurationError("--auswahl braucht ein interaktives Terminal")
-            names = choose_jobs(cfg, workspace, tex_dir)
-            if names is None:
-                print("Abgebrochen, nichts ausgeführt.")
-                return 0
-            select_latex_jobs(cfg, names)
-            narrowed = True
-        elif getattr(args, "job", None):
-            select_latex_jobs(cfg, args.job)
-            LOGGER.info("Nur LaTeX-Job(s): %s", ", ".join(args.job))
-            narrowed = True
-        if narrowed and args.command == "latex":
-            preview = copy.deepcopy(cfg)
-            needed = restrict_exports(preview, workspace, tex_dir)
-            if needed:
-                for item in missing_outputs(cfg, workspace, needed):
-                    LOGGER.warning("Daten fehlen (erst 'mao run' ausführen): %s", item)
-        if narrowed and args.command == "run" and not args.no_latex and not args.alle_exporte:
-            needed = restrict_exports(cfg, workspace, tex_dir)
-            summarize(cfg, [j["name"] for j in cfg["latex"]["jobs"] if j.get("enabled", True)], needed, print)
-            if getattr(args, "auswahl", False) and input("Jetzt ausführen? [J/n] ").strip().lower() in ("n", "nein"):
-                print("Abgebrochen, nichts ausgeführt.")
-                return 0
+        if args.command in ("run", "plan", "latex"):
+            extra_exports: list[str] = []
+            names: list[str] | None = None
+            if getattr(args, "job", None):
+                names = list(args.job)
+            elif not (args.pipeline or args.profile or getattr(args, "no_latex", False)):
+                # Standard: Menü, nichts vorausgewählt (--pipeline, --profile oder --no-latex übernehmen die Pipeline-Auswahl)
+                picked = choose_menu(cfg, workspace, tex_dir, command=args.command, with_exports=args.command != "latex")
+                if picked is None:
+                    print("Abgebrochen, nichts ausgeführt.")
+                    return 0
+                names, extra_exports = picked
+            if names is not None:
+                select_latex_jobs(cfg, names)
+                LOGGER.info("LaTeX-Job(s): %s", ", ".join(names) or "keine")
+                if args.command == "latex":
+                    preview = copy.deepcopy(cfg)
+                    needed = restrict_exports(preview, workspace, tex_dir)
+                    for item in missing_outputs(cfg, workspace, needed or set()):
+                        LOGGER.warning("Daten fehlen (erst 'mao run' ausführen): %s", item)
+                elif not getattr(args, "alle_exporte", False):
+                    needed = restrict_exports(cfg, workspace, tex_dir, extra_exports)
+                    summarize(cfg, names, needed, print)
 
         if args.command == "latex":
             mao = args.mao or selection.mao_number or current_MaO_number_fallback()
