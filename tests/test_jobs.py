@@ -137,11 +137,11 @@ def test_default_pipeline_oberstufe_jobs_and_exports_exist():
     assert "AS entitaet" in sql
 
 
-def test_default_pipeline_kopierliste_dataset_uses_orga_view_and_int_cast():
+def test_default_pipeline_kopierliste_dataset_uses_view_without_gesamt_and_int_cast():
     from pathlib import Path
     cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
     ds = next(d for d in cfg["datasets"] if d["name"] == "kopierliste")
-    assert "{{table.orga_view}}" in ds["sql"] and "kopierliste_view" not in ds["sql"]
+    assert "{{table.kopierliste_view}}" in ds["sql"] and "<> 'GESAMT'" in ds["sql"]
     assert {f"stufe_{n}" for n in range(5, 13)} | {"gesamt"} <= set(ds["cast"])
     assert all(v == "Int64" for v in ds["cast"].values())
     exp = next(e for e in cfg["exports"] if e["id"] == "kopierliste")
