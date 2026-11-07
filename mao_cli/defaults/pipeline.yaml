@@ -556,6 +556,30 @@ exports:
           list_macro: "TeilnehmendeLehrkraftListe"
           entry_template: "{lehrkraft}/{db}"
   
+  # Teilnehmende je Raum (Vorlage Raum-Anwesenheitslisten), innerhalb des Raums nach Vorname, Nachname
+  - name: teilnehmende_raum
+    id: teilnehmende_raum
+    enabled: true
+    from_dataset: orga
+    filter:
+      - column: raum
+        op: "notnull"
+    output:
+      sep: ";"
+      columns: "*"
+    sort_by: [raum, vorname, nachname]
+    splits:
+      - name: raum
+        enabled: true
+        by: "raum"
+        filename_template: "db/Teilnehmende/Raum/Teilnehmende-Raum-{key}.csv"
+        macro:
+          enabled: true
+          tex_path: "db/Include/Tabellen-Teilnehmende-Raum.tex"
+          db_prefix: "Teilnehmende-Raum"
+          list_macro: "TeilnehmendeRaumListe"
+          entry_template: "{raum}/{db}"
+
   - name: abwesende
     id: abwesende
     enabled: true
