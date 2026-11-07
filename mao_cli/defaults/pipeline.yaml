@@ -1059,6 +1059,9 @@ latex:
   #   db_dir (Standard db) legt fest, worauf \MaOdb zeigt.
   # pdf_name: LaTeX schreibt das PDF direkt unter diesem Namen (Platzhalter {mao}) in den
   #   workdir des Jobs; es entsteht keine zweite Kopie. Alternativ: copy_pdf {from, to}.
+  # exports: [id, …] (optional, je Job) legt fest, welche Exporte der Job braucht. Ohne Angabe wird es aus
+  #   der Vorlage erkannt (Pfade der CSV-/Makrodateien, auch in eingebundenen Dateien). Wird nur beachtet bei
+  #   `mao run --job NAME` bzw. `mao run --auswahl`: dann entstehen nur die nötigen CSV-Dateien.
   # cleanup_aux: true löscht .aux/.log usw. nach erfolgreichem Lauf (Standard: aus;
   #   einmalig per `mao run --cleanup-latex` / `mao latex --cleanup-latex`).
   jobs:
