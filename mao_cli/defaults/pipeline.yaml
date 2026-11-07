@@ -473,16 +473,13 @@ exports:
 
   # ------------------------------------------------------------
   # Teilnehmende – wie früher: pro Stufe und pro Klasse
-  # Hinweis: anwesenheit=1 wird berücksichtigt
+  # Hinweis: alle gemeldeten Teilnehmenden, ohne Filter auf anwesenheit (die Listen werden vor dem
+  # Wettbewerb gebraucht, wenn noch niemand als anwesend eingetragen ist)
   # ------------------------------------------------------------
   - name: teilnehmende
     id: teilnehmende
     enabled: true
     from_dataset: orga
-    filter:
-      - column: anwesenheit
-        op: "=="
-        value: 1
     output:
       sep: ";"
       columns: "*"
