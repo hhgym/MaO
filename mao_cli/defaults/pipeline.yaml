@@ -1125,6 +1125,16 @@ latex:
       define_mao: true
       pdf_name: "MaO_{mao}_Aufsichten-Schueler"
 
+    - name: hinweise_aufsichten
+      id: hinweise_aufsichten
+      enabled: true
+      workdir: "Aufsichten"
+      tex: "@tex/Hinweise-Aufsichten/Hinweise-Aufsichten.tex"
+      jobname: "Hinweise-Aufsichten"
+      define_mao: true
+      exports: []   # reines Textblatt, braucht keine Exportdaten
+      pdf_name: "MaO_{mao}_Hinweise-Aufsichten"
+
     - name: rueckgabelisten
       id: rueckgabelisten
       enabled: true

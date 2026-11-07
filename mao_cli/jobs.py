@@ -3,7 +3,7 @@
 Ein Job braucht die Exporte, deren Dateien seine Vorlage (samt eingebundener Dateien) verwendet.
 Die Zuordnung wird aus dem TeX-Quelltext erkannt (Pfad der CSV-/Makro-Datei) oder im Job mit
 ``exports: [id, ...]`` festgelegt. Kann sie nicht bestimmt werden, bleibt es beim bisherigen Verhalten
-(alle aktivierten Exporte).
+(alle aktivierten Exporte). Eine Vorlage ganz ohne Datenbezug (z. B. Hinweisblatt) braucht keinen Export.
 """
 from __future__ import annotations
 
@@ -124,7 +124,11 @@ def job_exports(cfg: Mapping[str, Any], job: Mapping[str, Any], workspace: Path,
     text = collect_tex_text(tex_path, search).replace("\\", "/")
     found = {eid for eid, export in exports.items()
              if any(marker in text for marker in export_markers(export, db_dir))}
-    return found or None
+    if found:
+        return found
+    # Verweist die Vorlage gar nicht auf Exportdaten (kein \MaOdb, kein Pfad im db-Ordner), braucht sie keine.
+    uses_data = "MaOdb" in text or "DTLloaddb" in text or f"{db_dir.strip('/')}/" in text
+    return None if uses_data else set()
 
 
 def restrict_exports(cfg: dict[str, Any], workspace: Path, tex_dir: Path | None,
