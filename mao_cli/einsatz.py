@@ -5,8 +5,8 @@ Regeln:
 - Stufe 12 ohne Teilnahme: Rolle ``5PK``.
 - Stufe 11 ohne Teilnahme: Wunsch aus dem Gravity-Forms-Formular (Aufsicht oder Hof). Wünsche werden erfüllt;
   gibt es mehr Wünsche als Plätze, entscheidet das Los. Wer nichts gewünscht hat oder nicht zum Zug kam, füllt
-  freie Aufsichtsplätze (nicht die Reserve, die bekommen nur Schüler mit Wunsch ``Aufsicht``), dann die Hofgruppen.
-  ``hof_pro_gruppe`` ist eine harte Grenze; wer dann keinen Platz hat, bleibt ohne Rolle (Ziel ``ohne``, wird nicht
+  freie Aufsichtsplätze (die Reserve nur für Wunsch ``Aufsicht``), dann die Hofgruppen.
+  ``hof_pro_gruppe`` ist eine harte Grenze; wer dann keinen Platz hat, kommt notfalls in die Reserve, sonst bleibt er ohne Rolle (Ziel ``ohne``, wird nicht
   geschrieben) und wird von Hand zugeordnet. ``5PK`` gibt es nie für Stufe 11.
 - Aufsicht: ``aufsichten_pro_raum`` Schüler je belegtem Raum plus ``reserve`` Reserve (Modus Reserve ohne Raum).
 - Hof: ``hof_gruppen`` Gruppen (Modus Gruppe, gruppe_nr), optional mit höchstens ``hof_pro_gruppe`` je Gruppe.
@@ -145,12 +145,17 @@ def build_assignment(persons: list[Person], rooms: list[str], settings: Settings
     overflow = [p for p in rest if p.wish in WISHES]
     rng.shuffle(overflow)
     for person in wished_first + overflow:
-        room_slots = [slot for slot in slots if slot != T_RESERVE]   # Reserve nur für Wunsch "Aufsicht"
+        room_slots = [slot for slot in slots if slot != T_RESERVE]   # Reserve zuerst nur für Wunsch "Aufsicht"
         if room_slots:
             slots.remove(room_slots[0])
             assign[person.matrikel] = room_slots[0]
         elif not place_hof(person):
-            assign[person.matrikel] = T_NONE
+            # Notlösung: freie Reserveplätze vor "ohne Rolle" (zuerst Personen ohne Wunsch, siehe Reihenfolge oben)
+            if T_RESERVE in slots:
+                slots.remove(T_RESERVE)
+                assign[person.matrikel] = T_RESERVE
+            else:
+                assign[person.matrikel] = T_NONE
     return assign
 
 
