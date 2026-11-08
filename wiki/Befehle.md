@@ -327,6 +327,8 @@ Der Job `anwesenheitslisten` (`tex/Raum-Anwesenheitslisten/Raum-Anwesenheitslist
 
 Der Job `kopierliste` (`tex/Kopierliste/Kopierliste.tex`, standardmäßig deaktiviert) zeigt auf Seite 1 alle Räume mit der Zahl der Teilnehmenden je Stufe 5–12 samt Summenzeile, danach je Raum eine Seite zum Abhaken. Die Abfrage `kopierliste` liest die View `kopierliste_view`; deren Zeile GESAMT liefert die Summen und steht als letzte Zeile der Gesamttabelle. Der Export schreibt `db/Kopierliste/Kopierliste.csv`, je Raum `Kopierliste-Raum-<Raum>.csv` und die Makrodatei `db/Include/Tabellen-Kopierliste.tex` (`\Kopierraumliste`). Da die CSV-Dateien erst entstehen müssen: `mao run --job kopierliste` (nicht nur `mao latex`).
 
+Die Externen (Klassenstufe 3 bis 6) stehen in einer zweiten Tabelle unter der ersten und bekommen je Raum eine eigene Seite mit „Raum: XXX (externe)“ in der Überschrift. Grundlage ist die Datenbank-View `MaO_Orga_2_view_Kopierliste_externe` (Kennung `kopierliste_externe_view` in `tables.ini`; Spalten `raum`, `stufe_3` … `stufe_6`, `gesamt`, zuletzt die Zeile `GESAMT`) und der Export `kopierliste_externe`. Gibt es keine Externen mit Raum, entfällt die zweite Tabelle.
+
 ## Schulabgleich
 
 - `mao schulen-sync --dry-run --report schulen.json` lädt das Schulverzeichnis Berlin und

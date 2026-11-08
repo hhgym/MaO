@@ -163,3 +163,23 @@ def test_default_pipeline_raum_anwesenheitslisten_exports(tmp_path):
     ex = next(e for e in cfg["exports"] if j.export_id(e) == "teilnehmende_raum")
     assert ex["sort_by"] == ["raum", "vorname", "nachname"]
     assert ex["splits"][0]["macro"]["list_macro"] == "TeilnehmendeRaumListe"
+
+
+def test_default_pipeline_kopierliste_externe(tmp_path):
+    from pathlib import Path
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    ds = next(d for d in cfg["datasets"] if d["name"] == "kopierliste_externe")
+    assert "{{table.kopierliste_externe_view}}" in ds["sql"] and "ORDER BY (raum = 'GESAMT')" in ds["sql"]
+    assert set(ds["cast"]) == {"stufe_3", "stufe_4", "stufe_5", "stufe_6", "gesamt"}
+    ex = next(e for e in cfg["exports"] if j.export_id(e) == "kopierliste_externe")
+    assert ex["macro"]["list_macro"] == "Kopierexterneliste" and ex["macro"]["tex_path"].endswith("Tabellen-Kopierliste-Externe.tex")
+    # Die Vorlage braucht beide Exporte; die Externen sind von den Hauptraeumen unterscheidbar
+    tex = tmp_path / "tex"
+    (tex / "Kopierliste").mkdir(parents=True)
+    (tex / "Kopierliste" / "Kopierliste.tex").write_text(
+        "\\input{\\MaOdb Include/Tabellen-Kopierliste.tex}\n"
+        "\\input{\\MaOdb Include/Tabellen-Kopierliste-Externe.tex}\n", encoding="utf-8")
+    job = {"name": "kopierliste", "workdir": "K", "tex": "@tex/Kopierliste/Kopierliste.tex"}
+    assert j.job_exports(cfg, job, tmp_path, tex) == {"kopierliste", "kopierliste_externe"}
+    (tex / "Kopierliste" / "Kopierliste.tex").write_text("\\input{\\MaOdb Include/Tabellen-Kopierliste.tex}\n", encoding="utf-8")
+    assert j.job_exports(cfg, job, tmp_path, tex) == {"kopierliste"}
