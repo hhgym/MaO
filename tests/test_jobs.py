@@ -183,3 +183,51 @@ def test_default_pipeline_kopierliste_externe(tmp_path):
     assert j.job_exports(cfg, job, tmp_path, tex) == {"kopierliste", "kopierliste_externe"}
     (tex / "Kopierliste" / "Kopierliste.tex").write_text("\\input{\\MaOdb Include/Tabellen-Kopierliste.tex}\n", encoding="utf-8")
     assert j.job_exports(cfg, job, tmp_path, tex) == {"kopierliste"}
+
+
+def test_default_pipeline_raumuebersicht_and_korrekturlisten(tmp_path):
+    from pathlib import Path
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    gesamt = next(e for e in cfg["exports"] if j.export_id(e) == "teilnehmende_gesamt")
+    assert gesamt["output"]["path"] == "db/Teilnehmende/Teilnehmendeliste.csv"
+    assert gesamt["sort_by"] == ["stufe", "klasse", "vorname", "nachname"]
+    assert "matrikelnummer" not in gesamt["output"]["columns"] and "raum" in gesamt["output"]["columns"]
+    ds = next(d for d in cfg["datasets"] if d["name"] == "korrekturliste")
+    assert "{{table.orga_view}}" in ds["sql"] and "stufengruppe" in ds["sql"] and "stufencode" in ds["sql"]
+    kor = next(e for e in cfg["exports"] if j.export_id(e) == "korrekturliste")
+    assert kor["from_dataset"] == "korrekturliste"
+    assert kor["sort_by"] == ["stufencode", "vorname", "nachname"]
+    sp = kor["splits"][0]
+    assert sp["by"] == "stufengruppe" and sp["macro"]["list_macro"] == "KorrekturListe"
+    assert sp["macro"]["entry_template"] == "{stufengruppe}/{stufencode}/{db}"
+    tex = tmp_path / "tex"
+    for name, body in {
+        "Raumuebersicht": "\\DTLloaddb{Teilnehmendeliste}{\\MaOdb Teilnehmende/Teilnehmendeliste.csv}\n",
+        "Korrekturlisten": "\\input{\\MaOdb Include/Tabellen-Korrekturliste.tex}\n",
+    }.items():
+        (tex / name).mkdir(parents=True)
+        (tex / name / f"{name}.tex").write_text(body, encoding="utf-8")
+    ru = {"name": "raumuebersicht", "workdir": "R", "tex": "@tex/Raumuebersicht/Raumuebersicht.tex"}
+    ko = {"name": "korrekturlisten", "workdir": "K", "tex": "@tex/Korrekturlisten/Korrekturlisten.tex"}
+    assert j.job_exports(cfg, ru, tmp_path, tex) == {"teilnehmende_gesamt"}
+    assert j.job_exports(cfg, ko, tmp_path, tex) == {"korrekturliste"}
+
+
+def test_korrekturliste_groups_oberstufe_and_sorts_by_name(tmp_path):
+    import pandas as pd
+    from pathlib import Path
+    from mao_cli.exports import ExportPlan, run_exports
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    cfg["exports"] = [e for e in cfg["exports"] if j.export_id(e) == "korrekturliste"]
+    rows = [(1, "Zorn", "Zoe", "11a", 11), (2, "Alt", "Max", "12b", 12), (3, "Bauer", "Ben", "5-1", 5), (4, "Alt", "Anna", "11b", 11)]
+    df = pd.DataFrame(rows, columns=["tnr", "nachname", "vorname", "klasse", "stufe"])
+    df["stufengruppe"] = df["stufe"].map(lambda s: "11-12" if s >= 11 else str(s))
+    df["stufencode"] = df["stufe"].map(lambda s: f"{12 if s >= 11 else s:02d}")
+    plan = ExportPlan(tmp_path)
+    run_exports({"korrekturliste": df}, cfg, tmp_path, plan)
+    outputs = {str(k).replace("\\", "/").split("db/", 1)[-1]: v[0].decode("utf-8") for k, v in plan.outputs.items()}
+    ober = outputs["Korrekturliste/Korrekturliste-Stufe-11-12.csv"].splitlines()
+    assert [line.split(";")[2] for line in ober[1:]] == ["Anna", "Max", "Zoe"]
+    assert "Korrekturliste/Korrekturliste-Stufe-5.csv" in outputs
+    macro = outputs["Include/Tabellen-Korrekturliste.tex"]
+    assert "5/05/Korrekturliste-Stufe-Fuenf" in macro and "11-12/12/Korrekturliste-Stufe-EinsEins-EinsZwei" in macro
