@@ -329,6 +329,12 @@ Der Job `kopierliste` (`tex/Kopierliste/Kopierliste.tex`, standardmäßig deakti
 
 Die Externen (Klassenstufe 3 bis 6) stehen in einer zweiten Tabelle unter der ersten und bekommen je Raum eine eigene Seite mit „Raum: XXX (externe)“ in der Überschrift. Grundlage ist die Datenbank-View `MaO_Orga_2_view_Kopierliste_externe` (Kennung `kopierliste_externe_view` in `tables.ini`; Spalten `raum`, `stufe_3` … `stufe_6`, `gesamt`, zuletzt die Zeile `GESAMT`) und der Export `kopierliste_externe`. Gibt es keine Externen mit Raum, entfällt die zweite Tabelle.
 
+## Raumübersicht und Korrekturlisten
+
+Der Job `raumuebersicht` (`tex/Raumuebersicht/Raumuebersicht.tex`) listet alle Teilnehmenden mit ihrem Raum (sortiert nach Klasse, Vorname, Nachname; ohne Raum steht „--“). Er braucht den Export `teilnehmende_gesamt` (`db/Teilnehmende/Teilnehmendeliste.csv`).
+
+Der Job `korrekturlisten` (`tex/Korrekturlisten/Korrekturlisten.tex`) druckt je Klassenstufe und Aufgabe 1 bis 4 eine Punkteliste (Vorname, Nachname) mit leerer Spalte „Punkte“. Die Klassenstufen 11 und 12 stehen gemeinsam auf einer Liste. Die Aufgabennummer setzt sich aus `\MaO`, dem zweistelligen Stufencode (12 für 11-12), `2` und der Aufgabe zusammen (z. B. 660521). Grundlage sind die Abfrage `korrekturliste` (ohne Abgemeldete, `anwesenheit = 0`) und der gleichnamige Export mit der Makrodatei `db/Include/Tabellen-Korrekturliste.tex` (`\KorrekturListe`). Beide Jobs sind standardmäßig deaktiviert; aufgerufen werden sie mit `mao run --job raumuebersicht` bzw. `mao run --job korrekturlisten` (die CSV-Dateien müssen erst entstehen, `mao latex` allein genügt nicht).
+
 ## Schulabgleich
 
 - `mao schulen-sync --dry-run --report schulen.json` lädt das Schulverzeichnis Berlin und

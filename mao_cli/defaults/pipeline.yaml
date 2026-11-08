@@ -243,6 +243,24 @@ datasets:
       delegierung: Int64
       preisgeld: Int64
 
+  - name: korrekturliste
+    id: korrekturliste
+    enabled: true
+    # Teilnehmende für die Punktelisten der Korrektur. Die Klassenstufen 11 und 12 bilden eine
+    # gemeinsame Gruppe "11-12". stufencode ist der zweistellige Teil der Aufgabennummer
+    # (05 … 10, 12 für 11-12). Abgemeldete (anwesenheit = 0) werden nicht aufgeführt.
+    sql: |
+      SELECT
+      m.tnr,
+      m.nachname,
+      m.vorname,
+      m.klasse,
+      m.stufe,
+      CASE WHEN m.stufe >= 11 THEN '11-12' ELSE CAST(m.stufe AS CHAR) END AS stufengruppe,
+      LPAD(CASE WHEN m.stufe >= 11 THEN 12 ELSE m.stufe END, 2, '0') AS stufencode
+      FROM {{table.orga_view}} m
+      WHERE COALESCE(m.anwesenheit, 1) <> 0
+
   - name: teachers
     id: teachers
     enabled: true
@@ -593,6 +611,38 @@ exports:
           db_prefix: "Teilnehmende-Raum"
           list_macro: "TeilnehmendeRaumListe"
           entry_template: "{raum}/{db}"
+
+  # Alle Teilnehmenden in einer Liste (Vorlage Raumuebersicht), nach Klassenstufe, Klasse, Vorname, Nachname
+  - name: teilnehmende_gesamt
+    id: teilnehmende_gesamt
+    enabled: true
+    from_dataset: orga
+    output:
+      sep: ";"
+      columns: ["tnr","nachname","vorname","geschlecht","klasse","stufe","raum"]
+      path: "db/Teilnehmende/Teilnehmendeliste.csv"
+    sort_by: [stufe, klasse, vorname, nachname]
+
+  # Punktelisten je Klassenstufe (Vorlage Korrekturlisten), nach Vorname, Nachname; 11 und 12 gemeinsam
+  - name: korrekturliste
+    id: korrekturliste
+    enabled: true
+    from_dataset: korrekturliste
+    output:
+      sep: ";"
+      columns: "*"
+    sort_by: [stufencode, vorname, nachname]
+    splits:
+      - name: stufengruppe
+        enabled: true
+        by: "stufengruppe"
+        filename_template: "db/Korrekturliste/Korrekturliste-Stufe-{key}.csv"
+        macro:
+          enabled: true
+          tex_path: "db/Include/Tabellen-Korrekturliste.tex"
+          db_prefix: "Korrekturliste-Stufe"
+          list_macro: "KorrekturListe"
+          entry_template: "{stufengruppe}/{stufencode}/{db}"
 
   - name: abwesende
     id: abwesende

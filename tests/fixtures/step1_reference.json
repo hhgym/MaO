@@ -6,6 +6,7 @@
     "db/Include/RanglisteGesamt.tex": "31750e058d582ad4da194315e0b5afc16f44e840f0d0343cee6c5d740bfec3ff",
     "db/Include/Tabellen-Kopierliste-Externe.tex": "c9afbeb3b013b27a7628d5a3de2742d4ec05e44226fdb5840bf75932b1380ad3",
     "db/Include/Tabellen-Kopierliste.tex": "11457e7b69f33629a157e7f8053a49552bb13044e30f13c10e788234f824da78",
+    "db/Include/Tabellen-Korrekturliste.tex": "91a22b49103bef32817d03f181f27872b910c77fe7e546134cc9808d9480e390",
     "db/Include/Tabellen-Preisgeld-Klasse-zentral.tex": "bba39dc4a35e7cfb3233c86f2b6cdd27152f0ab5264390b5f3ff72583c659535",
     "db/Include/Tabellen-Preisgeld-Lehrkraft.tex": "4f23d1464de0a81a9fffd27e942138dcb66dac7c6629b4ad14bbf95aed945203",
     "db/Include/Tabellen-Rangliste-Klasse.tex": "ed885d99eda5a93c632c7e8d94dc2e018abdbb8a8050c0a24fcbf73a1a249e8c",
@@ -26,6 +27,7 @@
     "db/Kopierliste/Kopierliste-Externe.csv": "a3b85098989e6e15a4aa6df9091178b3844d3fb6166f01df0b75b45a15b16036",
     "db/Kopierliste/Kopierliste-Raum-R001.csv": "49dbdfac6493cbda98edf33adea2af6d94a89410b226b0689c5f28dae4ea8d1a",
     "db/Kopierliste/Kopierliste.csv": "49dbdfac6493cbda98edf33adea2af6d94a89410b226b0689c5f28dae4ea8d1a",
+    "db/Korrekturliste/Korrekturliste-Stufe-7.csv": "8bd79914ee17085588042ba9dbd44bb15ff853185af694717d74035c7d026a73",
     "db/Lerngruppen/KlassenSekI.csv": "67db0a677ac049a8c923e70a5e16070b64cd8835c0d02bea083aa3f4d754f0d5",
     "db/Lerngruppen/Klassenleitungen.csv": "18ed4efb09ea2d8bf03813007bd0ccba5d4b012914cce44665a4a784b8d47ae5",
     "db/Preisgeld/Lehrkraft/Preisgeld-Lehrkraft-AB.csv": "27314588f98026403ce8ac5cc300df4a9b7d0d2bc249fcdada6041d549e2bfc4",
@@ -51,7 +53,8 @@
     "db/Teilnehmende/Kurse/Teilnehmende-Kurse-Ma7.csv": "d5938dc96751a3fa7d6df83187d050426c99b77709cb89ad08e21a5fe2ab8d05",
     "db/Teilnehmende/Lehrkraft/Teilnehmende-Lehrkraft-AB.csv": "d5938dc96751a3fa7d6df83187d050426c99b77709cb89ad08e21a5fe2ab8d05",
     "db/Teilnehmende/Raum/Teilnehmende-Raum-R001.csv": "d5938dc96751a3fa7d6df83187d050426c99b77709cb89ad08e21a5fe2ab8d05",
-    "db/Teilnehmende/Stufe/Teilnehmende-Stufe-7.csv": "d5938dc96751a3fa7d6df83187d050426c99b77709cb89ad08e21a5fe2ab8d05"
+    "db/Teilnehmende/Stufe/Teilnehmende-Stufe-7.csv": "d5938dc96751a3fa7d6df83187d050426c99b77709cb89ad08e21a5fe2ab8d05",
+    "db/Teilnehmende/Teilnehmendeliste.csv": "36882b6c61c73378bce2861b518dc763e9405d105d7a5a9fddb2036b42ad160c"
   },
   "reference": "Synthetische Exportdaten, ohne reale SQL-Tabellenbezeichnungen"
 }
