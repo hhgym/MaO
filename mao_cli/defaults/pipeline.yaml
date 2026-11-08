@@ -374,6 +374,21 @@ datasets:
       stufe_12: Int64
       gesamt: Int64
 
+  # Kopierliste der Externen (Klassenstufe 3 bis 6) aus der Datenbank-View; Zeile GESAMT zuletzt, Nullen = leer.
+  - name: kopierliste_externe
+    id: kopierliste_externe
+    enabled: true
+    sql: |
+      SELECT *
+      FROM {{table.kopierliste_externe_view}}
+      ORDER BY (raum = 'GESAMT'), raum
+    cast:
+      stufe_3: Int64
+      stufe_4: Int64
+      stufe_5: Int64
+      stufe_6: Int64
+      gesamt: Int64
+
   # ------------------------------------------------------------
   # Statistik-Views
   # ------------------------------------------------------------
@@ -616,6 +631,29 @@ exports:
       list_macro: "Kopierraumliste"
       db_prefix: "Kopierliste-Raum-"
       db_name: "Kopierliste"
+      entry_template: "{raum}/{db}"
+
+  - name: kopierliste_externe
+    id: kopierliste_externe
+    enabled: true
+    from_dataset: kopierliste_externe
+    output:
+      path: "db/Kopierliste/Kopierliste-Externe.csv"
+      sep: ";"
+      columns: "*"
+    splits:
+      - name: raum
+        enabled: true
+        by: "raum"
+        filename_template: "db/Kopierliste/Kopierliste-Externe-Raum-{key}.csv"
+    macro:
+      enabled: true
+      tex_path: "db/Include/Tabellen-Kopierliste-Externe.tex"
+      include_gesamt: true
+      gesamt_db_name: "KopierlisteExterne"
+      list_macro: "Kopierexterneliste"
+      db_prefix: "Kopierliste-Externe-Raum-"
+      db_name: "KopierlisteExterne"
       entry_template: "{raum}/{db}"
 
   # ------------------------------------------------------------
