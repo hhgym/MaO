@@ -514,9 +514,13 @@ def load_context(db: Any, config_dir: Path, tables: Mapping[str, str], settings:
             raise EinsatzError("Rollen fehlen in der Rollentabelle: " + ", ".join(missing))
         cur.execute(f"SELECT DISTINCT matrikelnummer FROM `{orga_t}` WHERE tnr IS NOT NULL AND matrikelnummer IS NOT NULL")
         participants = {int(m) for (m,) in cur.fetchall()}
+        # Beurlaubte und ausgeschiedene Schüler (aktiv = 0) werden nicht verplant
         cur.execute(f"SELECT matrikelnummer, nachname, vorname, klasse FROM `{students_t}` "
-                    "WHERE SUBSTRING_INDEX(klasse, '-', 1) IN ('11', '12')")
+                    "WHERE aktiv = 1 AND SUBSTRING_INDEX(klasse, '-', 1) IN ('11', '12')")
         student_rows = cur.fetchall()
+        cur.execute(f"SELECT matrikelnummer FROM `{students_t}` "
+                    "WHERE aktiv = 0 AND SUBSTRING_INDEX(klasse, '-', 1) IN ('11', '12')")
+        inactive = {int(m) for (m,) in cur.fetchall() if m is not None}
         students = [(int(m), str(n or ""), str(v or ""), str(k or "")) for m, n, v, k in student_rows if m is not None]
         rooms = load_rooms(cur, tables)
         by_id = {info["id"]: code for code, info in rooms.items()}
@@ -534,7 +538,9 @@ def load_context(db: Any, config_dir: Path, tables: Mapping[str, str], settings:
     no_matrikel = sum(1 for m, *_ in student_rows if m is None)
     if no_matrikel:
         notes.append(f"{no_matrikel} Schüler der Stufe 11/12 ohne Matrikelnummer können nicht verplant werden")
-    known = {m for m, *_ in students}
+    if inactive:
+        notes.append(f"{len(inactive)} Schüler der Stufe 11/12 mit aktiv = 0 (z. B. beurlaubt) werden nicht verplant")
+    known = {m for m, *_ in students} | inactive
     stray = sorted(m for m in wishes if m not in known)
     if stray:
         notes.append(f"{len(stray)} Wunsch/Wünsche von Personen außerhalb der Stufe 11/12 ignoriert")
