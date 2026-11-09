@@ -90,10 +90,14 @@ def target_label(target: str) -> str:
 
 
 def build_assignment(persons: list[Person], rooms: list[str], settings: Settings,
-                     locked: Mapping[int, str] | None = None) -> dict[int, str]:
-    """Verteilung berechnen (rein, mit festem Zufallsstart reproduzierbar)."""
+                     locked: Mapping[int, str] | None = None, keep: Mapping[int, str] | None = None) -> dict[int, str]:
+    """Verteilung berechnen (rein, mit festem Zufallsstart reproduzierbar).
+
+    keep: schon vorhandene (veränderbare) Zuordnungen aus der Datenbank; sie bleiben und belegen ihre Plätze,
+    ausgelost werden nur die übrigen Personen."""
     settings.check()
     locked = dict(locked or {})
+    keep = dict(keep or {})
     rng = random.Random(settings.seed)
     assign: dict[int, str] = {}
     free: list[Person] = []
@@ -102,6 +106,8 @@ def build_assignment(persons: list[Person], rooms: list[str], settings: Settings
             assign[person.matrikel] = locked[person.matrikel]
         elif person.participates:
             assign[person.matrikel] = T_TEILNAHME
+        elif person.matrikel in keep and person.stufe == 11:
+            assign[person.matrikel] = keep[person.matrikel]
         elif person.stufe == 12:
             assign[person.matrikel] = T_5PK
         elif person.stufe == 11:
@@ -110,7 +116,7 @@ def build_assignment(persons: list[Person], rooms: list[str], settings: Settings
     slots = [T_RESERVE] * settings.reserve
     slots += [aufsicht_target(code) for _ in range(settings.aufsichten_pro_raum) for code in rooms]
     group_size = {n: 0 for n in range(1, settings.hof_gruppen + 1)}
-    for target in locked.values():
+    for target in [*locked.values(), *(t for m, t in assign.items() if m in keep)]:
         if target in slots:
             slots.remove(target)
         if target.startswith("hof:") and int(target[4:]) in group_size:
@@ -159,13 +165,14 @@ def build_assignment(persons: list[Person], rooms: list[str], settings: Settings
 
 class EinsatzModel:
     def __init__(self, persons: list[Person], rooms: list[str], settings: Settings,
-                 locked: Mapping[int, str] | None = None, assign: Mapping[int, str] | None = None) -> None:
+                 locked: Mapping[int, str] | None = None, assign: Mapping[int, str] | None = None,
+                 keep: Mapping[int, str] | None = None) -> None:
         self.persons = {p.matrikel: p for p in persons}
         self.rooms = list(rooms)
         self.settings = settings
         self.locked = dict(locked or {})
         self.assign: dict[int, str] = dict(assign) if assign is not None else build_assignment(
-            persons, self.rooms, settings, self.locked)
+            persons, self.rooms, settings, self.locked, keep)
         self.history: list[dict[int, str]] = []
         self.saved = json.dumps(self.assign, sort_keys=True)
 
@@ -290,7 +297,7 @@ class EinsatzModel:
     def reroll(self, seed: int | None = None) -> None:
         self._remember()
         self.settings = replace(self.settings, seed=seed if seed is not None else self.settings.seed + 1)
-        self.assign = build_assignment(list(self.persons.values()), self.rooms, self.settings, self.locked)
+        self.assign = build_assignment(list(self.persons.values()), self.rooms, self.settings, self.locked)   # ohne Datenbankstand
 
     def undo(self) -> bool:
         if not self.history:
@@ -476,6 +483,7 @@ class Context:
     locked: dict[int, str]
     notes: list[str] = field(default_factory=list)
     tables: dict[str, str] = field(default_factory=dict)
+    current: dict[int, str] = field(default_factory=dict)   # gespeicherte automatische Zuordnung (Ausgangspunkt)
 
 
 def _target_from_row(row: tuple[int, str, int | None, int | None, str], role_codes: Mapping[int, str],
@@ -553,8 +561,22 @@ def load_context(db: Any, config_dir: Path, tables: Mapping[str, str], settings:
               if row[4] == "MANUAL" or role_codes.get(row[0]) not in ("Teilnahme", "Aufsicht", "Hof", "5PK")}
     if locked:
         notes.append(f"{len(locked)} Eintrag/Einträge bleiben fest (von Hand gesetzt oder fremde Rolle)")
+    current: dict[int, str] = {}
+    by_matrikel = {p.matrikel: p for p in persons}
+    for m, row in existing.items():
+        person = by_matrikel.get(m)
+        if m in locked or person is None or person.participates or person.stufe != 11:
+            continue
+        target = _target_from_row(row, role_codes, room_codes)
+        valid = (target == T_RESERVE or (target.startswith("aufsicht:") and target[9:] in used)
+                 or (target.startswith("hof:") and 1 <= int(target[4:]) <= settings.hof_gruppen))
+        if valid:
+            current[m] = target
+    if current:
+        notes.append(f"{len(current)} gespeicherte Zuordnung(en) der Stufe 11 aus der Datenbank übernommen "
+                     "(alles neu auslosen mit --auslosen)")
     return Context(jahrgang_id, persons, used, {c: rooms[c]["id"] for c in rooms}, role_ids, existing, locked, notes,
-                   {"einsatz": einsatz_t})
+                   {"einsatz": einsatz_t}, current)
 
 
 def db_row(target: str, ctx: Context) -> tuple[int, str, int | None, int | None] | None:
@@ -776,6 +798,7 @@ def interactive_einsatz(model: EinsatzModel, db: Any, ctx: Context, *, apply: bo
 
 def run_einsatz(db: Any, config_dir: Path, tables: Mapping[str, str], workspace: Path, *, settings: Settings,
                 apply: bool, interactive: bool, fresh: bool, plan: Path | None, form_id: int = DEFAULT_FORM_ID,
+                redraw: bool = False,
                 skip_rooms: tuple[str, ...] = (), use_wishes: bool = True,
                 report: dict[str, Any] | None = None,
                 ask: Callable[[str], str] = input, out: Callable[[str], Any] = print) -> dict[str, Any]:
@@ -783,7 +806,7 @@ def run_einsatz(db: Any, config_dir: Path, tables: Mapping[str, str], workspace:
     draft = Draft(workspace, config_dir, plan or Path(PLAN_FILE))
     if not ctx.persons:
         raise EinsatzError("Keine Schülerinnen und Schüler der Stufe 11/12 gefunden (students_table)")
-    model = EinsatzModel(ctx.persons, ctx.rooms, settings, ctx.locked)
+    model = EinsatzModel(ctx.persons, ctx.rooms, settings, ctx.locked, keep=None if redraw else ctx.current)
     for note in ctx.notes:
         LOGGER.info("Einsatz | %s", note)
     loaded = False
@@ -805,7 +828,7 @@ def run_einsatz(db: Any, config_dir: Path, tables: Mapping[str, str], workspace:
             result["geschrieben"] = write_plan(db, ctx, changes)
             if draft.clear():
                 LOGGER.info("Einsatz | Entwurf gelöscht")
-        elif not loaded or model.changed or fresh:
+        elif not loaded or model.changed or fresh or redraw:
             LOGGER.info("Einsatz | Entwurf gespeichert: %s", draft.save(model))
     if report is not None:
         report.update({"status": "ok", "mode": "apply" if apply else "dry-run", "seed": model.settings.seed,

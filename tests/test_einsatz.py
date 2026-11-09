@@ -294,3 +294,46 @@ def test_aufsicht_wishers_fill_reserve_before_rooms():
 def test_reserve_stays_empty_without_wishers():
     few = e.build_assignment(free_people(3), ["101"], e.Settings(aufsichten_pro_raum=1, reserve=2, hof_gruppen=1, hof_pro_gruppe=5, seed=3))
     assert list(few.values()).count("reserve") == 0
+
+
+def test_keep_from_database_is_retained_and_occupies_its_slots():
+    persons = free_people(6, None, 100)
+    settings = e.Settings(aufsichten_pro_raum=1, reserve=1, hof_gruppen=2, seed=3)
+    keep = {100: "aufsicht:101", 101: "reserve", 102: "hof:2"}
+    assign = e.build_assignment(persons, ["101", "102"], settings, keep=keep)
+    assert all(assign[m] == t for m, t in keep.items())
+    others = {m: t for m, t in assign.items() if m not in keep}
+    assert "aufsicht:101" not in others.values() and "reserve" not in others.values()   # Plätze sind belegt
+    assert "aufsicht:102" in others.values()                                            # freier Raum wird gefüllt
+    # ohne keep wird frei ausgelost; reroll ignoriert den Datenbankstand
+    model = e.EinsatzModel(persons, ["101", "102"], settings, keep=keep)
+    assert model.assign[100] == "aufsicht:101"
+    model.reroll(seed=99)
+    assert model.assign == e.build_assignment(persons, ["101", "102"], replace_seed(settings, 99))
+
+
+def replace_seed(settings, seed):
+    from dataclasses import replace
+    return replace(settings, seed=seed)
+
+
+def test_context_takes_stored_auto_entries_as_start_and_redraw_ignores_them(monkeypatch, tmp_path):
+    monkeypatch.setattr(e, "_gf_wishes", lambda *a, **k: {})
+    settings = e.Settings(aufsichten_pro_raum=1, reserve=0, hof_gruppen=2, seed=1)
+    ctx = e.load_context(FakeDB(), Path("."), TABLES, settings, form_id=59)
+    assert ctx.current == {2: "hof:1"}          # 3 (MANUAL) ist fest, 5 hat eine fremde Rolle, 1 nimmt teil
+    assert any("gespeicherte Zuordnung" in n for n in ctx.notes)
+    (tmp_path / "cfg").mkdir()
+    seen = {}
+    real = e.EinsatzModel
+
+    class Spy(real):
+        def __init__(self, *a, **k):
+            seen["keep"] = k.get("keep")
+            super().__init__(*a, **k)
+
+    monkeypatch.setattr(e, "EinsatzModel", Spy)
+    for redraw in (False, True):
+        e.run_einsatz(FakeDB(), tmp_path / "cfg", TABLES, tmp_path, settings=settings, apply=False, interactive=False,
+                      fresh=redraw, redraw=redraw, plan=None)
+        assert (seen["keep"] == {2: "hof:1"}) is (not redraw)

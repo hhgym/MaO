@@ -253,7 +253,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     einsatz.add_argument("--formular", type=int, metavar="ID", help=f"Gravity-Forms-Formular der Wünsche (Standard {DEFAULT_FORM_ID} oder raumregeln.yaml)")
     einsatz.add_argument("--ohne-wuensche", action="store_true", help="Wünsche nicht abrufen (alle gelten als ohne Wunsch)")
     einsatz.add_argument("--interaktiv", action="store_true", help="Verteilung in einer Konsolensitzung prüfen und ändern")
-    einsatz.add_argument("--neu", action="store_true", help="Vorhandenen Entwurf ignorieren und neu auslosen")
+    einsatz.add_argument("--neu", action="store_true", help="Vorhandenen Entwurf (einsatz-plan.yaml) ignorieren und aus der Datenbank starten")
+    einsatz.add_argument("--auslosen", action="store_true", help="Gespeicherte Zuordnungen der Datenbank nicht übernehmen, alles neu auslosen (Feste bleiben)")
     einsatz.add_argument("--plan", type=Path, metavar="DATEI.yaml", help=f"Entwurfsdatei im Workspace (Standard {EINSATZ_PLAN_FILE})")
     einsatz.add_argument("--report", type=Path, metavar="DATEI.json", help="Bericht im Workspace speichern")
 
@@ -768,7 +769,7 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                     if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
                         raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
                     run_einsatz(db, config_dir, tables, workspace, settings=einsatz_settings, apply=args.apply,
-                                interactive=args.interaktiv, fresh=args.neu, plan=args.plan, form_id=pick(args.formular, "formular", DEFAULT_FORM_ID),
+                                interactive=args.interaktiv, fresh=args.neu or args.auslosen, redraw=args.auslosen, plan=args.plan, form_id=pick(args.formular, "formular", DEFAULT_FORM_ID),
                                 skip_rooms=tuple(pick(args.ohne_raum, "ohne_raum", [])), use_wishes=not args.ohne_wuensche, report=einsatz_report)
             except (RoomError, ExternError, ConfigurationError) as exc:
                 einsatz_report["issues"].append(str(exc))
