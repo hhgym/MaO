@@ -133,6 +133,8 @@ class Cur:
             self.rows = [(1, "Teilnahme"), (2, "Aufsicht"), (3, "Hof"), (4, "5PK"), (5, "Korrektur")]
         elif s.startswith("SELECT DISTINCT matrikelnummer FROM `ORGA`"):
             self.rows = [(1,)]
+        elif "FROM `STUD`" in s and "aktiv = 0" in s:
+            self.rows = [(6,)]
         elif "FROM `STUD`" in s:
             self.rows = [(1, "A", "A", "11"), (2, "B", "B", "11"), (3, "C", "C", "11"), (4, "D", "D", "12"), (5, "E", "E", "11")]
         elif "FROM `RAUM`" in s:
@@ -187,6 +189,9 @@ def test_context_diff_and_write_respect_manual_and_foreign_rows(monkeypatch):
     ctx = e.load_context(db, Path("."), TABLES, settings, form_id=59)
     assert ctx.rooms == ["101", "102"] and ctx.locked == {3: "aufsicht:101", 5: "sonst:Korrektur"}
     by = {p.matrikel: p for p in ctx.persons}
+    sqls = [x[0] for x in db.executed if "FROM `STUD`" in " ".join(x[0].split())]
+    assert any("aktiv = 1" in " ".join(q.split()) for q in sqls)       # Beurlaubte (aktiv = 0) nicht verplanen
+    assert 6 not in by and any("1 Schüler der Stufe 11/12 mit aktiv = 0" in n for n in ctx.notes)
     assert by[1].participates and by[2].wish == "Hof" and by[4].stufe == 12
     model = e.EinsatzModel(ctx.persons, ctx.rooms, settings, ctx.locked)
     assert model.assign[1] == "teilnahme" and model.assign[4] == "5pk" and model.assign[2] == "hof:1"
