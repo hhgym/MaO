@@ -53,7 +53,7 @@ def test_profile_selection_and_datasets():
         'klassenleitungen', 'klassen_sek_i', 'teilnehmende', 'teilnehmende_gesamt', 'teilnehmende_raum',
         'korrekturliste', 'kopierliste', 'kopierliste_externe'}
     assert {j['name'] for j in prepare['latex']['jobs'] if j['enabled']} == {
-        'raumuebersicht', 'korrekturlisten', 'anwesenheitslisten', 'klassenleitungslisten'}
+        'raumuebersicht', 'korrekturlisten', 'aushang', 'anwesenheitslisten', 'klassenleitungslisten'}
     assert prepare['datasets'][0]['enabled'] is True
     assert [e['enabled'] for e in apply_profile(cfg, profiles['vollpaket'])['exports']] == [
         e.get('enabled', True) for e in cfg['exports']]

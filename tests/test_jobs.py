@@ -231,3 +231,15 @@ def test_korrekturliste_groups_oberstufe_and_sorts_by_name(tmp_path):
     assert "Korrekturliste/Korrekturliste-Stufe-5.csv" in outputs
     macro = outputs["Include/Tabellen-Korrekturliste.tex"]
     assert "5/05/Korrekturliste-Stufe-Fuenf" in macro and "11-12/12/Korrekturliste-Stufe-EinsEins-EinsZwei" in macro
+
+
+def test_default_pipeline_aushang_job_needs_no_exports(tmp_path):
+    from pathlib import Path
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    job = next(x for x in cfg["latex"]["jobs"] if x["name"] == "aushang")
+    assert job["tex"] == "@tex/Aushang/Aushang.tex" and job["define_mao"] is True
+    assert job["pdf_name"] == "MaO_{mao}_Aushang"
+    tex = tmp_path / "tex" / "Aushang"
+    tex.mkdir(parents=True)
+    (tex / "Aushang.tex").write_text("\\documentclass{article}\\begin{document}Aushang \\MaO\\end{document}\n", encoding="utf-8")
+    assert j.job_exports(cfg, job, tmp_path, tmp_path / "tex") == set()
