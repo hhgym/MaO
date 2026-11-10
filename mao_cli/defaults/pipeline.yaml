@@ -1070,7 +1070,7 @@ exports:
 
   # Einsatz der Oberstufe. Vorlagen: tex/Oberstufe-Anwesenheitslisten, tex/Oberstufe-Einteilungslisten,
   # tex/Oberstufe-Uebersicht, tex/Aufsichten-Schueler (gemeinsame Bausteine in tex/base/Oberstufe-*.tex)
-  # Nach (Vorname, Nachname) sortiert, dazu je Hofgruppe eine Datei (Anwesenheitslisten, Aufsichten-Schueler)
+  # Nach (Nachname, Vorname) sortiert, dazu je Hofgruppe eine Datei (Aufsichten-Schueler)
   - name: einsatz_oberstufe
     id: einsatz_oberstufe
     enabled: true
@@ -1079,12 +1079,28 @@ exports:
       path: "db/Einsatz-Oberstufe/Einsatz-Oberstufe.csv"
       sep: ";"
       columns: "*"
-    sort_by: [vorname, nachname]
+    sort_by: [nachname, vorname]
     splits:
       - name: hofgruppe
         enabled: true
         by: "gruppe"
         filename_template: "db/Einsatz-Oberstufe/Einsatz-Oberstufe-Gruppe-{key}.csv"
+
+  # Wie einsatz_oberstufe, aber nach (Vorname, Nachname) sortiert, nur für tex/Oberstufe-Anwesenheitslisten
+  - name: einsatz_oberstufe_anwesenheit
+    id: einsatz_oberstufe_anwesenheit
+    enabled: true
+    from_dataset: einsatz_oberstufe
+    output:
+      path: "db/Einsatz-Oberstufe/Einsatz-Oberstufe-Anwesenheit.csv"
+      sep: ";"
+      columns: "*"
+    sort_by: [vorname, nachname]
+    splits:
+      - name: hofgruppe
+        enabled: true
+        by: "gruppe"
+        filename_template: "db/Einsatz-Oberstufe/Einsatz-Oberstufe-Anwesenheit-Gruppe-{key}.csv"
 
   # Nach Klasse sortiert (Einteilungslisten, Übersicht)
   - name: einsatz_oberstufe_klasse
