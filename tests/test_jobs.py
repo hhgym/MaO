@@ -111,6 +111,8 @@ OBERSTUFE_DOKUMENTE = {
     "Einsatz-Oberstufe/Einsatz-Oberstufe-Gruppe-1.csv": {"einsatz_oberstufe"},
     "Einsatz-Oberstufe/Einsatz-Oberstufe-Klasse.csv": {"einsatz_oberstufe_klasse"},
     "Einsatz-Oberstufe/Einsatz-Oberstufe-Raum.csv": {"einsatz_oberstufe_raum"},
+    "Einsatz-Oberstufe/Einsatz-Oberstufe-Anwesenheit.csv": {"einsatz_oberstufe_anwesenheit"},
+    "Einsatz-Oberstufe/Einsatz-Oberstufe-Anwesenheit-Gruppe-1.csv": {"einsatz_oberstufe_anwesenheit"},
 }
 
 
@@ -259,8 +261,12 @@ def test_wettbewerbstag_comes_from_runden_and_is_detected_by_aushang(tmp_path):
     assert j.job_exports(cfg, job, tmp_path, tmp_path / "tex") == {"wettbewerbstag"}
 
 
-def test_einsatz_oberstufe_sorted_by_first_name():
+def test_einsatz_oberstufe_anwesenheit_sorted_by_first_name_others_unchanged():
     from pathlib import Path
     cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
-    exp = next(e for e in cfg["exports"] if j.export_id(e) == "einsatz_oberstufe")
-    assert exp["sort_by"] == ["vorname", "nachname"]
+    by_id = {j.export_id(e): e for e in cfg["exports"]}
+    assert by_id["einsatz_oberstufe"]["sort_by"] == ["nachname", "vorname"]
+    anw = by_id["einsatz_oberstufe_anwesenheit"]
+    assert anw["from_dataset"] == "einsatz_oberstufe" and anw["sort_by"] == ["vorname", "nachname"]
+    assert anw["output"]["path"] == "db/Einsatz-Oberstufe/Einsatz-Oberstufe-Anwesenheit.csv"
+    assert anw["splits"][0]["filename_template"] == "db/Einsatz-Oberstufe/Einsatz-Oberstufe-Anwesenheit-Gruppe-{key}.csv"
