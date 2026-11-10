@@ -31,7 +31,7 @@ def rows_of(*entries):
 
 
 def state(**kw):
-    base = dict(jahrgang_id=7, jahrgang_nr=66, schuljahr_id=12, korrektoren=[], prefs=set(), angebote=set(), adressen=set(),
+    base = dict(jahrgang_id=7, jahrgang_nr=66, schuljahr_id=12, korrektoren=[], prefs={}, angebote=set(), adressen={},
                 angehoerige=set(), students=[], limits={"korrektoren": {"vorname": 50, "nachname": 50, "email": 40, "titel": 30},
                                                         "prefs": {"wuensche": 65535}, "adressen": {"strasse": 150}})
     base.update(kw)
@@ -141,7 +141,7 @@ def test_children_are_only_written_after_a_decision_and_unknown_matrikel_is_refu
     assert k.plan_import(rows, st, {"1": {"kinder": {"0": 1001}}}).items[0].kinder_neu == []
 
 
-def test_interactive_questions_store_ids_only(tmp_path):
+def test_questions_store_ids_only_and_z_returns_to_menu(tmp_path):
     other = {**KNOWN, "id": 6, "gf_uid": "def", "email": "andere@example.org"}
     rows = rows_of(entry(1, mail="neu@example.org", **{"29": "Ja", "22": '[{"Name": "Max Müller", "Klasse": "8a"}]'}))
     st = state(korrektoren=[KNOWN, other], students=STUDENTS)
@@ -149,11 +149,12 @@ def test_interactive_questions_store_ids_only(tmp_path):
     answers = iter(["x", "2"])
     shown = []
     decisions: dict = {}
-    assert k.ask_decisions(plan, decisions, ask=lambda _: next(answers), out=shown.append) is True
+    assert k.resolve_unclear(plan, decisions, ask=lambda _: next(answers), out=shown.append) is True
     assert decisions == {"1": {"korrektor": 6}} and any("Bitte eine Nummer" in s for s in shown)
     plan = k.plan_import(rows, st, decisions)
+    assert k.assign_children(plan, decisions, ask=lambda _: "z", out=shown.append) is False
     answers = iter(["1"])
-    k.ask_decisions(plan, decisions, ask=lambda _: next(answers), out=shown.append)
+    k.assign_children(plan, decisions, ask=lambda _: next(answers), out=shown.append)
     assert decisions["1"]["kinder"] == {"0": 1001}
     path = tmp_path / "e.yaml"
     k.save_decisions(path, decisions)
@@ -230,18 +231,19 @@ def config_dir(tmp_path):
     return tmp_path
 
 
-def run(config_dir, cur, entries, **kw):
+def run(config_dir, cur, entries, *, apply=False, menu=False, **kw):
     cnx = Conn(cur)
     report: dict = {}
-    stats = k.import_korrektoren(SimpleNamespace(conn=cnx), config_dir, TABLES, workspace=config_dir, report=report,
-                                 entries=entries, **kw)
+    stats = k.run_korrektoren(SimpleNamespace(conn=cnx), config_dir, TABLES, workspace=config_dir, report=report,
+                              entries=entries, apply=apply, menu=menu, **kw)
     return cnx, stats, report
 
 
 def test_dry_run_writes_nothing_and_report_has_no_personal_data(config_dir):
     cnx, stats, report = run(config_dir, Cur([KNOWN]), [entry(1, **{"40": "abc"}), entry(2, "Bea", "Neu", "bea@example.org")],
-                             dry_run=True)
+                             apply=False)
     assert stats["neu"] == 1 and stats["bekannt"] == 1 and cnx.commits == 0 and report["status"] == "ready"
+    assert stats["unveraendert"] == 0
     assert not any(q.startswith(("INSERT", "UPDATE")) for q, _ in cnx.c.executed)
     text = str(report)
     assert "Bea" not in text and "example.org" not in text
@@ -250,7 +252,7 @@ def test_dry_run_writes_nothing_and_report_has_no_personal_data(config_dir):
 def test_apply_writes_korrektor_prefs_offer_and_address_in_one_transaction(config_dir):
     post = entry(2, "Bea", "Neu", "bea@example.org", **{"21": "Post", "20.1": "Weg 1", "20.3": "Berlin", "20.5": "10247", "20.6": "Deutschland"})
     cur = Cur([KNOWN])
-    cnx, stats, report = run(config_dir, cur, [entry(1, **{"40": "abc"}), post], dry_run=False)
+    cnx, stats, report = run(config_dir, cur, [entry(1, **{"40": "abc"}), post], apply=True)
     writes = [(q, p) for q, p in cur.executed if q.startswith(("INSERT", "UPDATE"))]
     assert cnx.commits == 1 and stats["geschrieben_korrektoren_neu"] == 1 and report["status"] == "applied"
     tables = [q.split("`")[1] for q, _ in writes]
@@ -263,47 +265,116 @@ def test_apply_writes_korrektor_prefs_offer_and_address_in_one_transaction(confi
     assert ang == [(7, 5), (7, 201)]
 
 
-def test_rerun_with_existing_offer_does_not_duplicate_it(config_dir):
-    cur = Cur([KNOWN])
-    original = k.load_state
+class StateCur(Cur):
+    """Testcursor mit vorhandenen Präferenzen, Angeboten und Anschriften."""
+    def __init__(self, korrektoren=(), prefs=(), angebote=(), adressen=(), **kw):
+        super().__init__(korrektoren, **kw)
+        self.prefs, self.angebote, self.adressen = list(prefs), list(angebote), list(adressen)
 
-    def patched(c, t):
-        st = original(c, t)
-        st.angebote.add((7, 5))
-        st.prefs.add(5)
-        return st
+    def fetchall(self):
+        s = self.sql
+        if "FROM `prefs`" in s:
+            return self.prefs
+        if "FROM `ang`" in s:
+            return self.angebote
+        if "FROM `adr`" in s:
+            return self.adressen
+        return super().fetchall()
 
-    k.load_state, backup = patched, k.load_state
-    try:
-        run(config_dir, cur, [entry(1, **{"40": "abc"})], dry_run=False)
-    finally:
-        k.load_state = backup
+
+def prefs_row(korrektor_id, row):
+    values = k.prefs_values(row)
+    return (korrektor_id, *(values[c] for c in k.PREFS_COLUMNS))
+
+
+def test_unchanged_entry_writes_nothing_and_changed_prefs_are_updated(config_dir):
+    e1 = entry(1, **{"40": "abc"})
+    row = rows_of(e1)[0]
+    cur = StateCur([KNOWN], prefs=[prefs_row(5, row)], angebote=[(7, 5)])
+    cnx, stats, _ = run(config_dir, cur, [e1], apply=True)
+    assert stats["unveraendert"] == 1 and cnx.commits == 0
+    assert not any(q.startswith(("INSERT", "UPDATE")) for q, _ in cur.executed)
+    cur = StateCur([KNOWN], prefs=[prefs_row(5, row)], angebote=[(7, 5)])
+    cnx, stats, _ = run(config_dir, cur, [entry(1, **{"40": "abc", "9": "gern Geometrie"})], apply=True)
     qs = [q for q, _ in cur.executed if q.startswith(("INSERT", "UPDATE"))]
-    assert len(qs) == 1 and qs[0].startswith("UPDATE `prefs` SET") and qs[0].endswith("WHERE `korrektor_id` = %s")
+    assert cnx.commits == 1 and len(qs) == 1 and qs[0].startswith("UPDATE `prefs` SET")
+
+
+def test_new_korrektor_is_remembered_so_a_rerun_does_not_create_it_twice(config_dir):
+    cur = Cur([])
+    run(config_dir, cur, [entry(1, "Bea", "Neu", "", **{"39": ""})], apply=True)
+    assert k.load_decisions(config_dir / k.DECISIONS_FILE) == {"1": {"korrektor": 201}}
+    new = {"id": 201, "gf_uid": None, "titel": None, "vorname": "Bea", "nachname": "Neu", "geschlecht": "w", "email": None, "aktiv": 1}
+    cur = StateCur([new], angebote=[(7, 201)])
+    _, stats, _ = run(config_dir, cur, [entry(1, "Bea", "Neu", "", **{"39": ""})], apply=True)
+    assert stats["neu"] == 0 and stats["bekannt"] == 1
+    assert not any(q.startswith("INSERT INTO `korr`") for q, _ in cur.executed)
+
+
+def test_decision_neu_is_superseded_by_the_stored_form_uid(config_dir):
+    new = {"id": 201, "gf_uid": "new-1", "titel": None, "vorname": "Anna", "nachname": "Muster", "geschlecht": "w",
+           "email": "neu@example.org", "aktiv": 1}
+    rows = rows_of(entry(1, mail="neu@example.org"))
+    item = k.plan_import(rows, state(korrektoren=[KNOWN, new]), {"1": {"korrektor": "neu"}}).items[0]
+    assert item.korrektor_id == 201 and item.treffer == "uid"
 
 
 def test_apply_rolls_back_on_count_mismatch_and_skips_unclear(config_dir):
     cnx = Conn(Cur([KNOWN], count_offset=5))
     with pytest.raises(k.KorrektorenError, match="geändert|Zählabgleich"):
-        k.import_korrektoren(SimpleNamespace(conn=cnx), config_dir, TABLES, workspace=config_dir, dry_run=False,
-                             entries=[entry(1, "Bea", "Neu", "bea@example.org")])
+        k.run_korrektoren(SimpleNamespace(conn=cnx), config_dir, TABLES, workspace=config_dir, apply=True, menu=False,
+                          entries=[entry(1, "Bea", "Neu", "bea@example.org")])
     assert cnx.commits == 0
     unclear = [entry(1, mail="neu@example.org")]            # Name wie KNOWN, andere E-Mail
     cur = Cur([KNOWN])
-    cnx, stats, _ = run(config_dir, cur, unclear, dry_run=False)
+    cnx, stats, _ = run(config_dir, cur, unclear, apply=True)
     assert stats["unklar"] == 1 and cnx.commits == 0 and not any(q.startswith("INSERT") for q, _ in cur.executed)
 
 
-def test_interactive_session_saves_decisions_and_applies_them(config_dir):
-    answers = iter(["n"])
+def menu(config_dir, cur, entries, answers, *, apply):
+    feed = iter(answers)
+    shown: list[str] = []
+    cnx = Conn(cur)
+    stats = k.run_korrektoren(SimpleNamespace(conn=cnx), config_dir, TABLES, workspace=config_dir, entries=entries,
+                              apply=apply, menu=True, ask=lambda _: next(feed), out=shown.append)
+    return cnx, stats, "\n".join(shown)
+
+
+def test_menu_resolves_unclear_and_writes_only_after_confirmation_with_apply(config_dir):
+    kid = '[{"Name": "Max Müller", "Klasse": "8_1"}]'
+    entries = [entry(1, mail="neu@example.org", **{"29": "Ja", "22": kid})]
+    cnx, stats, text = menu(config_dir, Cur([KNOWN]), entries, ["1", "2", "n", "3", "1", "5", "q"], apply=False)
+    assert "? GF     1" in text and "DRY-RUN" in text and cnx.commits == 0
+    assert k.load_decisions(config_dir / k.DECISIONS_FILE) == {"1": {"korrektor": "neu", "kinder": {"0": 1001}}}
     cur = Cur([KNOWN])
-    cnx, stats, _ = run(config_dir, cur, [entry(1, mail="neu@example.org")], dry_run=False, interactive=True,
-                        ask=lambda _: next(answers), out=lambda _: None)
-    assert stats["neu"] == 1 and cnx.commits == 1
-    assert k.load_decisions(config_dir / k.DECISIONS_FILE) == {"1": {"korrektor": "neu"}}
+    cnx, stats, text = menu(config_dir, cur, entries, ["5", "n", "5", "j", "q"], apply=True)
+    assert cnx.commits == 1 and stats["geschrieben_korrektoren_neu"] == 1 and stats["geschrieben_angehoerige"] == 1
+    assert "Geschrieben:" in text
+    assert k.load_decisions(config_dir / k.DECISIONS_FILE)["1"]["korrektor"] == 201
+
+
+def test_menu_reset_decision_and_invalid_choice(config_dir):
+    (config_dir / k.DECISIONS_FILE).write_text("'1': {korrektor: skip}\n", encoding="utf-8")
+    entries = [entry(1, mail="neu@example.org")]
+    _, stats, text = menu(config_dir, Cur([KNOWN]), entries, ["9", "4", "1", "4", "2", "q"], apply=False)
+    assert "Bitte 1 bis 6" in text and "zurückgesetzt" in text and "keine Entscheidung" in text
+    assert stats["unklar"] == 1 and k.load_decisions(config_dir / k.DECISIONS_FILE) == {}
 
 
 def test_demo_tables_are_refused(config_dir):
     with pytest.raises(k.KorrektorenError, match="korrektoren_table"):
-        k.import_korrektoren(SimpleNamespace(conn=Conn(Cur())), config_dir, {**TABLES, "korrektoren_table": "DEMO_KORREKTOREN"},
-                             workspace=config_dir, dry_run=True, entries=[])
+        k.run_korrektoren(SimpleNamespace(conn=Conn(Cur())), config_dir, {**TABLES, "korrektoren_table": "DEMO_KORREKTOREN"},
+                          workspace=config_dir, apply=False, menu=False, entries=[])
+
+
+def test_two_entries_landing_at_the_same_korrektor_keep_the_newest():
+    rows = rows_of(entry(1, mail="neu@example.org"), entry(3, "Dr", "X", "x@example.org", **{"40": "abc"}))
+    plan = k.plan_import(rows, state(korrektoren=[KNOWN]), {"1": {"korrektor": 5}})
+    assert [i.status for i in plan.items] == ["uebersprungen", "ok"] and "GF 3 gilt" in plan.items[0].gruende[0]
+    assert plan.doppelt == 1
+
+
+def test_children_of_unclear_entries_can_already_be_assigned():
+    rows = rows_of(entry(1, mail="neu@example.org", **{"29": "Ja", "22": '[{"Name": "Max Müller", "Klasse": "8a"}]'}))
+    plan = k.plan_import(rows, state(korrektoren=[KNOWN], students=STUDENTS))
+    assert plan.items[0].status == "unklar" and k.plan_stats(plan)["kinder_offen"] == 1

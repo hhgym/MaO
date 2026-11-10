@@ -33,7 +33,7 @@ from .aufsichten import (PLAN_FILE, Draft, apply_plan, check_aufsichten, export_
 from .aufsichten_tui import tui_supervision
 from .einsatz import DEFAULT_FORM_ID, PLAN_FILE as EINSATZ_PLAN_FILE, Settings as EinsatzSettings, run_einsatz
 from .extern import ExternError, assign_extern_rooms, import_extern
-from .korrektoren import KorrektorenError, import_korrektoren
+from .korrektoren import KorrektorenError, run_korrektoren
 from .gf_import import import_participants, ImportErrorGF, write_import_report
 from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, read_file, sync_schools
 from .rooms import (RoomError, assign_rooms, create_year_rules, interactive_assign, load_room_rules,
@@ -266,13 +266,13 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     extern_mode.add_argument("--dry-run", action="store_true", help="Nur prüfen und berichten (Standard)")
     extern.add_argument("--report", type=Path, metavar="DATEI.json", help="Bericht im Workspace speichern")
 
-    korr = commands.add_parser("import-korrektoren", help="Korrekturangebote (Formular) in die Korrektoren-Tabellen übernehmen")
+    korr = commands.add_parser("korrektoren", help="Korrekturangebote (Formular) übernehmen: Menü zum Prüfen, Zuordnen und Schreiben")
     common(korr)
     korr_mode = korr.add_mutually_exclusive_group()
-    korr_mode.add_argument("--apply", action="store_true", help="Änderungen in die Datenbank schreiben")
-    korr_mode.add_argument("--dry-run", action="store_true", help="Nur prüfen und berichten (Standard)")
-    korr.add_argument("--interaktiv", action="store_true",
-                      help="Unklare Korrektor:innen und die Hertz-Kinder in einer Konsolensitzung zuordnen")
+    korr_mode.add_argument("--apply", action="store_true", help="Schreiben erlauben (im Menü mit Rückfrage)")
+    korr_mode.add_argument("--dry-run", action="store_true", help="Nur prüfen, nichts schreiben (Standard)")
+    korr.add_argument("--ohne-menue", action="store_true",
+                      help="Kein Menü: nur berichten bzw. mit --apply die sicheren Fälle und gespeicherten Entscheidungen schreiben")
     korr.add_argument("--report", type=Path, metavar="DATEI.json", help="Bericht (nur IDs) im Workspace speichern")
 
     schools = commands.add_parser("schulen-sync", help="Schulverzeichnis Berlin in die Schulen-Tabelle übernehmen")
@@ -310,7 +310,7 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         parser.error("--report benötigt für schulen-sync einen Dateinamen mit .json")
     if args.command in ("aufsichten", "einsatz") and args.report and args.report.suffix.lower() != ".json":
         parser.error("--report benötigt für aufsichten und einsatz einen Dateinamen mit .json")
-    if args.command in ("import-extern", "import-korrektoren") and args.report and args.report.suffix.lower() != ".json":
+    if args.command in ("import-extern", "korrektoren") and args.report and args.report.suffix.lower() != ".json":
         parser.error(f"--report benötigt für {args.command} einen Dateinamen mit .json")
     if args.command == "raumzuteilung" and args.statistik and (args.apply or args.plan_id or args.ueberschreiben or args.extern):
         parser.error("--statistik zeigt nur an und lässt sich nicht mit --apply, --plan-id, --ueberschreiben oder --extern kombinieren")
@@ -816,11 +816,12 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
             if not args.apply:
                 LOGGER.info("DRY-RUN: nichts geschrieben. Übernehmen mit: mao import-extern --apply")
             return 0
-        if args.command == "import-korrektoren":
+        if args.command == "korrektoren":
             if selection.year is None or selection.year != settings["current_year"]:
-                raise ConfigurationError("import-korrektoren nur für den aktuell registrierten Jahrgang zulässig")
-            if args.interaktiv and not sys.stdin.isatty():
-                raise ConfigurationError("--interaktiv benötigt ein Terminal")
+                raise ConfigurationError("korrektoren nur für den aktuell registrierten Jahrgang zulässig")
+            use_menu = not args.ohne_menue
+            if use_menu and not sys.stdin.isatty():
+                raise ConfigurationError("Das Menü braucht ein Terminal; ohne Terminal mit --ohne-menue aufrufen")
             tables = load_tables(resolve_config_file(config_dir, "tables.ini"))
             db_config = load_db_config(config_dir)
             if not can_reach(db_config.host, db_config.port, timeout=3):
@@ -832,8 +833,8 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                     db_mao = current_MaO_number_db(db, tables)
                     if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
                         raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
-                    import_korrektoren(db, config_dir, tables, dry_run=not args.apply, workspace=workspace,
-                                       interactive=args.interaktiv, report=korr_report)
+                    run_korrektoren(db, config_dir, tables, apply=args.apply, workspace=workspace, menu=use_menu,
+                                    report=korr_report)
             except (KorrektorenError, ImportErrorGF, ConfigurationError) as exc:
                 korr_report["issues"].append(str(exc))
                 if args.report:
@@ -841,8 +842,8 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                 raise
             if args.report:
                 LOGGER.info("Bericht Korrektoren: %s", write_import_report(workspace, config_dir, args.report, korr_report))
-            if not args.apply:
-                LOGGER.info("DRY-RUN: nichts geschrieben. Übernehmen mit: mao import-korrektoren --apply")
+            if not args.apply and not use_menu:
+                LOGGER.info("DRY-RUN: nichts geschrieben. Prüfen und zuordnen im Menü: mao korrektoren (schreiben mit --apply)")
             return 0
         if args.command == "raumzuteilung":
             if selection.year is None or selection.year != settings["current_year"]:
