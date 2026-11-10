@@ -1,0 +1,24 @@
+# Wird von mao config init als gf-korrektoren.yaml angelegt (Formular "Korrekturangebot 2. Stufe").
+# Zugangsdaten stehen wie bei den anderen Formularen in gf.config.
+form_id: 3
+page_size: 100
+timeout: 60
+fields:
+  uid: "40"             # uid bekannter Korrektor:innen (aus dem Link); entspricht gf_uid
+  uid_neu: "39"         # vom Formular erzeugte eindeutige ID (für neue Korrektor:innen)
+  jahrgang_nr: "37"     # Nummer des Jahrgangs (MaO-Nummer)
+  schuljahr: "47"       # ID des Schuljahres
+  name: "1"             # Namensfeld mit Teilfeldern .2 Vorspann (Titel), .3 Vorname, .4 zweiter Vorname, .6 Nachname
+  geschlecht: "11"      # männlich / weiblich / divers / Möchte nicht antworten
+  email: "5"
+  kinder_bekannt: "46"  # bekannte aktive Hertz-Kinder (Teilfelder .1 bis .n)
+  weitere_kinder: "29"  # Ja / nein
+  kinder: "22"          # Liste mit den Spalten Name und Klasse
+  stufen: "15"          # Teilfelder .1 bis .7 = Klasse 5 bis 10 und 11/12
+  wuensche: "9"
+  erfahrung: "35"       # .1 keine Erfahrung, .2 bereits Korrektor:in, .3 selbst teilgenommen
+  erfahrung_text: "36"
+  uebergabe: "21"       # Hertzkind / Sekretariat / Post / Sonstiges
+  anschrift: "20"       # Teilfelder .1 Straße, .2 Zusatz, .3 Ort, .4 Bundesland, .5 PLZ, .6 Land
+  uebergabe_sonst: "23"
+  anmerkungen: "24"

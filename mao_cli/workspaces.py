@@ -401,6 +401,10 @@ def init_config(config_dir: Path, defaults_dir: Path) -> list[Path]:
     if not extern.exists():
         shutil.copyfile(defaults_dir / "gf-extern.yaml.example", extern)
         created.append(extern)
+    korrektoren = config_dir / "gf-korrektoren.yaml"
+    if not korrektoren.exists():
+        shutil.copyfile(defaults_dir / "gf-korrektoren.yaml.example", korrektoren)
+        created.append(korrektoren)
     return created
 
 
