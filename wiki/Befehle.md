@@ -321,7 +321,7 @@ mao einsatz --apply                                                # schreiben
 
 ## Raum-Anwesenheitslisten
 
-Der Job `anwesenheitslisten` (`tex/Raum-Anwesenheitslisten/Raum-Anwesenheitslisten.tex`) druckt je Raum eine Anwesenheitsliste (Vorname, Nachname) und auf der Rückseite die Hinweise für die Aufsicht. Er braucht die Exporte `teilnehmende_raum` (Liste je Raum), `aufsichten_lehrkraefte_nach_raum` (Aufsicht der Lehrkräfte) und `einsatz_oberstufe_raum` (Aufsicht der Oberstufe). Die beiden Aufsichten sind optional; fehlt die Datei, bleibt das Feld leer.
+Der Job `anwesenheitslisten` (`tex/Raum-Anwesenheitslisten/Raum-Anwesenheitslisten.tex`) druckt je Raum eine Anwesenheitsliste (Vorname, Nachname) und auf der Rückseite die Hinweise für die Aufsicht. Er braucht die Exporte `teilnehmende_raum` (Liste je Raum, einschließlich der externen Teilnehmenden: Nr. `E<Nr>`, Klasse `<Stufe> (ext.)`), `aufsichten_lehrkraefte_nach_raum` (Aufsicht der Lehrkräfte) und `einsatz_oberstufe_raum` (Aufsicht der Oberstufe). Die beiden Aufsichten sind optional; fehlt die Datei, bleibt das Feld leer.
 
 ## Kopierliste
 
