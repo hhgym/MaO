@@ -242,4 +242,18 @@ def test_default_pipeline_aushang_job_needs_no_exports(tmp_path):
     tex = tmp_path / "tex" / "Aushang"
     tex.mkdir(parents=True)
     (tex / "Aushang.tex").write_text("\\documentclass{article}\\begin{document}Aushang \\MaO\\end{document}\n", encoding="utf-8")
-    assert j.job_exports(cfg, job, tmp_path, tmp_path / "tex") == set()
+    assert j.job_exports(cfg, job, tmp_path, tmp_path / "tex") == set()   # Vorlage ohne Datenverweis
+
+
+def test_wettbewerbstag_comes_from_runden_and_is_detected_by_aushang(tmp_path):
+    from pathlib import Path
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    ds = next(d for d in cfg["datasets"] if d["name"] == "wettbewerbstag")
+    assert "{{table.runden_table}}" in ds["sql"] and "runde_nr = 2" in ds["sql"] and "%d.%m.%Y" in ds["sql"]
+    exp = next(e for e in cfg["exports"] if j.export_id(e) == "wettbewerbstag")
+    assert exp["output"]["path"] == "db/Wettbewerb/Wettbewerbstag.csv" and exp["output"]["columns"] == ["datum", "ort"]
+    job = next(x for x in cfg["latex"]["jobs"] if x["name"] == "aushang")
+    tex = tmp_path / "tex" / "Aushang"
+    tex.mkdir(parents=True)
+    (tex / "Aushang.tex").write_text("\\IfFileExists{\\MaOdb Wettbewerb/Wettbewerbstag.csv}{}{}\n", encoding="utf-8")
+    assert j.job_exports(cfg, job, tmp_path, tmp_path / "tex") == {"wettbewerbstag"}

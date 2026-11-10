@@ -27,7 +27,7 @@ def original_data():
         'lehrkraft': 'AB', 'kurs': 'Ma7', 'raum': 'R001', 'lerngruppe': '7-1',
         'kl': 'AB', 'stellvkl': 'CD',
         'stufe_3': 0, 'stufe_4': 0, 'stufe_5': 0, 'stufe_6': 0, 'stufe_7': 7, 'stufe_8': 0, 'stufe_9': 0, 'stufe_10': 0, 'stufe_11': 0, 'stufe_12': 0, 'gesamt': 1,
-        'stufengruppe': '7', 'stufencode': '07'
+        'stufengruppe': '7', 'stufencode': '07', 'datum': '11.11.2026', 'ort': 'HHG'
     }])
 
 
@@ -37,7 +37,7 @@ def base_config():
 
 def test_all_sql_datasets_reference_only_pseudonymous_tables():
     cfg = base_config()
-    assert len(cfg['datasets']) == 17
+    assert len(cfg['datasets']) == 18
     assert all('{{table.' not in d['sql'] for d in cfg['datasets'])
     assert any('DEMO_ORGA' in d['sql'] for d in cfg['datasets'])
 
@@ -51,7 +51,7 @@ def test_profile_selection_and_datasets():
     assert [(e['id'], e.get('enabled', True)) for e in cfg['exports']] == earlier
     assert {e['id'] for e in prepare['exports'] if e['enabled']} == {
         'klassenleitungen', 'klassen_sek_i', 'teilnehmende', 'teilnehmende_gesamt', 'teilnehmende_raum',
-        'korrekturliste', 'kopierliste', 'kopierliste_externe'}
+        'korrekturliste', 'wettbewerbstag', 'kopierliste', 'kopierliste_externe'}
     assert {j['name'] for j in prepare['latex']['jobs'] if j['enabled']} == {
         'raumuebersicht', 'korrekturlisten', 'aushang', 'anwesenheitslisten', 'klassenleitungslisten'}
     assert prepare['datasets'][0]['enabled'] is True
@@ -94,9 +94,10 @@ def test_output_parity_same_synthetic_input(tmp_path):
     cfg = base_config()
     df = original_data()
     # Die Spalten der Kopierliste gehören nur zu deren Abfrage, nicht zur Step-1-Referenz
-    kopier_spalten = ['gesamt', 'stufengruppe', 'stufencode'] + [f'stufe_{n}' for n in range(3, 13)]
+    kopier_spalten = ['gesamt', 'stufengruppe', 'stufencode', 'datum', 'ort'] + [f'stufe_{n}' for n in range(3, 13)]
     datasets = {d['name']: df.drop(columns=kopier_spalten) for d in cfg['datasets'] if d.get('enabled', True)}
-    datasets['kopierliste'] = df.drop(columns=['stufe_3', 'stufe_4', 'stufengruppe', 'stufencode'])
+    datasets['kopierliste'] = df.drop(columns=['stufe_3', 'stufe_4', 'stufengruppe', 'stufencode', 'datum', 'ort'])
+    datasets['wettbewerbstag'] = df[['datum', 'ort']].copy()
     datasets['korrekturliste'] = df[['tnr', 'nachname', 'vorname', 'klasse', 'stufe', 'stufengruppe', 'stufencode']].copy()
     datasets['kopierliste_externe'] = df[['raum', 'stufe_3', 'stufe_4', 'stufe_5', 'stufe_6', 'gesamt']].copy()
     # Aufsichten (nach Step 1 ergänzt): eigener Datensatz, nicht Teil der Step-1-Referenz

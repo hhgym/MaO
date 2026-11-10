@@ -337,7 +337,7 @@ Der Job `korrekturlisten` (`tex/Korrekturlisten/Korrekturlisten.tex`) druckt je 
 
 ## Aushang
 
-Der Job `aushang` (`tex/Aushang/Aushang.tex`) erzeugt den Aushang für den Wettbewerbstag. Die Vorlage ist eigenständig und braucht keinen Datenexport. Den Wettbewerbstag (`\Wettbewerbstag`) und die Zeiten stellst du oben in der .tex ein; die Beispiel-Aufgabennummer folgt der Nummer des Jahrgangs. Der Job ist im Profil `vorbereitung` enthalten (standardmäßig deaktiviert): `mao latex --job aushang`.
+Der Job `aushang` (`tex/Aushang/Aushang.tex`) erzeugt den Aushang für den Wettbewerbstag. Die Vorlage ist eigenständig und braucht nur den kleinen Export `wettbewerbstag`. Der Wettbewerbstag kommt aus `MaO_Runden` (`runde_nr = 2` des aktuellen Jahrgangs, Spalte `datum`) über den Export `wettbewerbstag` (`db/Wettbewerb/Wettbewerbstag.csv`); fehlt die Datei oder das Datum, steht `TT.MM.JJJJ` im Aushang. Die Zeiten stellst du in der .tex ein; die Beispiel-Aufgabennummer folgt der Nummer des Jahrgangs. Der Job ist im Profil `vorbereitung` enthalten (standardmäßig deaktiviert): `mao run --job aushang` (holt das Datum und setzt das PDF).
 
 ## Schulabgleich
 

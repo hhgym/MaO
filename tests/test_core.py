@@ -32,7 +32,7 @@ def sample_dataset():
         "lehrkraft": "AB", "kurs": "Ma7", "raum": "R001", "lerngruppe": "7-1",
         "kl": "AB", "stellvkl": "CD", "kuerzel": "AB", "klassenstufen": "7", "rolle": "Standard", "gruppe": "",
         "stufe_3": 0, "stufe_4": 0, "stufe_5": 0, "stufe_6": 0, "stufe_7": 1, "stufe_8": 0, "stufe_9": 0, "stufe_10": 0, "stufe_11": 0, "stufe_12": 0, "gesamt": 1,
-        "stufengruppe": "7", "stufencode": "07"
+        "stufengruppe": "7", "stufencode": "07", "datum": "11.11.2026", "ort": "HHG"
     }])
 
 
@@ -43,7 +43,7 @@ def make_datasets(config, df=None):
 
 def test_original_pipeline_validates(sample_config, tmp_path):
     assert validate_config(sample_config, tmp_path) == []
-    assert len(sample_config["exports"]) == 34
+    assert len(sample_config["exports"]) == 35
 
 
 def test_invalid_sort_is_not_silent():
