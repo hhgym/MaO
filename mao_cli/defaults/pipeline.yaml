@@ -1402,6 +1402,16 @@ latex:
       define_mao: true
       pdf_name: "MaO_{mao}_Aufsichten-Schueler"
 
+    # Raumkontrolle: je Raum Lehrkräfte (Kürzel, Bemerkung) und Schüler:innen mit Kästchen ausgeteilt/eingesammelt
+    - name: aufsichten_raumkontrolle
+      id: aufsichten_raumkontrolle
+      enabled: true
+      workdir: "Aufsichten"
+      tex: "@tex/Aufsichten-Raumkontrolle/Aufsichten-Raumkontrolle.tex"
+      jobname: "Aufsichten-Raumkontrolle"
+      define_mao: true
+      pdf_name: "MaO_{mao}_Aufsichten-Raumkontrolle"
+
     - name: hinweise_aufsichten
       id: hinweise_aufsichten
       enabled: true

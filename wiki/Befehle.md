@@ -310,6 +310,7 @@ Plant den Einsatz der Stufen 11 und 12 und schreibt ihn in die Einsatztabelle (`
 | `oberstufe_einteilungslisten` | `tex/Oberstufe-Einteilungslisten/` | je Einsatz (Aufsicht, Teilnahme, Hof, 5PK) eine Einteilungsliste nach Klasse |
 | `oberstufe_uebersicht` | `tex/Oberstufe-Uebersicht/` | Gesamtübersicht mit Legende; Entität = Raum, Gruppe oder Reserve |
 | `aufsichten_schueler` | `tex/Aufsichten-Schueler/` | Schüler:innen in der Aufsicht nach Name, nach Raum und die Reserve |
+| `aufsichten_raumkontrolle` | `tex/Aufsichten-Raumkontrolle/` | je Raum Lehrkräfte (Kürzel, Bemerkung) und Schüler:innen in der Aufsicht, mit Kästchen „ausgeteilt“ und „eingesammelt“ |
 
   Die PDF-Dateien liegen im Jahrgangsordner unter `Oberstufe/` (Aufsichten-Schueler unter `Aufsichten/`). Nur bestimmte Einsätze: im Job `extra_defs: ["\\def\\OberstufeEinsaetze{Aufsicht,Hof}"]`.
 
