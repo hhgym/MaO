@@ -374,28 +374,43 @@ dadurch ist das Archiv bereits enthalten.
 
 ## Korrekturangebote (Korrektor:innen)
 
-Das Formular „Korrekturangebot 2. Stufe“ (Gravity Forms) wird per API gelesen und in die Tabellen
-`korrektoren_table`, `korrektoren_prefs_table`, `korrektoren_angebote_table`, `korrektoren_adressen_table` und
-`korrektoren_angehoerige_table` (tables.ini) übernommen. Die Feldnummern stehen in `gf-korrektoren.yaml`
-(wird von `mao config init` angelegt), die Zugangsdaten in `gf.config`. Für die Zuordnung der Hertz-Kinder braucht
-tables.ini zusätzlich `schueler_alle_table` (alle Schüler:innen, auch inaktive und ohne Klasse).
+`mao korrektoren` liest das Formular „Korrekturangebot 2. Stufe“ (Gravity Forms) per API und öffnet ein Menü. Ziel sind die
+Tabellen `korrektoren_table`, `korrektoren_prefs_table`, `korrektoren_angebote_table`, `korrektoren_adressen_table` und
+`korrektoren_angehoerige_table` (tables.ini). Die Feldnummern stehen in `gf-korrektoren.yaml` (legt `mao config init` an),
+die Zugangsdaten in `gf.config`. Für die Hertz-Kinder braucht tables.ini zusätzlich `schueler_alle_table` (alle
+Schüler:innen, auch inaktive und ohne Klasse).
 
-- `mao import-korrektoren --dry-run --report korrektoren.json` zeigt, was passieren würde (Standard, schreibt nichts).
-- `mao import-korrektoren --interaktiv --apply` klärt unklare Fälle und die Hertz-Kinder in einer Konsolensitzung und
-  schreibt danach. Die Entscheidungen stehen in `korrektoren-entscheidungen.yaml` im Workspace (nur IDs) und gelten bei
-  jedem weiteren Lauf; `--interaktiv` ohne `--apply` sammelt sie nur.
-- Nur Einträge des aktuellen Jahrgangs zählen (Jahrgangsnummer in Feld „Jahrgang MaO“ und/oder Schuljahr-ID); ist der Jahrgang
-  nicht erkennbar, wird der Eintrag gemeldet und übersprungen. Mehrere Einträge derselben Person: der neueste gilt.
-- Zuordnung zu bekannten Korrektor:innen: erst `uid` (= `gf_uid`), dann eindeutige E-Mail-Adresse; beides wird automatisch
-  übernommen. Treffer nur über den Namen oder mehrdeutige E-Mails sind „unklar“ und brauchen eine Entscheidung
-  (Nummer, `n` = neu anlegen, `s` = überspringen). Neue Korrektor:innen erhalten die vom Formular erzeugte ID als `gf_uid`.
-- Präferenzen (`kl_5` … `kl_11_12`, Wünsche, Erfahrung, Übergabe, Anmerkungen) werden vollständig aus dem Eintrag
-  übernommen, weil bekannte Korrektor:innen ihre Daten vorbefüllt bekommen. Name, Titel, Geschlecht und E-Mail werden bei
-  Abweichung aktualisiert, ein deaktivierter Korrektor wird wieder aktiv. Die Anschrift wird nur bei Übergabe „Post“ gespeichert.
-- Hertz-Kinder (Feld „Weitere aktive Hertz-Kinder“) werden nie automatisch geschrieben: Zu Name und Klasse (8_1, 8.1, 8a und 8-1
-  gelten gleich) zeigt die Sitzung die wahrscheinlichsten Schüler:innen, auch inaktive und ohne Klasse. Mit Nummer oder
-  Matrikelnummer wird `hertzkind_matrikelnummer` angelegt, `k` = kein Kind, Enter = offen lassen.
-- Zu lange Werte (z. B. Name über der Spaltenlänge) werden nicht gekürzt: Der Eintrag wird übersprungen und die Meldung
-  nennt die zu verlängernde Spalte.
-- Bericht und Entscheidungsdatei enthalten nur IDs, keine Namen, E-Mail-Adressen oder Anschriften. Geschrieben wird in einer
-  Transaktion mit Zählabgleich; die Aufgabenzuordnung (`MaO_Korrektoren_Aufgabe_Zuordnung`) folgt später.
+```
+mao korrektoren            # Menü, nur prüfen und zuordnen (schreibt nichts)
+mao korrektoren --apply    # Menü, Schreiben nach Rückfrage erlaubt
+mao korrektoren --ohne-menue --report korrektoren.json   # ohne Terminal: nur Bericht
+```
+
+Menüpunkte:
+
+1. **Einträge anzeigen** – je Eintrag Name, Zuordnung (uid, E-Mail, Entscheidung, neu) und was sich ändert
+   (`+` neu, `~` Änderung, `=` unverändert, `?` unklar, `!` übersprungen).
+2. **Unklare Korrektor:innen klären** – Treffer nur über den Namen oder mehrdeutige E-Mails: Nummer wählen,
+   `n` = neu anlegen, `s` = überspringen, Enter = später, `z` = zurück.
+3. **Hertz-Kinder zuordnen** – zu Name und Klasse (8_1, 8.1, 8a und 8-1 gelten gleich) die wahrscheinlichsten
+   Schüler:innen, auch inaktive und ohne Klasse; Nummer oder Matrikelnummer, `k` = kein Kind, Enter = später.
+4. **Entscheidung zurücksetzen** – für einen GF-Eintrag.
+5. **Änderungen anzeigen und schreiben** – zeigt alle Änderungen; geschrieben wird nur mit `--apply` und nach `j`,
+   in einer Transaktion mit Zählabgleich.
+6. **Neu laden** – Formular und Datenbank.
+
+Regeln:
+
+- Nur Einträge des aktuellen Jahrgangs (Feld „Jahrgang MaO“ und/oder Schuljahr-ID); ist der Jahrgang nicht erkennbar, wird
+  der Eintrag gemeldet. Mehrere Einträge derselben Person: der neueste gilt.
+- Zuordnung automatisch über `uid` (= `gf_uid`) oder eine eindeutige E-Mail-Adresse, sonst im Menü. Neue Korrektor:innen
+  erhalten die vom Formular erzeugte ID als `gf_uid`; ihre neue ID wird zusätzlich als Entscheidung gemerkt. Ein erneuter
+  Lauf legt daher niemanden doppelt an.
+- Präferenzen werden aus dem Eintrag übernommen (bekannte Korrektor:innen bekommen das Formular vorbefüllt) und nur bei
+  Abweichung geschrieben. Name, Titel, Geschlecht und E-Mail werden bei Abweichung aktualisiert, Deaktivierte wieder aktiv.
+  Die Anschrift wird nur bei Übergabe „Post“ gespeichert.
+- Hertz-Kinder werden nie automatisch angelegt.
+- Zu lange Werte werden nicht gekürzt: Der Eintrag wird übersprungen, die Meldung nennt die zu verlängernde Spalte.
+- Die Entscheidungen stehen in `korrektoren-entscheidungen.yaml` im Workspace, Berichte (`--report`) im Workspace; beide
+  enthalten nur IDs, keine Namen, E-Mail-Adressen oder Anschriften.
+- Ohne Menü (`--ohne-menue --apply`) werden nur die sicheren Fälle und gespeicherte Entscheidungen geschrieben.

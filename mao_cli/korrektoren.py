@@ -4,8 +4,8 @@ Pro Eintrag des aktuellen Jahrgangs werden angelegt oder aktualisiert: Korrektor
 (…_Prefs, vollständig aus dem Formular, weil bekannte Korrektor:innen es mit ihren Daten vorbefüllt bekommen), Angebot
 des Jahrgangs (…_Angebote) und bei Übergabe per Post die Anschrift (…_Adressen).
 Zuordnung: uid, dann E-Mail, dann Name. Sichere Treffer (uid, eindeutige E-Mail) werden automatisch übernommen,
-alles andere wird gemeldet bzw. mit --interaktiv entschieden. Hertz-Kinder (…_Angehoerige) werden nur auf
-ausdrückliche Entscheidung (interaktiv) geschrieben. Berichte und Entscheidungsdatei enthalten nur IDs, keine
+alles andere wird im Menü (mao korrektoren) entschieden. Hertz-Kinder (…_Angehoerige) werden nur auf
+ausdrückliche Entscheidung im Menü geschrieben. Berichte und Entscheidungsdatei enthalten nur IDs, keine
 Namen, Adressen oder E-Mail-Adressen.
 """
 from __future__ import annotations
@@ -255,13 +255,17 @@ def student_candidates(name: str, klasse: str, students: Iterable[Mapping[str, A
         score = max(difflib.SequenceMatcher(None, wanted, full).ratio(),
                     difflib.SequenceMatcher(None, wanted_rev, full).ratio())
         same_class = bool(want_class) and norm_class(s.get("klasse")) == want_class
-        if same_class:
-            score = min(1.0, score + 0.1)
-        if score >= 0.6:
+        if score >= 0.6 or (same_class and score >= 0.5):
             scored.append({"matrikelnummer": int(s["matrikelnummer"]), "vorname": s["vorname"], "nachname": s["nachname"],
                            "klasse": s.get("klasse"), "aktiv": s.get("aktiv"), "score": round(score, 2), "gleiche_klasse": same_class})
-    scored.sort(key=lambda c: (-c["score"], c["matrikelnummer"]))
+    scored.sort(key=lambda c: (not c["gleiche_klasse"], -c["score"], c["matrikelnummer"]) if c["score"] >= 0.85
+                else (True, -c["score"], c["matrikelnummer"]))
     return scored[:limit]
+
+
+PREFS_COLUMNS = (*STUFEN_COLUMNS, "wuensche", *ERFAHRUNG_COLUMNS, "korrexp_text", "uebergabe", "uebergabe_sonst", "anmerkungen")
+ADDRESS_COLUMNS = ("strasse", "zusatz", "plz", "ort", "bundesland", "land")
+INT_PREFS = (*STUFEN_COLUMNS, *ERFAHRUNG_COLUMNS)
 
 
 @dataclass
@@ -269,7 +273,7 @@ class Item:
     row: dict[str, Any]
     status: str = "ok"                    # ok | unklar | uebersprungen
     korrektor_id: int | None = None       # None und status ok: neu anlegen
-    treffer: str = ""                     # uid | email | name | entscheidung | neu
+    treffer: str = ""                     # uid | email | entscheidung | neu
     kandidaten: list[dict[str, Any]] = field(default_factory=list)
     aenderungen: dict[str, tuple[Any, Any]] = field(default_factory=dict)
     gruende: list[str] = field(default_factory=list)
@@ -277,8 +281,15 @@ class Item:
     kinder_neu: list[int] = field(default_factory=list)
     angebot_vorhanden: bool = False
     prefs_vorhanden: bool = False
+    prefs_geaendert: bool = True
     adresse_vorhanden: bool = False
+    adresse_geaendert: bool = False
     reaktiviert: bool = False
+
+    @property
+    def unveraendert(self) -> bool:
+        return (self.status == "ok" and self.korrektor_id is not None and not self.aenderungen and not self.reaktiviert
+                and not self.prefs_geaendert and self.angebot_vorhanden and not self.adresse_geaendert and not self.kinder_neu)
 
 
 @dataclass
@@ -287,9 +298,9 @@ class State:
     jahrgang_nr: int
     schuljahr_id: int
     korrektoren: list[dict[str, Any]]
-    prefs: set[int]
+    prefs: dict[int, dict[str, Any]]
     angebote: set[tuple[int, int]]
-    adressen: set[int]
+    adressen: dict[int, dict[str, Any]]
     angehoerige: set[tuple[int, int]]
     students: list[dict[str, Any]]
     limits: Mapping[str, Mapping[str, int | None]]
@@ -327,6 +338,26 @@ def _length_problems(row: Mapping[str, Any], limits: Mapping[str, Mapping[str, i
     return problems
 
 
+def prefs_values(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {**row["stufen"], "wuensche": row["wuensche"] or None, **row["erfahrung"],
+            "korrexp_text": row["erfahrung_text"] or None, "uebergabe": row["uebergabe"],
+            "uebergabe_sonst": row["uebergabe_sonst"] or None, "anmerkungen": row["anmerkungen"] or None}
+
+
+def _same(new: Mapping[str, Any], old: Mapping[str, Any] | None, ints: Iterable[str] = ()) -> bool:
+    if old is None:
+        return False
+    ints = set(ints)
+    for column, value in new.items():
+        before = old.get(column)
+        if column in ints:
+            if int(value or 0) != int(before or 0):
+                return False
+        elif (value or None) != (clean(before) or None):
+            return False
+    return True
+
+
 def plan_import(rows: list[dict[str, Any]], state: State, decisions: Mapping[str, Any] | None = None) -> Plan:
     decisions = decisions or {}
     plan = Plan()
@@ -362,8 +393,7 @@ def plan_import(rows: list[dict[str, Any]], state: State, decisions: Mapping[str
     for row in sorted(newest.values(), key=lambda r: r["eintrag_id"]):
         item = Item(row)
         plan.items.append(item)
-        for problem in _length_problems(row, state.limits):
-            item.gruende.append(problem)
+        item.gruende.extend(_length_problems(row, state.limits))
         if not row["nachname"] or not row["vorname"]:
             item.gruende.append("Name unvollständig")
         if row["geschlecht_roh"] and row["geschlecht"] is None:
@@ -379,12 +409,13 @@ def plan_import(rows: list[dict[str, Any]], state: State, decisions: Mapping[str
             item.status = "uebersprungen"
             item.gruende.append("Entscheidung: überspringen")
             continue
-        if decision == "neu":
-            item.treffer = "neu"
-        elif isinstance(decision, int) and decision in by_id:
+        if isinstance(decision, int) and decision in by_id:
             found, item.treffer = by_id[decision], "entscheidung"
-        elif row["uid_bekannt"] and row["uid"] in by_uid:
+        elif row["uid"] and row["uid"] in by_uid:
+            # bekannte uid aus dem Link oder die beim Anlegen gespeicherte Formular-ID (Wiederholung ist dadurch sicher)
             found, item.treffer = by_uid[row["uid"]], "uid"
+        elif decision == "neu":
+            item.treffer = "neu"
         else:
             mail = by_mail.get(row["email"].casefold(), []) if row["email"] else []
             named = by_name.get((fold(row["vorname"]), fold(row["nachname"])), [])
@@ -394,7 +425,6 @@ def plan_import(rows: list[dict[str, Any]], state: State, decisions: Mapping[str
                 item.status = "unklar"
                 item.kandidaten = [{"id": k["id"], "vorname": k["vorname"], "nachname": k["nachname"],
                                     "email": k.get("email"), "gf_uid": bool(k.get("gf_uid"))} for k in (mail or named)]
-                continue
             else:
                 item.treffer = "neu"
         if found is not None:
@@ -406,9 +436,14 @@ def plan_import(rows: list[dict[str, Any]], state: State, decisions: Mapping[str
             if not found.get("gf_uid") and row["uid"] and not row["uid_bekannt"]:
                 item.aenderungen["gf_uid"] = (None, row["uid"])
             item.reaktiviert = found.get("aktiv") in (0, False)
-            item.prefs_vorhanden = found["id"] in state.prefs
+            old_prefs = state.prefs.get(found["id"])
+            item.prefs_vorhanden = old_prefs is not None
+            item.prefs_geaendert = not _same(prefs_values(row), old_prefs, INT_PREFS)
             item.angebot_vorhanden = (state.jahrgang_id, found["id"]) in state.angebote
-            item.adresse_vorhanden = found["id"] in state.adressen
+            old_address = state.adressen.get(found["id"])
+            item.adresse_vorhanden = old_address is not None
+        if row["uebergabe"] == "Post" and item.status == "ok":
+            item.adresse_geaendert = not _same(row["adresse"], state.adressen.get(found["id"]) if found else None)
         # Hertz-Kinder: nur mit ausdrücklicher Entscheidung schreiben
         kid_decisions = (decisions.get(str(row["eintrag_id"])) or {}).get("kinder") or {}
         for index, kid in enumerate(row["kinder"]):
@@ -422,7 +457,34 @@ def plan_import(rows: list[dict[str, Any]], state: State, decisions: Mapping[str
             elif choice is None:
                 item.kinder_offen.append({"index": index, "name": kid["name"], "klasse": kid["klasse"],
                                           "kandidaten": student_candidates(kid["name"], kid["klasse"], state.students)})
+    # Mehrere Einträge, die bei derselben Korrektor:in landen: nur der neueste gilt
+    latest: dict[int, Item] = {}
+    for item in plan.items:
+        if item.status != "ok" or item.korrektor_id is None:
+            continue
+        other = latest.get(item.korrektor_id)
+        if other is None:
+            latest[item.korrektor_id] = item
+            continue
+        newer, older = sorted((item, other), key=lambda i: (i.row["erstellt"], i.row["eintrag_id"]), reverse=True)
+        older.status = "uebersprungen"
+        older.gruende.append(f"weiterer Eintrag derselben Korrektor:in (GF {newer.row['eintrag_id']} gilt)")
+        older.kinder_offen, older.kinder_neu = [], []
+        latest[item.korrektor_id] = newer
+        plan.doppelt += 1
     return plan
+
+
+def plan_stats(plan: Plan) -> dict[str, int]:
+    ok = [i for i in plan.items if i.status == "ok"]
+    return {"eintraege": len(plan.items), "anderer_jahrgang": plan.anderes_jahr, "jahr_unbekannt": plan.jahr_unbekannt,
+            "doppelt": plan.doppelt, "neu": sum(1 for i in ok if i.korrektor_id is None),
+            "bekannt": sum(1 for i in ok if i.korrektor_id is not None),
+            "unveraendert": sum(1 for i in ok if i.unveraendert),
+            "unklar": sum(1 for i in plan.items if i.status == "unklar"),
+            "uebersprungen": sum(1 for i in plan.items if i.status == "uebersprungen"),
+            "kinder_offen": sum(len(i.kinder_offen) for i in plan.items if i.status != "uebersprungen"),
+            "kinder_neu": sum(len(i.kinder_neu) for i in ok)}
 
 
 # ------------------------------------------------------------------ Entscheidungen
@@ -440,50 +502,81 @@ def load_decisions(path: Path) -> dict[str, Any]:
 
 
 def save_decisions(path: Path, decisions: Mapping[str, Any]) -> None:
-    path.write_text("# Entscheidungen von mao import-korrektoren --interaktiv (nur IDs, keine Namen)\n"
-                    + yaml.safe_dump(dict(decisions), allow_unicode=True, sort_keys=True), encoding="utf-8")
+    path.write_text("# Entscheidungen von mao korrektoren (nur IDs, keine Namen)\n"
+                    + yaml.safe_dump({k: v for k, v in decisions.items() if v}, allow_unicode=True, sort_keys=True),
+                    encoding="utf-8")
 
 
-def ask_decisions(plan: Plan, decisions: dict[str, Any], *, ask: Callable[[str], str] = input,
-                  out: Callable[[str], Any] = print) -> bool:
-    """Offene Fragen stellen. Rückgabe: True, wenn sich Entscheidungen geändert haben."""
+def _name(row: Mapping[str, Any]) -> str:
+    return clean(f"{row['titel']} {row['vorname']} {row['nachname']}")
+
+
+def resolve_unclear(plan: Plan, decisions: dict[str, Any], *, ask: Callable[[str], str] = input,
+                    out: Callable[[str], Any] = print) -> bool:
+    """Unklare Zuordnungen abfragen. Rückgabe: True, wenn sich Entscheidungen geändert haben."""
+    items = [i for i in plan.items if i.status == "unklar"]
+    if not items:
+        out("Keine unklaren Korrektor:innen.")
+        return False
     changed = False
-    for item in plan.items:
+    for item in items:
         row = item.row
         key = str(row["eintrag_id"])
-        if item.status == "unklar":
-            out(f"\nGF-Eintrag {key}: {row['vorname']} {row['nachname']} <{row['email']}> – bekannte Korrektor:in unklar")
-            for number, k in enumerate(item.kandidaten, 1):
-                out(f"  {number}) ID {k['id']}: {k['vorname']} {k['nachname']} <{k.get('email') or 'ohne E-Mail'}>"
-                    f"{'' if k['gf_uid'] else ' (ohne uid)'}")
-            while True:
-                answer = ask("Nummer wählen, n = neu anlegen, s = später/überspringen: ").strip().lower()
-                if answer == "n":
-                    decisions.setdefault(key, {})["korrektor"] = "neu"
-                elif answer == "s" or answer == "":
-                    decisions.setdefault(key, {})["korrektor"] = "skip"
-                elif answer.isdigit() and 1 <= int(answer) <= len(item.kandidaten):
-                    decisions.setdefault(key, {})["korrektor"] = item.kandidaten[int(answer) - 1]["id"]
-                else:
-                    out("Bitte eine Nummer, n oder s eingeben.")
-                    continue
-                changed = True
+        out(f"\nGF-Eintrag {key}: {_name(row)} <{row['email'] or 'ohne E-Mail'}> – welche bekannte Korrektor:in?")
+        for number, k in enumerate(item.kandidaten, 1):
+            out(f"  {number}) ID {k['id']}: {k['vorname']} {k['nachname']} <{k.get('email') or 'ohne E-Mail'}>"
+                f"{'' if k['gf_uid'] else ' (ohne uid)'}")
+        while True:
+            answer = ask("Nummer, n = neu anlegen, s = überspringen, Enter = später, z = zurück zum Menü: ").strip().lower()
+            if answer == "z":
+                return changed
+            if answer == "":
                 break
+            if answer == "n":
+                decisions.setdefault(key, {})["korrektor"] = "neu"
+            elif answer == "s":
+                decisions.setdefault(key, {})["korrektor"] = "skip"
+            elif answer.isdigit() and 1 <= int(answer) <= len(item.kandidaten):
+                decisions.setdefault(key, {})["korrektor"] = item.kandidaten[int(answer) - 1]["id"]
+            else:
+                out("Bitte eine Nummer, n, s, z oder Enter eingeben.")
+                continue
+            changed = True
+            break
+    return changed
+
+
+def assign_children(plan: Plan, decisions: dict[str, Any], *, ask: Callable[[str], str] = input,
+                    out: Callable[[str], Any] = print) -> bool:
+    """Offene Hertz-Kinder abfragen. Rückgabe: True, wenn sich Entscheidungen geändert haben."""
+    items = [i for i in plan.items if i.kinder_offen and i.status != "uebersprungen"]
+    if not items:
+        out("Keine offenen Hertz-Kinder.")
+        return False
+    changed = False
+    for item in items:
+        key = str(item.row["eintrag_id"])
         for kid in item.kinder_offen:
-            out(f"\nGF-Eintrag {key}, Hertz-Kind {kid['index'] + 1}: {kid['name']} ({kid['klasse'] or 'ohne Klasse'})")
+            out(f"\nGF-Eintrag {key} ({_name(item.row)}), Hertz-Kind {kid['index'] + 1}: "
+                f"{kid['name'] or '?'} (Klasse {kid['klasse'] or '–'})")
             for number, c in enumerate(kid["kandidaten"], 1):
-                out(f"  {number}) {c['vorname']} {c['nachname']} | Klasse {c['klasse'] or '–'} | "
-                    f"{'aktiv' if c['aktiv'] in (1, True) else 'inaktiv'} | Matrikel {c['matrikelnummer']} | {c['score']:.2f}")
+                out(f"  {number}) {c['vorname']} {c['nachname']} | Klasse {c['klasse'] or '–'}"
+                    f"{' (passt)' if c['gleiche_klasse'] else ''} | {'aktiv' if c['aktiv'] in (1, True) else 'inaktiv'} | "
+                    f"Matrikel {c['matrikelnummer']} | Namensähnlichkeit {c['score']:.2f}")
+            if not kid["kandidaten"]:
+                out("  (keine wahrscheinlichen Schüler:innen gefunden)")
             while True:
-                answer = ask("Nummer wählen, Matrikelnummer eingeben, k = kein Kind zuordnen, Enter = offen lassen: ").strip().lower()
-                kinder = decisions.setdefault(key, {}).setdefault("kinder", {})
+                answer = ask("Nummer, Matrikelnummer, k = kein Kind, Enter = später, z = zurück zum Menü: ").strip().lower()
+                if answer == "z":
+                    return changed
                 if answer == "":
                     break
+                kinder = decisions.setdefault(key, {}).setdefault("kinder", {})
                 if answer == "k":
                     kinder[str(kid["index"])] = "keins"
                 elif answer.isdigit() and 1 <= int(answer) <= len(kid["kandidaten"]):
                     kinder[str(kid["index"])] = kid["kandidaten"][int(answer) - 1]["matrikelnummer"]
-                elif answer.isdigit() and int(answer) > 1000:
+                elif answer.isdigit() and int(answer) > 100:
                     kinder[str(kid["index"])] = int(answer)
                 else:
                     out("Ungültige Eingabe.")
@@ -519,12 +612,12 @@ def load_state(cur: Any, tables: Mapping[str, str]) -> State:
     cur.execute(f"SELECT id, gf_uid, titel, vorname, nachname, geschlecht, email, aktiv FROM `{names['korrektoren_table']}`")
     korrektoren = [{"id": int(i), "gf_uid": u, "titel": t, "vorname": v or "", "nachname": n or "", "geschlecht": g,
                     "email": m, "aktiv": a} for i, u, t, v, n, g, m, a in cur.fetchall()]
-    cur.execute(f"SELECT korrektor_id FROM `{names['korrektoren_prefs_table']}`")
-    prefs = {int(r[0]) for r in cur.fetchall()}
+    cur.execute(f"SELECT korrektor_id, {', '.join('`' + c + '`' for c in PREFS_COLUMNS)} FROM `{names['korrektoren_prefs_table']}`")
+    prefs = {int(r[0]): dict(zip(PREFS_COLUMNS, r[1:])) for r in cur.fetchall()}
     cur.execute(f"SELECT mao_jahrgang_id, korrektor_id FROM `{names['korrektoren_angebote_table']}`")
     angebote = {(int(a), int(b)) for a, b in cur.fetchall()}
-    cur.execute(f"SELECT korrektor_id FROM `{names['korrektoren_adressen_table']}`")
-    adressen = {int(r[0]) for r in cur.fetchall()}
+    cur.execute(f"SELECT korrektor_id, {', '.join('`' + c + '`' for c in ADDRESS_COLUMNS)} FROM `{names['korrektoren_adressen_table']}`")
+    adressen = {int(r[0]): dict(zip(ADDRESS_COLUMNS, r[1:])) for r in cur.fetchall()}
     cur.execute(f"SELECT korrektor_id, hertzkind_matrikelnummer FROM `{names['korrektoren_angehoerige_table']}`")
     angehoerige = {(int(a), int(b)) for a, b in cur.fetchall()}
     cur.execute(f"SELECT matrikelnummer, vorname, nachname, klasse, aktiv FROM `{names['schueler_alle_table']}`")
@@ -547,11 +640,13 @@ def _update(cur: Any, table: str, key_col: str, key: Any, values: Mapping[str, A
                 (*(values[c] for c in cols), key))
 
 
-def apply_plan(cur: Any, tables: Mapping[str, str], state: State, plan: Plan) -> dict[str, int]:
+def apply_plan(cur: Any, tables: Mapping[str, str], state: State, plan: Plan) -> tuple[dict[str, int], dict[int, int]]:
+    """Plan schreiben (ohne Transaktionssteuerung). Rückgabe: Zähler und neue Korrektor-IDs je GF-Eintrag."""
     names = {key: _ident(tables, key) for key in TABLE_KEYS}
     stats = dict.fromkeys(("korrektoren_neu", "korrektoren_aktualisiert", "prefs", "angebote", "adressen", "angehoerige"), 0)
+    created: dict[int, int] = {}
     for item in plan.items:
-        if item.status != "ok":
+        if item.status != "ok" or item.unveraendert:
             continue
         row = item.row
         korrektor_id = item.korrektor_id
@@ -562,6 +657,7 @@ def apply_plan(cur: Any, tables: Mapping[str, str], state: State, plan: Plan) ->
             korrektor_id = cur.lastrowid
             if not korrektor_id:
                 raise KorrektorenError("Keine Korrektor-ID erhalten")
+            created[row["eintrag_id"]] = int(korrektor_id)
             stats["korrektoren_neu"] += 1
         else:
             changes = {col: new for col, (_, new) in item.aenderungen.items()}
@@ -570,19 +666,17 @@ def apply_plan(cur: Any, tables: Mapping[str, str], state: State, plan: Plan) ->
             if changes:
                 _update(cur, names["korrektoren_table"], "id", korrektor_id, changes)
                 stats["korrektoren_aktualisiert"] += 1
-        prefs = {**row["stufen"], "wuensche": row["wuensche"] or None, **row["erfahrung"],
-                 "korrexp_text": row["erfahrung_text"] or None, "uebergabe": row["uebergabe"],
-                 "uebergabe_sonst": row["uebergabe_sonst"] or None, "anmerkungen": row["anmerkungen"] or None}
-        if item.prefs_vorhanden:
-            _update(cur, names["korrektoren_prefs_table"], "korrektor_id", korrektor_id, prefs)
-        else:
-            _insert(cur, names["korrektoren_prefs_table"], {"korrektor_id": korrektor_id, **prefs})
-        stats["prefs"] += 1
+        if item.prefs_geaendert:
+            if item.prefs_vorhanden:
+                _update(cur, names["korrektoren_prefs_table"], "korrektor_id", korrektor_id, prefs_values(row))
+            else:
+                _insert(cur, names["korrektoren_prefs_table"], {"korrektor_id": korrektor_id, **prefs_values(row)})
+            stats["prefs"] += 1
         if not item.angebot_vorhanden:
             _insert(cur, names["korrektoren_angebote_table"], {"mao_jahrgang_id": state.jahrgang_id, "korrektor_id": korrektor_id})
             stats["angebote"] += 1
-        if row["uebergabe"] == "Post":
-            address = {col: val or None for col, val in row["adresse"].items()}
+        if row["uebergabe"] == "Post" and item.adresse_geaendert:
+            address = {col: row["adresse"][col] or None for col in ADDRESS_COLUMNS}
             if item.adresse_vorhanden:
                 _update(cur, names["korrektoren_adressen_table"], "korrektor_id", korrektor_id, address)
             else:
@@ -592,97 +686,287 @@ def apply_plan(cur: Any, tables: Mapping[str, str], state: State, plan: Plan) ->
             _insert(cur, names["korrektoren_angehoerige_table"],
                     {"korrektor_id": korrektor_id, "hertzkind_matrikelnummer": matrikel, "beziehung": "Kind"})
             stats["angehoerige"] += 1
-    return stats
+    return stats, created
 
 
-def import_korrektoren(db: Any, config_dir: Path, tables: Mapping[str, str], *, dry_run: bool, workspace: Path,
-                       interactive: bool = False, report: dict[str, Any] | None = None,
-                       entries: Iterable[Mapping[str, Any]] | None = None, decisions_file: Path | None = None,
-                       ask: Callable[[str], str] = input, out: Callable[[str], Any] = print) -> dict[str, int]:
+# ------------------------------------------------------------------ Sitzung
+
+@dataclass
+class Session:
+    db: Any
+    tables: Mapping[str, str]
+    fetch: Callable[[], list[Mapping[str, Any]]]
+    fields: Mapping[str, str]
+    decisions_path: Path
+    decisions: dict[str, Any] = field(default_factory=dict)
+    entries: int = 0
+    inactive: int = 0
+    issues: list[str] = field(default_factory=list)
+    rows: list[dict[str, Any]] = field(default_factory=list)
+    state: State | None = None
+    plan: Plan = field(default_factory=Plan)
+
+    def load_entries(self) -> None:
+        entries = list(self.fetch())
+        self.rows, self.issues, self.inactive = parse_entries(entries, self.fields)
+        self.entries = len(entries)
+
+    def reload(self) -> None:
+        cur = self.db.conn.cursor()
+        try:
+            self.state = load_state(cur, self.tables)
+        finally:
+            cur.close()
+        self.replan()
+
+    def replan(self) -> None:
+        assert self.state is not None
+        self.plan = plan_import(self.rows, self.state, self.decisions)
+
+    def save(self) -> None:
+        save_decisions(self.decisions_path, self.decisions)
+
+    def stats(self) -> dict[str, int]:
+        return {"gf_eintraege": self.entries, "inaktive": self.inactive, **plan_stats(self.plan)}
+
+    def write(self) -> dict[str, int]:
+        """Plan in einer Transaktion schreiben; neue Korrektor-IDs als Entscheidung merken, danach neu laden."""
+        assert self.state is not None
+        cnx = self.db.conn
+        cur = cnx.cursor()
+        table = _ident(self.tables, "korrektoren_table")
+        lock_name = f"mao-korrektoren-{table}"
+        locked = False
+        try:
+            cur.execute("SELECT GET_LOCK(%s, 10)", (lock_name,))
+            if cur.fetchall()[0][0] != 1:
+                raise KorrektorenError("Konkurrierender Import oder Sperr-Timeout")
+            locked = True
+            if cnx.in_transaction:
+                cnx.rollback()
+            cnx.start_transaction()
+            try:
+                cur.execute(f"SELECT COUNT(*) FROM `{table}`")
+                before = int(cur.fetchall()[0][0])
+                if before != len(self.state.korrektoren):
+                    raise KorrektorenError("Die Tabelle hat sich während der Prüfung geändert; bitte erneut laden")
+                written, created = apply_plan(cur, self.tables, self.state, self.plan)
+                cur.execute(f"SELECT COUNT(*) FROM `{table}`")
+                if int(cur.fetchall()[0][0]) != before + written["korrektoren_neu"]:
+                    raise KorrektorenError("Zählabgleich fehlgeschlagen; nichts geschrieben")
+                cnx.commit()
+            except Exception:
+                cnx.rollback()
+                raise
+        finally:
+            if locked:
+                try:
+                    cur.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
+                    cur.fetchall()
+                except Exception:
+                    LOGGER.warning("Konnte Sperre nicht regulär freigeben (DB-Disconnect gibt sie frei)")
+            cur.close()
+        if created:
+            for entry_id, korrektor_id in created.items():
+                self.decisions.setdefault(str(entry_id), {})["korrektor"] = korrektor_id
+            self.save()
+        self.reload()
+        return written
+
+
+def open_session(db: Any, config_dir: Path, tables: Mapping[str, str], workspace: Path, *,
+                 entries: Iterable[Mapping[str, Any]] | None = None, decisions_file: Path | None = None) -> Session:
     settings = load_korr_settings(config_dir / "gf-korrektoren.yaml")
-    cnx = db.conn
-    if cnx is None:
+    if db.conn is None:
         raise KorrektorenError("Keine Datenbankverbindung")
+    for key in TABLE_KEYS:
+        _ident(tables, key)
     if entries is None:
-        entries = gf_entries(load_gf_credentials(config_dir / "gf.config"), settings.form_id, settings.page_size, settings.timeout)
-    entries = list(entries)
-    rows, issues, inactive = parse_entries(entries, settings.fields)
-    decisions_path = decisions_file or workspace / DECISIONS_FILE
-    decisions = load_decisions(decisions_path)
-    cur = cnx.cursor()
-    lock_name = ""
-    try:
-        state = load_state(cur, tables)
-        plan = plan_import(rows, state, decisions)
-        if interactive and ask_decisions(plan, decisions, ask=ask, out=out):
-            save_decisions(decisions_path, decisions)
-            out(f"Entscheidungen gespeichert: {decisions_path.name}")
-            plan = plan_import(rows, state, decisions)
-        ok = [i for i in plan.items if i.status == "ok"]
-        unclear = [i for i in plan.items if i.status == "unklar"]
-        skipped = [i for i in plan.items if i.status == "uebersprungen"]
-        stats = {"gf_eintraege": len(entries), "inaktive": inactive, "anderer_jahrgang": plan.anderes_jahr,
-                 "jahr_unbekannt": plan.jahr_unbekannt, "doppelt": plan.doppelt, "neu": sum(1 for i in ok if i.korrektor_id is None),
-                 "bekannt": sum(1 for i in ok if i.korrektor_id is not None), "unklar": len(unclear),
-                 "uebersprungen": len(skipped), "kinder_offen": sum(len(i.kinder_offen) for i in plan.items),
-                 "kinder_neu": sum(len(i.kinder_neu) for i in ok)}
-        LOGGER.info("Korrektoren | GF-Einträge: %d | anderer Jahrgang: %d | doppelt: %d | neu: %d | bekannt: %d | unklar: %d "
-                    "| übersprungen: %d | Hertz-Kinder offen: %d | Modus: %s", stats["gf_eintraege"], plan.anderes_jahr, plan.doppelt,
-                    stats["neu"], stats["bekannt"], stats["unklar"], stats["uebersprungen"], stats["kinder_offen"],
-                    "DRY-RUN" if dry_run else "APPLY")
-        for item in plan.items:
+        credentials = load_gf_credentials(config_dir / "gf.config")
+
+        def fetch() -> list[Mapping[str, Any]]:
+            return list(gf_entries(credentials, settings.form_id, settings.page_size, settings.timeout))
+    else:
+        fixed = list(entries)
+
+        def fetch() -> list[Mapping[str, Any]]:
+            return fixed
+    path = decisions_file or workspace / DECISIONS_FILE
+    session = Session(db, tables, fetch, settings.fields, path, load_decisions(path))
+    session.load_entries()
+    session.reload()
+    return session
+
+
+# ------------------------------------------------------------------ Ausgabe
+
+def _item_line(item: Item) -> str:
+    row = item.row
+    mark = {"ok": "=" if item.unveraendert else ("+" if item.korrektor_id is None else "~"), "unklar": "?",
+            "uebersprungen": "!"}[item.status]
+    target = (f"ID {item.korrektor_id}" if item.korrektor_id else "neu") if item.status == "ok" else item.status
+    extra = []
+    if item.aenderungen:
+        extra.append("ändert " + ", ".join(sorted(item.aenderungen)))
+    if item.reaktiviert:
+        extra.append("wieder aktiv")
+    if item.status == "ok" and not item.angebot_vorhanden:
+        extra.append("Angebot neu")
+    if item.kinder_neu:
+        extra.append(f"Hertz-Kinder neu: {len(item.kinder_neu)}")
+    if item.kinder_offen and item.status != "uebersprungen":
+        extra.append(f"Hertz-Kinder offen: {len(item.kinder_offen)}")
+    if item.gruende:
+        extra.append("; ".join(item.gruende))
+    return f"{mark} GF {row['eintrag_id']:>5} | {_name(row)[:32]:<32} | {item.treffer or '-':<12} | {target:<10} | " + " · ".join(extra)
+
+
+def change_lines(plan: Plan) -> list[str]:
+    lines = []
+    for item in plan.items:
+        if item.status != "ok" or item.unveraendert:
+            continue
+        row = item.row
+        parts = []
+        if item.korrektor_id is None:
+            parts.append("neu anlegen")
+        else:
+            parts += [f"{col}: {old or '–'} → {new}" for col, (old, new) in sorted(item.aenderungen.items()) if col != "gf_uid"]
+            if "gf_uid" in item.aenderungen:
+                parts.append("uid ergänzen")
+            if item.reaktiviert:
+                parts.append("wieder aktiv")
+        if item.prefs_geaendert:
+            parts.append("Präferenzen" + (" neu" if not item.prefs_vorhanden else " aktualisieren"))
+        if not item.angebot_vorhanden:
+            parts.append("Angebot dieses Jahrgangs")
+        if row["uebergabe"] == "Post" and item.adresse_geaendert:
+            parts.append("Anschrift")
+        if item.kinder_neu:
+            parts.append("Hertz-Kinder: " + ", ".join(map(str, item.kinder_neu)))
+        lines.append(f"GF {row['eintrag_id']} {_name(row)}" + (f" (ID {item.korrektor_id})" if item.korrektor_id else "")
+                     + ": " + "; ".join(parts))
+    return lines
+
+
+def summary_line(session: Session, *, apply: bool) -> str:
+    s = session.stats()
+    nr = session.state.jahrgang_nr if session.state else "?"
+    return (f"Korrektoren | Jahrgang {nr} | Einträge {s['eintraege']} (neu {s['neu']}, bekannt {s['bekannt']}, "
+            f"davon unverändert {s['unveraendert']}, unklar {s['unklar']}, übersprungen {s['uebersprungen']}) | "
+            f"Hertz-Kinder offen {s['kinder_offen']} | {'APPLY' if apply else 'DRY-RUN'}")
+
+
+MENU = """
+  1) Einträge anzeigen
+  2) Unklare Korrektor:innen klären ({unklar})
+  3) Hertz-Kinder zuordnen ({kinder_offen})
+  4) Entscheidung eines Eintrags zurücksetzen
+  5) Änderungen anzeigen und in die Datenbank schreiben
+  6) Formular und Datenbank neu laden
+  q) Beenden"""
+
+
+def run_menu(session: Session, *, apply: bool, ask: Callable[[str], str] = input,
+             out: Callable[[str], Any] = print) -> dict[str, int]:
+    written_total: dict[str, int] = {}
+    while True:
+        out("\n" + summary_line(session, apply=apply))
+        out(MENU.format(**session.stats()))
+        try:
+            choice = ask("Auswahl: ").strip().lower()
+        except EOFError:
+            choice = "q"
+        try:
+            if choice == "1":
+                for item in session.plan.items:
+                    out(_item_line(item))
+                if not session.plan.items:
+                    out("Keine Einträge für diesen Jahrgang.")
+                for text in [*session.issues, *session.plan.hinweise]:
+                    out(f"  Hinweis: {text}")
+                out(f"  (+ neu, ~ Änderung, = unverändert, ? unklar, ! übersprungen; anderer Jahrgang: "
+                    f"{session.plan.anderes_jahr}, doppelt: {session.plan.doppelt})")
+            elif choice in ("2", "3"):
+                step = resolve_unclear if choice == "2" else assign_children
+                if step(session.plan, session.decisions, ask=ask, out=out):
+                    session.save()
+                    out(f"Entscheidungen gespeichert: {session.decisions_path.name}")
+                    session.replan()
+            elif choice == "4":
+                key = ask("GF-Eintrag (Nummer): ").strip()
+                if key in session.decisions:
+                    del session.decisions[key]
+                    session.save()
+                    session.replan()
+                    out(f"Entscheidung für GF {key} zurückgesetzt.")
+                else:
+                    out("Für diesen Eintrag gibt es keine Entscheidung.")
+            elif choice == "5":
+                lines = change_lines(session.plan)
+                if not lines:
+                    out("Nichts zu schreiben.")
+                    continue
+                for line in lines:
+                    out("  " + line)
+                if not apply:
+                    out("DRY-RUN: nichts geschrieben. Zum Schreiben mit: mao korrektoren --apply "
+                        "(die Entscheidungen bleiben gespeichert)")
+                elif ask("In die Datenbank schreiben? [j/N] ").strip().lower() in ("j", "ja"):
+                    written = session.write()
+                    for key, value in written.items():
+                        written_total[key] = written_total.get(key, 0) + value
+                    out("Geschrieben: " + ", ".join(f"{k} {v}" for k, v in written.items()))
+            elif choice == "6":
+                session.load_entries()
+                session.reload()
+                out("Neu geladen.")
+            elif choice in ("q", "quit", "exit"):
+                return written_total
+            elif choice:
+                out("Bitte 1 bis 6 oder q eingeben.")
+        except KorrektorenError as exc:
+            out(f"Nicht möglich: {exc}")
+
+
+def fill_report(report: dict[str, Any], session: Session) -> None:
+    """Bericht nur mit IDs und Zählern (keine Namen, E-Mail-Adressen oder Anschriften)."""
+    report["summary"] = session.stats()
+    report["eintraege"] = [{"gf_eintrag_id": i.row["eintrag_id"], "status": i.status, "treffer": i.treffer,
+                            "korrektor_id": i.korrektor_id, "aenderungen": sorted(i.aenderungen), "unveraendert": i.unveraendert,
+                            "reaktiviert": i.reaktiviert, "prefs_geaendert": i.prefs_geaendert,
+                            "angebot_neu": i.status == "ok" and not i.angebot_vorhanden, "gruende": i.gruende,
+                            "kandidaten_ids": [k["id"] for k in i.kandidaten],
+                            "kinder_offen": [k["index"] for k in i.kinder_offen]} for i in session.plan.items]
+    report["hinweise"] = [*session.issues, *session.plan.hinweise]
+
+
+def run_korrektoren(db: Any, config_dir: Path, tables: Mapping[str, str], *, apply: bool, workspace: Path,
+                    menu: bool = True, report: dict[str, Any] | None = None,
+                    entries: Iterable[Mapping[str, Any]] | None = None, decisions_file: Path | None = None,
+                    ask: Callable[[str], str] = input, out: Callable[[str], Any] = print) -> dict[str, int]:
+    """Menü (Standard) oder ohne Menü: Trockenlauf bzw. mit apply die sicheren Fälle und gespeicherten Entscheidungen schreiben."""
+    session = open_session(db, config_dir, tables, workspace, entries=entries, decisions_file=decisions_file)
+    written: dict[str, int] = {}
+    if menu:
+        written = run_menu(session, apply=apply, ask=ask, out=out)
+    else:
+        LOGGER.info("%s", summary_line(session, apply=apply))
+        for item in session.plan.items:
             if item.status == "uebersprungen":
                 LOGGER.warning("  GF %s übersprungen: %s", item.row["eintrag_id"], "; ".join(item.gruende))
             elif item.status == "unklar":
-                LOGGER.warning("  GF %s unklar: %d mögliche Korrektor:innen (mit --interaktiv entscheiden)",
-                               item.row["eintrag_id"], len(item.kandidaten))
-        for text in [*issues, *plan.hinweise][:20]:
+                LOGGER.warning("  GF %s unklar: %d mögliche Korrektor:innen (im Menü klären)", item.row["eintrag_id"],
+                               len(item.kandidaten))
+        for text in [*session.issues, *session.plan.hinweise][:20]:
             LOGGER.warning("  %s", text)
-        if report is not None:
-            report["summary"] = stats
-            report["eintraege"] = [{"gf_eintrag_id": i.row["eintrag_id"], "status": i.status, "treffer": i.treffer,
-                                    "korrektor_id": i.korrektor_id, "aenderungen": sorted(i.aenderungen),
-                                    "reaktiviert": i.reaktiviert, "prefs_neu": not i.prefs_vorhanden,
-                                    "angebot_neu": not i.angebot_vorhanden, "gruende": i.gruende,
-                                    "kandidaten_ids": [k["id"] for k in i.kandidaten],
-                                    "kinder_offen": [k["index"] for k in i.kinder_offen]} for i in plan.items]
-            report["hinweise"] = [*issues, *plan.hinweise]
-        if dry_run or not ok:
-            if report is not None:
-                report["status"] = "ready" if dry_run else "applied"
-            return stats
-        table = _ident(tables, "korrektoren_table")
-        lock_name = f"mao-korrektoren-{table}"
-        cur.execute("SELECT GET_LOCK(%s, 10)", (lock_name,))
-        if cur.fetchall()[0][0] != 1:
-            raise KorrektorenError("Konkurrierender Import oder Sperr-Timeout")
-        if cnx.in_transaction:
-            cnx.rollback()
-        cnx.start_transaction()
-        try:
-            cur.execute(f"SELECT COUNT(*) FROM `{table}`")
-            before = int(cur.fetchall()[0][0])
-            if before != len(state.korrektoren):
-                raise KorrektorenError("Die Tabelle hat sich während der Prüfung geändert; bitte erneut ausführen")
-            written = apply_plan(cur, tables, state, plan)
-            cur.execute(f"SELECT COUNT(*) FROM `{table}`")
-            if int(cur.fetchall()[0][0]) != before + written["korrektoren_neu"]:
-                raise KorrektorenError("Zählabgleich fehlgeschlagen; nichts geschrieben")
-            cnx.commit()
-        except Exception:
-            cnx.rollback()
-            raise
-        stats.update({f"geschrieben_{k}": v for k, v in written.items()})
-        LOGGER.info("Korrektoren | geschrieben: %s", ", ".join(f"{k} {v}" for k, v in written.items()))
-        if report is not None:
-            report["status"] = "applied"
-            report["geschrieben"] = written
-        return stats
-    finally:
-        if lock_name:
-            try:
-                cur.execute("SELECT RELEASE_LOCK(%s)", (lock_name,))
-                cur.fetchall()
-            except Exception:
-                LOGGER.warning("Konnte Sperre nicht regulär freigeben (DB-Disconnect gibt sie frei)")
-        cur.close()
+        if apply and change_lines(session.plan):
+            written = session.write()
+            LOGGER.info("Korrektoren | geschrieben: %s", ", ".join(f"{k} {v}" for k, v in written.items()))
+    if report is not None:
+        fill_report(report, session)
+        report["geschrieben"] = written
+        report["status"] = "applied" if apply and written else "ready"
+    stats = session.stats()
+    stats.update({f"geschrieben_{k}": v for k, v in written.items()})
+    return stats
