@@ -12,7 +12,7 @@ FIELDS = {"uid": "40", "uid_neu": "39", "jahrgang_nr": "37", "schuljahr": "47", 
           "kinder_bekannt": "46", "weitere_kinder": "29", "kinder": "22", "stufen": "15", "wuensche": "9", "erfahrung": "35",
           "erfahrung_text": "36", "uebergabe": "21", "anschrift": "20", "uebergabe_sonst": "23", "anmerkungen": "24"}
 TABLES = {"korrektoren_table": "korr", "korrektoren_prefs_table": "prefs", "korrektoren_angebote_table": "ang",
-          "korrektoren_adressen_table": "adr", "korrektoren_angehoerige_table": "angeh", "schueler_alle_table": "stud",
+          "korrektoren_adressen_table": "adr", "korrektoren_angehoerige_table": "angeh", "students_table": "stud",
           "jahrgaenge_table": "jg", "schuljahre_table": "sj"}
 
 

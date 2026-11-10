@@ -29,7 +29,7 @@ FIELD_KEYS = ("uid", "jahrgang_nr", "schuljahr", "name", "geschlecht", "email", 
               "stufen", "wuensche", "erfahrung", "erfahrung_text", "uebergabe", "anschrift", "uebergabe_sonst", "anmerkungen")
 OPTIONAL_KEYS = ("uid_neu",)
 TABLE_KEYS = ("korrektoren_table", "korrektoren_prefs_table", "korrektoren_angebote_table",
-              "korrektoren_adressen_table", "korrektoren_angehoerige_table", "schueler_alle_table")
+              "korrektoren_adressen_table", "korrektoren_angehoerige_table")
 STUFEN_COLUMNS = ("kl_5", "kl_6", "kl_7", "kl_8", "kl_9", "kl_10", "kl_11_12")
 ERFAHRUNG_COLUMNS = ("keine_erfahrung", "korrexp", "selbst_teilgenommen")
 GENDERS = {"männlich": "m", "weiblich": "w", "divers": "d", "möchte nicht antworten": "k", "m": "m", "w": "w", "d": "d", "k": "k"}
@@ -620,7 +620,7 @@ def load_state(cur: Any, tables: Mapping[str, str]) -> State:
     adressen = {int(r[0]): dict(zip(ADDRESS_COLUMNS, r[1:])) for r in cur.fetchall()}
     cur.execute(f"SELECT korrektor_id, hertzkind_matrikelnummer FROM `{names['korrektoren_angehoerige_table']}`")
     angehoerige = {(int(a), int(b)) for a, b in cur.fetchall()}
-    cur.execute(f"SELECT matrikelnummer, vorname, nachname, klasse, aktiv FROM `{names['schueler_alle_table']}`")
+    cur.execute(f"SELECT matrikelnummer, vorname, nachname, klasse, aktiv FROM `{_ident(tables, 'students_table')}`")
     students = [{"matrikelnummer": m, "vorname": v or "", "nachname": n or "", "klasse": k, "aktiv": a}
                 for m, v, n, k, a in cur.fetchall()]
     limits = {"korrektoren": column_limits(cur, names["korrektoren_table"]), "prefs": column_limits(cur, names["korrektoren_prefs_table"]),

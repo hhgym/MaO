@@ -377,7 +377,7 @@ dadurch ist das Archiv bereits enthalten.
 `mao korrektoren` liest das Formular „Korrekturangebot 2. Stufe“ (Gravity Forms) per API und öffnet ein Menü. Ziel sind die
 Tabellen `korrektoren_table`, `korrektoren_prefs_table`, `korrektoren_angebote_table`, `korrektoren_adressen_table` und
 `korrektoren_angehoerige_table` (tables.ini). Die Feldnummern stehen in `gf-korrektoren.yaml` (legt `mao config init` an),
-die Zugangsdaten in `gf.config`. Für die Hertz-Kinder braucht tables.ini zusätzlich `schueler_alle_table` (alle
+die Zugangsdaten in `gf.config`. Für die Hertz-Kinder dient `students_table` (alle
 Schüler:innen, auch inaktive und ohne Klasse).
 
 ```
