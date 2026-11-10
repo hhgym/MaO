@@ -54,7 +54,8 @@
     "db/Teilnehmende/Lehrkraft/Teilnehmende-Lehrkraft-AB.csv": "d5938dc96751a3fa7d6df83187d050426c99b77709cb89ad08e21a5fe2ab8d05",
     "db/Teilnehmende/Raum/Teilnehmende-Raum-R001.csv": "d5938dc96751a3fa7d6df83187d050426c99b77709cb89ad08e21a5fe2ab8d05",
     "db/Teilnehmende/Stufe/Teilnehmende-Stufe-7.csv": "d5938dc96751a3fa7d6df83187d050426c99b77709cb89ad08e21a5fe2ab8d05",
-    "db/Teilnehmende/Teilnehmendeliste.csv": "36882b6c61c73378bce2861b518dc763e9405d105d7a5a9fddb2036b42ad160c"
+    "db/Teilnehmende/Teilnehmendeliste.csv": "36882b6c61c73378bce2861b518dc763e9405d105d7a5a9fddb2036b42ad160c",
+    "db/Wettbewerb/Wettbewerbstag.csv": "8478a1551022c7b9e8762056eff9c1b0f153947fb7b3f68b45760d1468bd34ed"
   },
   "reference": "Synthetische Exportdaten, ohne reale SQL-Tabellenbezeichnungen"
 }

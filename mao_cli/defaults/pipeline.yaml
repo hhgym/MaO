@@ -261,6 +261,20 @@ datasets:
       FROM {{table.orga_view}} m
       WHERE COALESCE(m.anwesenheit, 1) <> 0
 
+  - name: wettbewerbstag
+    id: wettbewerbstag
+    enabled: true
+    # Datum (TT.MM.JJJJ) und Ort der 2. Runde (Runde 2 = Stufe der Mathematik-Olympiade an der Schule) des aktuellen Jahrgangs
+    sql: |
+      SELECT
+      COALESCE(DATE_FORMAT(r.datum, '%d.%m.%Y'), '') AS datum,
+      COALESCE(r.ort, '') AS ort
+      FROM {{table.runden_table}} r
+      WHERE r.runde_nr = 2
+        AND r.mao_jahrgang_id = (SELECT j.id FROM {{table.jahrgaenge_table}} j
+                                 JOIN {{table.schuljahre_table}} s ON s.id = j.schuljahr_id
+                                 WHERE s.aktiv = 1 ORDER BY j.id DESC LIMIT 1)
+
   - name: teachers
     id: teachers
     enabled: true
@@ -643,6 +657,16 @@ exports:
           db_prefix: "Korrekturliste-Stufe"
           list_macro: "KorrekturListe"
           entry_template: "{stufengruppe}/{stufencode}/{db}"
+
+  # Wettbewerbstag aus MaO_Runden (Vorlage Aushang): eine Zeile mit datum;ort
+  - name: wettbewerbstag
+    id: wettbewerbstag
+    enabled: true
+    from_dataset: wettbewerbstag
+    output:
+      sep: ";"
+      columns: ["datum","ort"]
+      path: "db/Wettbewerb/Wettbewerbstag.csv"
 
   - name: abwesende
     id: abwesende
