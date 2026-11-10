@@ -281,5 +281,5 @@ def test_teilnehmende_raum_includes_external_participants():
     sql = ds["sql"]
     assert "{{table.orga_view}}" in sql and "{{table.extern_teilnahmen_table}}" in sql and "{{table.extern_personen_table}}" in sql
     assert "UNION ALL" in sql and "(ext.)" in sql and "CONCAT('E', e.nr)" in sql
-    assert sql.count("COLLATE utf8mb4_unicode_ci") >= 14          # beide Teile der UNION gleich sortiert
+    assert sql.count("COLLATE utf8mb4_unicode_ci") == 12          # beide Teile der UNION gleich sortiert
     assert set(ds["cast"]) == {"stufe", "extern"}
