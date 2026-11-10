@@ -243,6 +243,48 @@ datasets:
       delegierung: Int64
       preisgeld: Int64
 
+  - name: teilnehmende_raum
+    id: teilnehmende_raum
+    enabled: true
+    # Teilnehmende mit Raum, Schüler:innen der Schule (extern = 0) und externe Teilnehmende des aktuellen Jahrgangs
+    # (extern = 1: tnr = E + Nummer, klasse = "<Klassenstufe> (ext.)", stufe = Klassenstufe). Grundlage der Raum-Anwesenheitslisten.
+    # Die Textspalten sind ausdrücklich auf eine gemeinsame Sortierung gestellt, damit die UNION nicht an unterschiedlichen
+    # Spalten-Sortierungen scheitert.
+    sql: |
+      SELECT x.tnr, x.nachname, x.vorname, x.geschlecht, x.klasse, x.stufe, x.raum, x.extern
+      FROM (
+        SELECT
+          CAST(m.tnr AS CHAR) COLLATE utf8mb4_unicode_ci AS tnr,
+          m.nachname COLLATE utf8mb4_unicode_ci AS nachname,
+          m.vorname COLLATE utf8mb4_unicode_ci AS vorname,
+          CAST(m.geschlecht AS CHAR) COLLATE utf8mb4_unicode_ci AS geschlecht,
+          m.klasse COLLATE utf8mb4_unicode_ci AS klasse,
+          m.stufe AS stufe,
+          m.raum COLLATE utf8mb4_unicode_ci AS raum,
+          0 AS extern
+        FROM {{table.orga_view}} m
+        WHERE m.raum IS NOT NULL
+        UNION ALL
+        SELECT
+          CONCAT('E', e.nr) COLLATE utf8mb4_unicode_ci AS tnr,
+          p.nachname COLLATE utf8mb4_unicode_ci AS nachname,
+          p.vorname COLLATE utf8mb4_unicode_ci AS vorname,
+          CAST(p.geschlecht AS CHAR) COLLATE utf8mb4_unicode_ci AS geschlecht,
+          CONCAT(e.klassenstufe, ' (ext.)') COLLATE utf8mb4_unicode_ci AS klasse,
+          e.klassenstufe AS stufe,
+          r.raumcode COLLATE utf8mb4_unicode_ci AS raum,
+          1 AS extern
+        FROM {{table.extern_teilnahmen_table}} e
+        JOIN {{table.extern_personen_table}} p ON p.id = e.person_id
+        JOIN {{table.rooms_table}} r ON r.id = e.raum_id
+        WHERE e.mao_jahrgang_id = (SELECT j.id FROM {{table.jahrgaenge_table}} j
+                                   JOIN {{table.schuljahre_table}} s ON s.id = j.schuljahr_id
+                                   WHERE s.aktiv = 1 ORDER BY j.id DESC LIMIT 1)
+      ) x
+    cast:
+      stufe: Int64
+      extern: Int64
+
   - name: korrekturliste
     id: korrekturliste
     enabled: true
@@ -602,11 +644,11 @@ exports:
           list_macro: "TeilnehmendeLehrkraftListe"
           entry_template: "{lehrkraft}/{db}"
   
-  # Teilnehmende je Raum (Vorlage Raum-Anwesenheitslisten), innerhalb des Raums nach Vorname, Nachname
+  # Teilnehmende je Raum, einschließlich der Externen (Vorlage Raum-Anwesenheitslisten), innerhalb des Raums nach Vorname, Nachname
   - name: teilnehmende_raum
     id: teilnehmende_raum
     enabled: true
-    from_dataset: orga
+    from_dataset: teilnehmende_raum
     filter:
       - column: raum
         op: "notnull"

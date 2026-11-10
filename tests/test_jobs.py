@@ -270,3 +270,16 @@ def test_einsatz_oberstufe_anwesenheit_sorted_by_first_name_others_unchanged():
     assert anw["from_dataset"] == "einsatz_oberstufe" and anw["sort_by"] == ["vorname", "nachname"]
     assert anw["output"]["path"] == "db/Einsatz-Oberstufe/Einsatz-Oberstufe-Anwesenheit.csv"
     assert anw["splits"][0]["filename_template"] == "db/Einsatz-Oberstufe/Einsatz-Oberstufe-Anwesenheit-Gruppe-{key}.csv"
+
+
+def test_teilnehmende_raum_includes_external_participants():
+    from pathlib import Path
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    ex = next(e for e in cfg["exports"] if j.export_id(e) == "teilnehmende_raum")
+    assert ex["from_dataset"] == "teilnehmende_raum"
+    ds = next(d for d in cfg["datasets"] if d["name"] == "teilnehmende_raum")
+    sql = ds["sql"]
+    assert "{{table.orga_view}}" in sql and "{{table.extern_teilnahmen_table}}" in sql and "{{table.extern_personen_table}}" in sql
+    assert "UNION ALL" in sql and "(ext.)" in sql and "CONCAT('E', e.nr)" in sql
+    assert sql.count("COLLATE utf8mb4_unicode_ci") >= 14          # beide Teile der UNION gleich sortiert
+    assert set(ds["cast"]) == {"stufe", "extern"}
