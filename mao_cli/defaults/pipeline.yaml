@@ -1245,6 +1245,16 @@ latex:
       define_mao: true
       pdf_name: "MaO_{mao}_Raumuebersicht"
 
+    # Aushang für den Wettbewerbstag: Standalone-Vorlage ohne Datenexport (Datum und Zeiten in der .tex anpassen)
+    - name: aushang
+      id: aushang
+      enabled: false
+      workdir: "Aushang"
+      tex: "@tex/Aushang/Aushang.tex"
+      jobname: "Aushang"
+      define_mao: true
+      pdf_name: "MaO_{mao}_Aushang"
+
     - name: anwesenheitslisten
       id: anwesenheitslisten
       enabled: false
