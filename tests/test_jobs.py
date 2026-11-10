@@ -167,6 +167,22 @@ def test_default_pipeline_raum_anwesenheitslisten_exports(tmp_path):
     assert ex["splits"][0]["macro"]["list_macro"] == "TeilnehmendeRaumListe"
 
 
+def test_default_pipeline_aufsichten_raumkontrolle_job(tmp_path):
+    from pathlib import Path
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    job = next(x for x in cfg["latex"]["jobs"] if x["name"] == "aufsichten_raumkontrolle")
+    assert job["tex"] == "@tex/Aufsichten-Raumkontrolle/Aufsichten-Raumkontrolle.tex" and job["define_mao"] is True
+    assert job["pdf_name"] == "MaO_{mao}_Aufsichten-Raumkontrolle"
+    tex = tmp_path / "tex"
+    (tex / "Aufsichten-Raumkontrolle").mkdir(parents=True)
+    (tex / "Aufsichten-Raumkontrolle" / "Aufsichten-Raumkontrolle.tex").write_text(
+        "\\input{\\MaOdb Include/Tabellen-Teilnehmende-Raum.tex}\n"
+        "\\DTLloaddb{Aufsichten}{\\MaOdb Aufsichten/Aufsichten-Raeume.csv}\n"
+        "\\DTLloaddb{OberstufeRaum}{\\MaOdb Einsatz-Oberstufe/Einsatz-Oberstufe-Raum.csv}\n", encoding="utf-8")
+    assert j.job_exports(cfg, job, tmp_path, tex) == {
+        "teilnehmende_raum", "aufsichten_lehrkraefte_nach_raum", "einsatz_oberstufe_raum"}
+
+
 def test_default_pipeline_kopierliste_externe(tmp_path):
     from pathlib import Path
     cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
