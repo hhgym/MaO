@@ -443,7 +443,7 @@ def plan_import(rows: list[dict[str, Any]], state: State, decisions: Mapping[str
             old_address = state.adressen.get(found["id"])
             item.adresse_vorhanden = old_address is not None
         if row["uebergabe"] == "Post" and item.status == "ok":
-            item.adresse_geaendert = not _same(row["adresse"], state.adressen.get(item.korrektor_id) if found else None)
+            item.adresse_geaendert = not _same(row["adresse"], state.adressen.get(found["id"]) if found else None)
         # Hertz-Kinder: nur mit ausdrücklicher Entscheidung schreiben
         kid_decisions = (decisions.get(str(row["eintrag_id"])) or {}).get("kinder") or {}
         for index, kid in enumerate(row["kinder"]):
