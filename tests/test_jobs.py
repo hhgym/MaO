@@ -257,3 +257,10 @@ def test_wettbewerbstag_comes_from_runden_and_is_detected_by_aushang(tmp_path):
     tex.mkdir(parents=True)
     (tex / "Aushang.tex").write_text("\\IfFileExists{\\MaOdb Wettbewerb/Wettbewerbstag.csv}{}{}\n", encoding="utf-8")
     assert j.job_exports(cfg, job, tmp_path, tmp_path / "tex") == {"wettbewerbstag"}
+
+
+def test_einsatz_oberstufe_sorted_by_first_name():
+    from pathlib import Path
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    exp = next(e for e in cfg["exports"] if j.export_id(e) == "einsatz_oberstufe")
+    assert exp["sort_by"] == ["vorname", "nachname"]
