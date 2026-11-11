@@ -299,3 +299,10 @@ def test_teilnehmende_raum_includes_external_participants():
     assert "UNION ALL" in sql and "(ext.)" in sql and "CONCAT('E', e.nr)" in sql
     assert sql.count("COLLATE utf8mb4_unicode_ci") == 12          # beide Teile der UNION gleich sortiert
     assert set(ds["cast"]) == {"stufe", "extern"}
+
+
+def test_default_pipeline_abwesende_sorted_by_stufe_klasse_name():
+    from pathlib import Path
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    ex = next(e for e in cfg["exports"] if j.export_id(e) == "abwesende")
+    assert ex["sort_by"] == ["stufe", "klasse", "vorname", "nachname"] and "klasse" in ex["output"]["columns"]
