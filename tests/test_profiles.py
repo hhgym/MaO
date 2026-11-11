@@ -37,7 +37,7 @@ def base_config():
 
 def test_all_sql_datasets_reference_only_pseudonymous_tables():
     cfg = base_config()
-    assert len(cfg['datasets']) == 19
+    assert len(cfg['datasets']) == 20
     assert all('{{table.' not in d['sql'] for d in cfg['datasets'])
     assert any('DEMO_ORGA' in d['sql'] for d in cfg['datasets'])
 
@@ -106,6 +106,8 @@ def test_output_parity_same_synthetic_input(tmp_path):
         'kuerzel': 'AB', 'name': 'A B', 'raum': 'R001', 'klassenstufen': '7', 'rolle': 'Standard', 'bemerkung': ''}])
     datasets['einsatz_oberstufe'] = pd.DataFrame([{
         'nachname': 'M', 'vorname': 'E', 'klasse': '11', 'rolle': 'Hof', 'bemerkung': 'Gruppe 1', 'gruppe': 1}])
+    datasets['abwesende_oberstufe'] = pd.DataFrame([{
+        'nachname': 'M', 'vorname': 'E', 'klasse': '11-1', 'rolle': 'Reserve', 'bemerkung': 'Reserve'}])
     plan = ExportPlan(tmp_path)
     run_exports(datasets, cfg, tmp_path, plan)
     actual = {name: hashlib.sha256(content).hexdigest()
