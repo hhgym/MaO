@@ -329,3 +329,25 @@ def test_abwesenheitsliste_template_detects_both_exports(tmp_path):
         "\\IfFileExists{\\MaOdb Einsatz-Oberstufe/Abwesende-Oberstufe.csv}{\\DTLloaddb[]{A}{\\MaOdb Einsatz-Oberstufe/Abwesende-Oberstufe.csv}}{}\n",
         encoding="utf-8")
     assert {"abwesende", "abwesende_oberstufe"} <= j.job_exports(cfg, job, tmp_path, tex)
+
+
+def test_default_pipeline_korrekturliste_externe(tmp_path):
+    from pathlib import Path
+    import pandas as pd
+    from mao_cli.exports import ExportPlan, run_exports
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    ds = next(d for d in cfg["datasets"] if d["name"] == "korrekturliste_externe")
+    assert "CASE WHEN e.klassenstufe <= 4 THEN 5 ELSE 4 END AS aufgaben" in ds["sql"] and "{{table.extern_teilnahmen_table}}" in ds["sql"]
+    job = next(x for x in cfg["latex"]["jobs"] if x["name"] == "korrekturlisten_externe")
+    assert job["tex"] == "@tex/Korrekturlisten-Externe/Korrekturlisten-Externe.tex" and job["enabled"] is False
+    cfg["exports"] = [e for e in cfg["exports"] if j.export_id(e) == "korrekturliste_externe"]
+    df = pd.DataFrame([
+        {"tnr": "E2", "nachname": "Zed", "vorname": "Bea", "schulnummer": "01G01", "stufe": 3, "stufengruppe": "3", "stufencode": "03", "aufgaben": 5},
+        {"tnr": "E1", "nachname": "Alt", "vorname": "Ana", "schulnummer": "01G02", "stufe": 3, "stufengruppe": "3", "stufencode": "03", "aufgaben": 5},
+        {"tnr": "E3", "nachname": "Neu", "vorname": "Tom", "schulnummer": "01G01", "stufe": 5, "stufengruppe": "5", "stufencode": "05", "aufgaben": 4}])
+    plan = ExportPlan(tmp_path)
+    run_exports({"korrekturliste_externe": df}, cfg, tmp_path, plan)
+    names = {str(n).replace("\\", "/").split("/")[-1]: c for n, (c, _, _) in plan.outputs.items()}
+    assert [r.split(";")[1] for r in names["Korrekturliste-Extern-Stufe-3.csv"].decode().splitlines()[1:]] == ["Alt", "Zed"]
+    macro = names["Tabellen-Korrekturliste-Externe.tex"].decode()
+    assert "\\newcommand{\\KorrekturListeExterne}{3/03/5/" in macro and ",5/05/4/" in macro

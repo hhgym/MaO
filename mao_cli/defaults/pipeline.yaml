@@ -303,6 +303,32 @@ datasets:
       FROM {{table.orga_view}} m
       WHERE COALESCE(m.anwesenheit, 1) <> 0
 
+  - name: korrekturliste_externe
+    id: korrekturliste_externe
+    enabled: true
+    # Externe Teilnehmende (Grundschulen) für die Punktelisten der Korrektur, je Klassenstufe eine Gruppe. aufgaben ist die
+    # Zahl der Aufgaben (Klassenstufe 3 und 4: fünf, sonst vier), stufencode der zweistellige Teil der Aufgabennummer
+    # (03 … 06). Abgemeldete (anwesenheit = 0) werden nicht aufgeführt. tnr = E + Nummer.
+    sql: |
+      SELECT
+      CONCAT('E', e.nr) AS tnr,
+      p.nachname AS nachname,
+      p.vorname AS vorname,
+      e.schulnummer AS schulnummer,
+      e.klassenstufe AS stufe,
+      CAST(e.klassenstufe AS CHAR) AS stufengruppe,
+      LPAD(e.klassenstufe, 2, '0') AS stufencode,
+      CASE WHEN e.klassenstufe <= 4 THEN 5 ELSE 4 END AS aufgaben
+      FROM {{table.extern_teilnahmen_table}} e
+      JOIN {{table.extern_personen_table}} p ON p.id = e.person_id
+      WHERE COALESCE(e.anwesenheit, 1) <> 0
+        AND e.mao_jahrgang_id = (SELECT j.id FROM {{table.jahrgaenge_table}} j
+                                 JOIN {{table.schuljahre_table}} s ON s.id = j.schuljahr_id
+                                 WHERE s.aktiv = 1 ORDER BY j.id DESC LIMIT 1)
+    cast:
+      stufe: Int64
+      aufgaben: Int64
+
   - name: wettbewerbstag
     id: wettbewerbstag
     enabled: true
@@ -724,6 +750,27 @@ exports:
           db_prefix: "Korrekturliste-Stufe"
           list_macro: "KorrekturListe"
           entry_template: "{stufengruppe}/{stufencode}/{db}"
+
+  # Punktelisten der Externen je Klassenstufe (Vorlage Korrekturlisten-Externe), nach Vorname, Nachname
+  - name: korrekturliste_externe
+    id: korrekturliste_externe
+    enabled: true
+    from_dataset: korrekturliste_externe
+    output:
+      sep: ";"
+      columns: "*"
+    sort_by: [stufe, vorname, nachname]
+    splits:
+      - name: stufengruppe
+        enabled: true
+        by: "stufengruppe"
+        filename_template: "db/Korrekturliste/Korrekturliste-Extern-Stufe-{key}.csv"
+        macro:
+          enabled: true
+          tex_path: "db/Include/Tabellen-Korrekturliste-Externe.tex"
+          db_prefix: "Korrekturliste-Extern-Stufe"
+          list_macro: "KorrekturListeExterne"
+          entry_template: "{stufengruppe}/{stufencode}/{aufgaben}/{db}"
 
   # Wettbewerbstag aus MaO_Runden (Vorlage Aushang): eine Zeile mit datum;ort
   - name: wettbewerbstag
@@ -1354,6 +1401,15 @@ latex:
       jobname: "Korrekturlisten"
       define_mao: true
       pdf_name: "MaO_{mao}_Korrekturlisten"
+
+    - name: korrekturlisten_externe
+      id: korrekturlisten_externe
+      enabled: false
+      workdir: "Korrekturlisten-Externe"
+      tex: "@tex/Korrekturlisten-Externe/Korrekturlisten-Externe.tex"
+      jobname: "Korrekturlisten-Externe"
+      define_mao: true
+      pdf_name: "MaO_{mao}_Korrekturlisten-Externe"
 
     - name: raumuebersicht
       id: raumuebersicht
