@@ -329,6 +329,31 @@ datasets:
       stufe: Int64
       aufgaben: Int64
 
+  - name: urkunden_externe
+    id: urkunden_externe
+    enabled: true
+    # Urkunden der Externen (Grundschulen): alle Anwesenden des aktuellen Jahrgangs mit Schulname und Punkten
+    # (Summe aus MaO_Extern_Teilnahmen.punkte; leer, solange noch keine Punkte erfasst sind). Abgemeldete (anwesenheit = 0) fehlen.
+    sql: |
+      SELECT
+      CONCAT('E', e.nr) AS tnr,
+      p.vorname AS vorname,
+      p.nachname AS nachname,
+      p.geschlecht AS geschlecht,
+      COALESCE(s.name, e.schulnummer) AS schule,
+      e.klassenstufe AS stufe,
+      e.punkte AS punkte
+      FROM {{table.extern_teilnahmen_table}} e
+      JOIN {{table.extern_personen_table}} p ON p.id = e.person_id
+      LEFT JOIN {{table.schools_table}} s ON s.schulnummer = e.schulnummer
+      WHERE COALESCE(e.anwesenheit, 1) <> 0
+        AND e.mao_jahrgang_id = (SELECT j.id FROM {{table.jahrgaenge_table}} j
+                                 JOIN {{table.schuljahre_table}} s2 ON s2.id = j.schuljahr_id
+                                 WHERE s2.aktiv = 1 ORDER BY j.id DESC LIMIT 1)
+    cast:
+      stufe: Int64
+      punkte: Int64
+
   - name: wettbewerbstag
     id: wettbewerbstag
     enabled: true
@@ -771,6 +796,16 @@ exports:
           db_prefix: "Korrekturliste-Extern-Stufe"
           list_macro: "KorrekturListeExterne"
           entry_template: "{stufengruppe}/{stufencode}/{aufgaben}/{db}"
+
+  - name: urkunden_externe
+    id: urkunden_externe
+    enabled: true
+    from_dataset: urkunden_externe
+    output:
+      path: "db/Urkunden-Externe/Urkunden-Externe.csv"
+      sep: ";"
+      columns: ["tnr","vorname","nachname","geschlecht","schule","stufe","punkte"]
+    sort_by: [stufe, schule, nachname, vorname]
 
   # Wettbewerbstag aus MaO_Runden (Vorlage Aushang): eine Zeile mit datum;ort
   - name: wettbewerbstag
@@ -1532,6 +1567,15 @@ latex:
       jobname: "Urkunden"
       define_mao: true
       pdf_name: "MaO_{mao}_Urkunden"
+
+    - name: urkunden_externe
+      id: urkunden_externe
+      enabled: false
+      workdir: "Urkunden-Externe"
+      tex: "@tex/Urkunden-Externe/Urkunden-Externe.tex"
+      jobname: "Urkunden-Externe"
+      define_mao: true
+      pdf_name: "MaO_{mao}_Urkunden-Externe"
 
     - name: unterschriften
       id: unterschriften
