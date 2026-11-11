@@ -718,6 +718,7 @@ exports:
       - column: anwesenheit
         op: "=="
         value: 0
+    sort_by: [stufe, klasse, vorname, nachname]
     output:
       sep: ";"
       columns: ["tnr","nachname","vorname","klasse","stufe"]
