@@ -427,6 +427,31 @@ datasets:
                                    WHERE sj.aktiv = 1 ORDER BY j.id DESC LIMIT 1)
       ) x
 
+  # Abwesende Oberstufen-Einsätze (anwesenheit = 0 in der Einsatztabelle). Schüler:innen, die selbst teilnehmen, stehen
+  # schon über den Export "abwesende" (Orga-Sicht) in der Abwesenheitsliste und werden hier ausgelassen.
+  - name: abwesende_oberstufe
+    id: abwesende_oberstufe
+    enabled: true
+    sql: |
+      SELECT
+        s.nachname AS nachname,
+        s.vorname AS vorname,
+        s.klasse AS klasse,
+        r.code AS rolle,
+        CASE WHEN e.modus = 'Reserve' THEN 'Reserve'
+             WHEN e.modus = 'Gruppe' THEN CONCAT('Gruppe ', e.gruppe_nr)
+             ELSE COALESCE(ra.raumcode, COALESCE(e.bemerkung, '')) END AS bemerkung
+      FROM {{table.oberstufe_einsaetze_table}} e
+      JOIN {{table.oberstufe_rollen_table}} r ON r.id = e.rolle_id
+      JOIN {{table.students_table}} s ON s.matrikelnummer = e.matrikelnummer
+      LEFT JOIN {{table.rooms_table}} ra ON ra.id = e.raum_id
+      LEFT JOIN {{table.orga_view}} o ON o.matrikelnummer = e.matrikelnummer
+      WHERE e.anwesenheit = 0
+        AND o.matrikelnummer IS NULL
+        AND e.mao_jahrgang_id = (SELECT j.id FROM {{table.jahrgaenge_table}} j
+                                 JOIN {{table.schuljahre_table}} sj ON sj.id = j.schuljahr_id
+                                 WHERE sj.aktiv = 1 ORDER BY j.id DESC LIMIT 1)
+
   # Kopierliste: Teilnehmende je Raum und Klassenstufe aus der Datenbank-View (Nullen = leer).
   # Die Zeile GESAMT (Summen je Stufe) stammt aus der View und steht zuletzt; die Vorlage setzt sie als Summenzeile
   # und überspringt sie bei den Raumseiten.
@@ -709,6 +734,17 @@ exports:
       sep: ";"
       columns: ["datum","ort"]
       path: "db/Wettbewerb/Wettbewerbstag.csv"
+
+  # Abwesende Oberstufen-Einsätze für tex/Abwesenheitsliste (nach Klasse, Vorname, Nachname)
+  - name: abwesende_oberstufe
+    id: abwesende_oberstufe
+    enabled: true
+    from_dataset: abwesende_oberstufe
+    sort_by: [klasse, vorname, nachname]
+    output:
+      sep: ";"
+      columns: ["nachname","vorname","klasse","rolle","bemerkung"]
+      path: "db/Einsatz-Oberstufe/Abwesende-Oberstufe.csv"
 
   - name: abwesende
     id: abwesende

@@ -306,3 +306,26 @@ def test_default_pipeline_abwesende_sorted_by_stufe_klasse_name():
     cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
     ex = next(e for e in cfg["exports"] if j.export_id(e) == "abwesende")
     assert ex["sort_by"] == ["stufe", "klasse", "vorname", "nachname"] and "klasse" in ex["output"]["columns"]
+
+
+def test_default_pipeline_abwesende_oberstufe():
+    from pathlib import Path
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    ds = next(d for d in cfg["datasets"] if d["name"] == "abwesende_oberstufe")
+    assert "e.anwesenheit = 0" in ds["sql"] and "o.matrikelnummer IS NULL" in ds["sql"]
+    ex = next(e for e in cfg["exports"] if j.export_id(e) == "abwesende_oberstufe")
+    assert ex["from_dataset"] == "abwesende_oberstufe" and ex["sort_by"] == ["klasse", "vorname", "nachname"]
+    assert ex["output"]["path"] == "db/Einsatz-Oberstufe/Abwesende-Oberstufe.csv"
+
+
+def test_abwesenheitsliste_template_detects_both_exports(tmp_path):
+    from pathlib import Path
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    job = next(x for x in cfg["latex"]["jobs"] if x["name"] == "abwesenheitsliste")
+    tex = tmp_path / "tex"
+    (tex / "Abwesenheitsliste").mkdir(parents=True)
+    (tex / "Abwesenheitsliste" / "Abwesenheitsliste.tex").write_text(
+        "\\DTLloaddb[]{Abwesende}{\\MaOdb Abwesende/Abwesende.csv}\n"
+        "\\IfFileExists{\\MaOdb Einsatz-Oberstufe/Abwesende-Oberstufe.csv}{\\DTLloaddb[]{A}{\\MaOdb Einsatz-Oberstufe/Abwesende-Oberstufe.csv}}{}\n",
+        encoding="utf-8")
+    assert {"abwesende", "abwesende_oberstufe"} <= j.job_exports(cfg, job, tmp_path, tex)
