@@ -351,3 +351,26 @@ def test_default_pipeline_korrekturliste_externe(tmp_path):
     assert [r.split(";")[1] for r in names["Korrekturliste-Extern-Stufe-3.csv"].decode().splitlines()[1:]] == ["Alt", "Zed"]
     macro = names["Tabellen-Korrekturliste-Externe.tex"].decode()
     assert "\\newcommand{\\KorrekturListeExterne}{3/03/5/" in macro and ",5/05/4/" in macro
+
+
+def test_default_pipeline_urkunden_externe(tmp_path):
+    from pathlib import Path
+    import pandas as pd
+    from mao_cli.exports import ExportPlan, run_exports
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    ds = next(d for d in cfg["datasets"] if d["name"] == "urkunden_externe")
+    assert "{{table.schools_table}}" in ds["sql"] and "COALESCE(s.name, e.schulnummer) AS schule" in ds["sql"]
+    assert "e.punkte AS punkte" in ds["sql"] and "COALESCE(e.anwesenheit, 1) <> 0" in ds["sql"]
+    job = next(x for x in cfg["latex"]["jobs"] if x["name"] == "urkunden_externe")
+    assert job["tex"] == "@tex/Urkunden-Externe/Urkunden-Externe.tex" and job["enabled"] is False
+    cfg["exports"] = [e for e in cfg["exports"] if j.export_id(e) == "urkunden_externe"]
+    df = pd.DataFrame([
+        {"tnr": "E2", "vorname": "Bea", "nachname": "Zed", "geschlecht": "w", "schule": "Schule B", "stufe": 4, "punkte": 7},
+        {"tnr": "E1", "vorname": "Ana", "nachname": "Alt", "geschlecht": "w", "schule": "Schule A", "stufe": 3, "punkte": pd.NA}])
+    df = df.astype({"stufe": "Int64", "punkte": "Int64"})
+    plan = ExportPlan(tmp_path)
+    run_exports({"urkunden_externe": df}, cfg, tmp_path, plan)
+    names = {str(n).replace("\\", "/").split("db/")[-1]: c for n, (c, _, _) in plan.outputs.items()}
+    rows = names["Urkunden-Externe/Urkunden-Externe.csv"].decode().splitlines()
+    assert rows[0] == "tnr;vorname;nachname;geschlecht;schule;stufe;punkte"
+    assert rows[1].startswith("E1;Ana;Alt;w;Schule A;3;") and rows[1].endswith(";") and rows[2].endswith(";4;7")
