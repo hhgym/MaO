@@ -27,7 +27,7 @@ def original_data():
         'lehrkraft': 'AB', 'kurs': 'Ma7', 'raum': 'R001', 'lerngruppe': '7-1',
         'kl': 'AB', 'stellvkl': 'CD',
         'stufe_3': 0, 'stufe_4': 0, 'stufe_5': 0, 'stufe_6': 0, 'stufe_7': 7, 'stufe_8': 0, 'stufe_9': 0, 'stufe_10': 0, 'stufe_11': 0, 'stufe_12': 0, 'gesamt': 1,
-        'stufengruppe': '7', 'stufencode': '07', 'datum': '11.11.2026', 'ort': 'HHG', 'extern': 0
+        'stufengruppe': '7', 'stufencode': '07', 'datum': '11.11.2026', 'ort': 'HHG', 'extern': 0, 'schulnummer': '01A01', 'aufgaben': 4
     }])
 
 
@@ -37,7 +37,7 @@ def base_config():
 
 def test_all_sql_datasets_reference_only_pseudonymous_tables():
     cfg = base_config()
-    assert len(cfg['datasets']) == 20
+    assert len(cfg['datasets']) == 21
     assert all('{{table.' not in d['sql'] for d in cfg['datasets'])
     assert any('DEMO_ORGA' in d['sql'] for d in cfg['datasets'])
 
@@ -51,9 +51,9 @@ def test_profile_selection_and_datasets():
     assert [(e['id'], e.get('enabled', True)) for e in cfg['exports']] == earlier
     assert {e['id'] for e in prepare['exports'] if e['enabled']} == {
         'klassenleitungen', 'klassen_sek_i', 'teilnehmende', 'teilnehmende_gesamt', 'teilnehmende_raum',
-        'korrekturliste', 'wettbewerbstag', 'kopierliste', 'kopierliste_externe'}
+        'korrekturliste', 'korrekturliste_externe', 'wettbewerbstag', 'kopierliste', 'kopierliste_externe'}
     assert {j['name'] for j in prepare['latex']['jobs'] if j['enabled']} == {
-        'raumuebersicht', 'korrekturlisten', 'aushang', 'anwesenheitslisten', 'klassenleitungslisten'}
+        'raumuebersicht', 'korrekturlisten', 'korrekturlisten_externe', 'aushang', 'anwesenheitslisten', 'klassenleitungslisten'}
     assert prepare['datasets'][0]['enabled'] is True
     assert [e['enabled'] for e in apply_profile(cfg, profiles['vollpaket'])['exports']] == [
         e.get('enabled', True) for e in cfg['exports']]
@@ -94,10 +94,11 @@ def test_output_parity_same_synthetic_input(tmp_path):
     cfg = base_config()
     df = original_data()
     # Die Spalten der Kopierliste gehören nur zu deren Abfrage, nicht zur Step-1-Referenz
-    kopier_spalten = ['gesamt', 'stufengruppe', 'stufencode', 'datum', 'ort', 'extern'] + [f'stufe_{n}' for n in range(3, 13)]
+    kopier_spalten = ['gesamt', 'stufengruppe', 'stufencode', 'datum', 'ort', 'extern', 'schulnummer', 'aufgaben'] + [f'stufe_{n}' for n in range(3, 13)]
     datasets = {d['name']: df.drop(columns=kopier_spalten) for d in cfg['datasets'] if d.get('enabled', True)}
-    datasets['kopierliste'] = df.drop(columns=['stufe_3', 'stufe_4', 'stufengruppe', 'stufencode', 'datum', 'ort', 'extern'])
+    datasets['kopierliste'] = df.drop(columns=['stufe_3', 'stufe_4', 'stufengruppe', 'stufencode', 'datum', 'ort', 'extern', 'schulnummer', 'aufgaben'])
     datasets['teilnehmende_raum'] = df[['tnr', 'nachname', 'vorname', 'geschlecht', 'klasse', 'stufe', 'raum', 'extern']].copy()
+    datasets['korrekturliste_externe'] = df[['tnr', 'nachname', 'vorname', 'schulnummer', 'stufe', 'stufengruppe', 'stufencode', 'aufgaben']].copy()
     datasets['wettbewerbstag'] = df[['datum', 'ort']].copy()
     datasets['korrekturliste'] = df[['tnr', 'nachname', 'vorname', 'klasse', 'stufe', 'stufengruppe', 'stufencode']].copy()
     datasets['kopierliste_externe'] = df[['raum', 'stufe_3', 'stufe_4', 'stufe_5', 'stufe_6', 'gesamt']].copy()
