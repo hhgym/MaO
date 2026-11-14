@@ -15,6 +15,7 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
@@ -35,6 +36,9 @@ ERFAHRUNG_COLUMNS = ("keine_erfahrung", "korrexp", "selbst_teilgenommen")
 GENDERS = {"männlich": "m", "weiblich": "w", "divers": "d", "möchte nicht antworten": "k", "m": "m", "w": "w", "d": "d", "k": "k"}
 UEBERGABE = ("Hertzkind", "Sekretariat", "Post", "Sonstiges")
 DECISIONS_FILE = "korrektoren-entscheidungen.yaml"
+# Kleine TeX-Datei im Jahrgangsordner: Rückgabetermin der Korrekturen (von den Korrekturhinweisen eingelesen).
+TERMIN_FILE = Path("db") / "Korrektoren" / "Rueckgabetermin.tex"
+_TERMIN_RE = re.compile(r"\\DTMdisplaydate\{(\d{4})\}\{(\d{1,2})\}\{(\d{1,2})\}")
 KORREKTOR_COLUMNS = {"titel": "titel", "vorname": "vorname", "nachname": "nachname", "geschlecht": "geschlecht", "email": "email"}
 
 
@@ -705,6 +709,7 @@ class Session:
     rows: list[dict[str, Any]] = field(default_factory=list)
     state: State | None = None
     plan: Plan = field(default_factory=Plan)
+    workspace: Path | None = None
 
     def load_entries(self) -> None:
         entries = list(self.fetch())
@@ -792,7 +797,7 @@ def open_session(db: Any, config_dir: Path, tables: Mapping[str, str], workspace
         def fetch() -> list[Mapping[str, Any]]:
             return fixed
     path = decisions_file or workspace / DECISIONS_FILE
-    session = Session(db, tables, fetch, settings.fields, path, load_decisions(path))
+    session = Session(db, tables, fetch, settings.fields, path, load_decisions(path), workspace=workspace)
     session.load_entries()
     session.reload()
     return session
@@ -864,7 +869,49 @@ MENU = """
   4) Entscheidung eines Eintrags zurücksetzen
   5) Änderungen anzeigen und in die Datenbank schreiben
   6) Formular und Datenbank neu laden
+  7) Rückgabetermin der Korrekturen ({termin})
   q) Beenden"""
+
+
+def read_termin(workspace: Path) -> date | None:
+    """Gespeicherter Rückgabetermin (aus der kleinen TeX-Datei) oder None."""
+    try:
+        text = (workspace / TERMIN_FILE).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    found = _TERMIN_RE.search(text)
+    if not found:
+        return None
+    try:
+        return date(int(found.group(1)), int(found.group(2)), int(found.group(3)))
+    except ValueError:
+        return None
+
+
+def parse_termin(text: str) -> date:
+    """TT.MM.JJJJ oder JJJJ-MM-TT; sonst KorrektorenError."""
+    text = text.strip()
+    for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    raise KorrektorenError("Datum nicht lesbar, bitte TT.MM.JJJJ eingeben")
+
+
+def write_termin(workspace: Path, day: date) -> Path:
+    """Schreibt die TeX-Datei mit \\Rueckgabedatum (liest Korrekturhinweise.tex ein)."""
+    path = workspace / TERMIN_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("% Von \"mao korrektoren\" (Menü 7) erzeugt: Rückgabetermin der Korrekturen.\n"
+                    f"\\newcommand\\Rueckgabedatum{{\\DTMdisplaydate{{{day.year}}}{{{day.month}}}{{{day.day}}}{{-1}}}}\n",
+                    encoding="utf-8")
+    return path
+
+
+def _termin_text(session: Session) -> str:
+    day = read_termin(session.workspace) if session.workspace else None
+    return day.strftime("%d.%m.%Y") if day else "noch nicht festgelegt"
 
 
 def run_menu(session: Session, *, apply: bool, ask: Callable[[str], str] = input,
@@ -872,7 +919,7 @@ def run_menu(session: Session, *, apply: bool, ask: Callable[[str], str] = input
     written_total: dict[str, int] = {}
     while True:
         out("\n" + summary_line(session, apply=apply))
-        out(MENU.format(**session.stats()))
+        out(MENU.format(termin=_termin_text(session), **session.stats()))
         try:
             choice = ask("Auswahl: ").strip().lower()
         except EOFError:
@@ -921,10 +968,17 @@ def run_menu(session: Session, *, apply: bool, ask: Callable[[str], str] = input
                 session.load_entries()
                 session.reload()
                 out("Neu geladen.")
+            elif choice == "7":
+                if session.workspace is None:
+                    raise KorrektorenError("Kein Jahrgangsordner bekannt")
+                answer = ask(f"Rückgabetermin (TT.MM.JJJJ, leer = unverändert; jetzt {_termin_text(session)}): ").strip()
+                if answer:
+                    path = write_termin(session.workspace, parse_termin(answer))
+                    out(f"Rückgabetermin gespeichert: {path.name} (nur diese lokale Datei, keine Datenbankänderung)")
             elif choice in ("q", "quit", "exit"):
                 return written_total
             elif choice:
-                out("Bitte 1 bis 6 oder q eingeben.")
+                out("Bitte 1 bis 7 oder q eingeben.")
         except KorrektorenError as exc:
             out(f"Nicht möglich: {exc}")
 

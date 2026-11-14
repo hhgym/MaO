@@ -398,6 +398,7 @@ Menüpunkte:
 5. **Änderungen anzeigen und schreiben** – zeigt alle Änderungen; geschrieben wird nur mit `--apply` und nach `j`,
    in einer Transaktion mit Zählabgleich.
 6. **Neu laden** – Formular und Datenbank.
+7. **Rückgabetermin der Korrekturen** – speichert das Datum in `db/Korrektoren/Rueckgabetermin.tex` im Jahrgangsordner (nur lokale Datei, keine Datenbankänderung). `Korrekturhinweise.tex` liest die Datei ein; fehlt sie, steht dort ein Hinweis.
 
 Regeln:
 
