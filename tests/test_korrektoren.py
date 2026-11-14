@@ -357,7 +357,7 @@ def test_menu_reset_decision_and_invalid_choice(config_dir):
     (config_dir / k.DECISIONS_FILE).write_text("'1': {korrektor: skip}\n", encoding="utf-8")
     entries = [entry(1, mail="neu@example.org")]
     _, stats, text = menu(config_dir, Cur([KNOWN]), entries, ["9", "4", "1", "4", "2", "q"], apply=False)
-    assert "Bitte 1 bis 6" in text and "zurückgesetzt" in text and "keine Entscheidung" in text
+    assert "Bitte 1 bis 7" in text and "zurückgesetzt" in text and "keine Entscheidung" in text
     assert stats["unklar"] == 1 and k.load_decisions(config_dir / k.DECISIONS_FILE) == {}
 
 
@@ -378,3 +378,13 @@ def test_children_of_unclear_entries_can_already_be_assigned():
     rows = rows_of(entry(1, mail="neu@example.org", **{"29": "Ja", "22": '[{"Name": "Max Müller", "Klasse": "8a"}]'}))
     plan = k.plan_import(rows, state(korrektoren=[KNOWN], students=STUDENTS))
     assert plan.items[0].status == "unklar" and k.plan_stats(plan)["kinder_offen"] == 1
+
+
+def test_menu_stores_return_date_in_small_tex_file(config_dir):
+    entries = [entry(1, mail="neu@example.org")]
+    _, _, text = menu(config_dir, Cur([KNOWN]), entries, ["7", "15.12.2026", "7", "", "7", "morgen", "q"], apply=False)
+    assert "noch nicht festgelegt" in text and "Rückgabetermin gespeichert" in text and "Datum nicht lesbar" in text
+    target = config_dir / k.TERMIN_FILE
+    assert target.read_text(encoding="utf-8").splitlines()[1] == r"\newcommand\Rueckgabedatum{\DTMdisplaydate{2026}{12}{15}{-1}}"
+    assert k.read_termin(config_dir).isoformat() == "2026-12-15" and "15.12.2026" in text
+    assert k.parse_termin("2027-01-05").isoformat() == "2027-01-05" and k.read_termin(config_dir / "x") is None
