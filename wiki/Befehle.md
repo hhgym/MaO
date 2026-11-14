@@ -413,5 +413,22 @@ Regeln:
 - Hertz-Kinder werden nie automatisch angelegt.
 - Zu lange Werte werden nicht gekürzt: Der Eintrag wird übersprungen, die Meldung nennt die zu verlängernde Spalte.
 - Die Entscheidungen stehen in `korrektoren-entscheidungen.yaml` im Workspace, Berichte (`--report`) im Workspace; beide
+
+### mao korrektoren-aufgaben
+
+Weist Aufgaben (Aufgabennummern) den Korrektor:innen zu. Ziel ist `korrektoren_zuordnung_table` (tables.ini; Jahrgang steckt in der
+Aufgabennummer, z. B. 660521 = Jahrgang 66, Klassenstufe 5, Runde 2, Aufgabe 1; Stufe 11/12 = Code 12).
+
+```bash
+mao korrektoren-aufgaben             # Menü, nur ansehen und planen
+mao korrektoren-aufgaben --apply     # Menü, Schreiben nach Rückfrage erlaubt
+mao korrektoren-aufgaben --ohne-menue   # alle Aufgaben mit Kandidaten ausgeben (schreibt nie)
+```
+
+- Je Aufgabe stehen die aktiven Korrektor:innen mit Angebot für diese Klassenstufe: Angebote gesamt, früher übernommen
+  (Jahrgänge), Kind in der Klassenstufe, weitere Aufgaben dieses Jahres und Bemerkung. Zuordnen und Entfernen mit der Nummer,
+  `a` zeigt auch Personen ohne Angebot für die Stufe, `b <Nr> <Text>` setzt die Bemerkung.
+- Hat jemand ein Kind in der Klassenstufe der Aufgabe, fragt das Menü vor dem Zuordnen nach.
+- Geschrieben wird nur mit `--apply` und Bestätigung, in einer Transaktion; Zuordnungen früherer Jahrgänge bleiben unberührt.
   enthalten nur IDs, keine Namen, E-Mail-Adressen oder Anschriften.
 - Ohne Menü (`--ohne-menue --apply`) werden nur die sicheren Fälle und gespeicherte Entscheidungen geschrieben.
