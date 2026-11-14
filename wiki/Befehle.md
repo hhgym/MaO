@@ -429,6 +429,11 @@ mao korrektoren-aufgaben --ohne-menue   # alle Aufgaben mit Kandidaten ausgeben 
   (Jahrgänge), Kind in der Klassenstufe, weitere Aufgaben dieses Jahres und Bemerkung. Zuordnen und Entfernen mit der Nummer,
   `a` zeigt auch Personen ohne Angebot für die Stufe, `b <Nr> <Text>` setzt die Bemerkung.
 - Hat jemand ein Kind in der Klassenstufe der Aufgabe, fragt das Menü vor dem Zuordnen nach.
+- Menüpunkt 1 öffnet die interaktive Tabelle: ↑/↓ wählen, ←/→ Klassenstufe bzw. Aufgabe wechseln, Enter öffnet eine Aufgabe,
+  Leertaste ordnet zu bzw. entfernt, `b` Bemerkung, `a` auch ohne Stufenangebot, `s` zum Schreiben, `q` zurück.
+- Es zählen nur Angebote des aktuellen Jahrgangs; der aktive Jahrgang der Datenbank wird gegen den erwarteten geprüft.
+  Zugeordnete ohne Angebot des aktuellen Jahrgangs sind mit „KEIN Angebot“ markiert.
+- Derselbe Dialog ist in `mao korrektoren` als Menüpunkt 8 erreichbar.
 - Geschrieben wird nur mit `--apply` und Bestätigung, in einer Transaktion; Zuordnungen früherer Jahrgänge bleiben unberührt.
   enthalten nur IDs, keine Namen, E-Mail-Adressen oder Anschriften.
 - Ohne Menü (`--ohne-menue --apply`) werden nur die sicheren Fälle und gespeicherte Entscheidungen geschrieben.
