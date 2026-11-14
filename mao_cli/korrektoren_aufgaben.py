@@ -400,18 +400,76 @@ def grid_screen(work: Work, cursor: int) -> tuple[list[str], int]:
     return lines, 4 + cursor
 
 
-def task_screen(work: Work, nummer: int, cursor: int, alle: bool) -> tuple[list[str], int, int]:
-    """Kandidatentabelle einer Aufgabe; Rückgabe (Zeilen, Cursorzeile, Anzahl Kandidaten)."""
-    table = candidate_lines(work, nummer, alle=alle)
+CELL_WIDTH = 40
+INVERSE, RESET = "\x1b[7m", "\x1b[0m"
+
+
+def terminal_size() -> tuple[int, int]:
+    import shutil
+    size = shutil.get_terminal_size((100, 30))
+    return size.columns, size.lines
+
+
+def _cell(number: int, cand: Candidate) -> str:
+    kind = f"K:{cand.kinder_in_stufe[0]}" if cand.kinder_in_stufe else ""
+    if len(cand.kinder_in_stufe) > 1:
+        kind += "+"
+    flag = "*" if cand.zugeordnet else ("!" if not cand.angebot_aktuell else " ")
+    text = f"{number:>3}{flag} {cand.name[:19]:<19} {cand.angebote:>2}/{cand.uebernommen:<2} {kind:<7}"
+    return text.ljust(CELL_WIDTH)[:CELL_WIDTH]
+
+
+def task_screen(work: Work, nummer: int, row: int, alle: bool,
+                size: tuple[int, int] = (100, 30)) -> tuple[list[str], int, int]:
+    """Kandidatenliste einer Aufgabe, bei Platzmangel in zwei Spalten (spaltenweise) und mit Seiten.
+
+    Rückgabe (Zeilen, Zeile des Cursors oder -1 bei Spaltenansicht (dort invertiert die Zelle selbst), Anzahl Kandidaten)."""
+    columns, height = size
     cands = work.candidates(nummer, alle=alle)
-    lines = ["↑/↓ wählen | Leertaste/Enter zuordnen bzw. entfernen | b Bemerkung | a auch ohne Stufenangebot | "
-             "←/→ andere Aufgabe | q zurück", ""] + table
-    return lines, 4 + cursor, len(cands)
+    count = len(cands)
+    row = min(max(row, 0), max(count - 1, 0))
+    _, stufe, _, aufgabe = split_nummer(nummer)
+    label = "11/12" if stufe == 12 else str(stufe)
+    head = ["↑/↓ wählen | Leertaste/Enter zuordnen/entfernen | b Bemerkung | a auch ohne Stufenangebot | ←/→ Aufgabe | q zurück",
+            f"Aufgabe {nummer} (Klassenstufe {label}, Aufgabe {aufgabe}) – zugeordnet: {len(work.assigned(nummer))}"]
+    per_col = max(5, height - 8)
+    if count <= per_col or columns < 2 * CELL_WIDTH + 2:
+        return candidate_screen_single(work, nummer, cands, row, alle, head, per_col)
+    capacity = 2 * per_col
+    page, pages = row // capacity, (count + capacity - 1) // capacity
+    first = page * capacity
+    head.append(f"Nr Z Name                Ang/Übern  Kind in Stufe   (* zugeordnet, ! kein Angebot {work.state.jahrgang_nr}, "
+                f"K: = Kind){'  Seite %d/%d' % (page + 1, pages) if pages > 1 else ''}")
+    shown = cands[first:first + capacity]
+    rows = min(per_col, len(shown))
+    lines = list(head)
+    for r in range(rows):
+        cells = []
+        for c in range(2):
+            idx = c * per_col + r
+            if idx < len(shown):
+                text = _cell(first + idx + 1, shown[idx])
+                cells.append(f"{INVERSE}{text}{RESET}" if first + idx == row else text)
+        lines.append("  ".join(cells))
+    return lines, -1, count
+
+
+def candidate_screen_single(work: Work, nummer: int, cands: list[Candidate], row: int, alle: bool, head: list[str],
+                            per_col: int) -> tuple[list[str], int, int]:
+    table = candidate_lines(work, nummer, alle=alle)  # Titelzeile, Spaltenkopf, Kandidaten
+    lines = [head[0], ""] + table
+    if len(cands) > per_col:  # sehr schmales Fenster: nur eine Seite zeigen
+        page = row // per_col
+        pages = (len(cands) + per_col - 1) // per_col
+        lines = [head[0], "", table[0] + f"  Seite {page + 1}/{pages}", table[1],
+                 *table[2 + page * per_col:2 + (page + 1) * per_col]]
+        return lines, 4 + row - page * per_col, len(cands)
+    return lines, 4 + row, len(cands)
 
 
 def interactive_table(work: Work, *, key: Callable[[], str] = read_key,
                       draw: Callable[[list[str], int | None], Any] = draw_screen,
-                      ask: Callable[[str], str] = input) -> bool:
+                      ask: Callable[[str], str] = input, size: Callable[[], tuple[int, int]] = terminal_size) -> bool:
     """Tabelle mit Pfeiltasten; True, wenn der Nutzer zum Schreiben (s) wechseln möchte."""
     pos = 0
     while True:
@@ -431,21 +489,21 @@ def interactive_table(work: Work, *, key: Callable[[], str] = read_key,
         elif pressed in ("q", "esc"):
             return False
         elif pressed == "enter":
-            pos = _interactive_task(work, pos, key=key, draw=draw, ask=ask)
+            pos = _interactive_task(work, pos, key=key, draw=draw, ask=ask, size=size)
 
 
 def _interactive_task(work: Work, pos: int, *, key: Callable[[], str], draw: Callable[[list[str], int | None], Any],
-                      ask: Callable[[str], str]) -> int:
+                      ask: Callable[[str], str], size: Callable[[], tuple[int, int]] = terminal_size) -> int:
     row, alle, message = 0, False, ""
     while True:
         stufe, aufgabe = ALL_TASKS[pos]
         nummer = make_nummer(work.state.jahrgang_nr, stufe, aufgabe)
-        lines, cursor_row, count = task_screen(work, nummer, row, alle)
+        lines, cursor_row, count = task_screen(work, nummer, row, alle, size())
         row = min(row, max(count - 1, 0))
         if message:
             lines.append("")
             lines.append(message)
-        draw(lines, cursor_row if count else None)
+        draw(lines, cursor_row if count and cursor_row >= 0 else None)
         message = ""
         pressed = key()
         cands = work.candidates(nummer, alle=alle)

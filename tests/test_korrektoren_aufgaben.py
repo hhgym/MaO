@@ -253,3 +253,35 @@ def test_assigned_without_current_offer_is_flagged(monkeypatch):
     assert cand[1].angebot_aktuell is False and cand[1].angebote == 1
     assert any("KEIN Angebot 66" in x for x in a.candidate_lines(s.work, 660521))
     assert 3 not in cand  # nur frühere Angebote -> kein Kandidat
+
+
+def many(monkeypatch, n=14):
+    mod = sys.modules[__name__]
+    monkeypatch.setattr(mod, "KORR", [(i, None, f"V{i}", f"Name{i:02d}", 1) for i in range(1, n + 1)])
+    monkeypatch.setattr(mod, "PREFS", {i: {"kl_5": 1} for i in range(1, n + 1)})
+    monkeypatch.setattr(mod, "ANGEBOTE", [(7, i) for i in range(1, n + 1)])
+    monkeypatch.setattr(mod, "KINDER", [(3, 1001)])
+
+
+def test_long_list_uses_two_columns_depending_on_terminal_height(monkeypatch):
+    many(monkeypatch)
+    s, _ = session()
+    lines, cursor, count = a.task_screen(s.work, 660521, 0, False, (100, 14))  # 6 Zeilen je Spalte
+    assert count == 14 and cursor == -1
+    body = lines[3:]
+    assert len(body) == 6 and all(len(x.replace(a.INVERSE, "").replace(a.RESET, "")) > a.CELL_WIDTH for x in body)
+    assert a.INVERSE in body[0] and "K:5-1" in "\n".join(body) and "Seite 1/2" in lines[2]
+    lines2, _, _ = a.task_screen(s.work, 660521, 13, False, (100, 14))  # zweite Seite
+    assert "Seite 2/2" in lines2[2] and a.INVERSE in "\n".join(lines2)
+    tall, cursor, _ = a.task_screen(s.work, 660521, 2, False, (100, 40))  # hoch genug: eine Spalte
+    assert cursor == 6 and a.INVERSE not in "\n".join(tall)
+    narrow, cursor, _ = a.task_screen(s.work, 660521, 0, False, (60, 14))  # schmal: eine Spalte mit Seiten
+    assert cursor == 4 and "Seite 1/3" in narrow[2]
+
+
+def test_interactive_cursor_walks_through_columns_and_pages(monkeypatch):
+    many(monkeypatch)
+    s, _ = session()
+    k = keys("enter", *["down"] * 7, "space", "q", "q")  # 8. Kandidat (zweite Spalte)
+    a.interactive_table(s.work, key=k, draw=lambda *_: None, size=lambda: (100, 14))
+    assert s.work.assigned(660521) == [8]
