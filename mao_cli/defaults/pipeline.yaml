@@ -354,6 +354,51 @@ datasets:
       stufe: Int64
       punkte: Int64
 
+  - name: korrektoren_hinweise
+    id: korrektoren_hinweise
+    enabled: true
+    # Korrektor:innen mit zugeordneter Aufgabe der 2. Stufe des aktuellen Jahrgangs (MaO_Korrektoren_Aufgabe_Zuordnung).
+    # mao_nummer = Jahrgang (2 Stellen) + Stufencode (2) + 2 (= 2. Stufe) + Aufgabe (1), z. B. 660521.
+    # anzahl = Zahl der Jahrgänge bis einschließlich dieses mit Korrekturangebot (1 = erstmals);
+    # hertzkinder = aktive Hertz-Kinder (Vorname Nachname (Klasse)), uebergabe aus den Präferenzen (Standard Hertzkind).
+    sql: |
+      SELECT
+      z.mao_nummer AS aufgabe,
+      (z.mao_nummer DIV 100) MOD 100 AS stufe,
+      z.mao_nummer MOD 10 AS aufgabe_nr,
+      k.nachname AS nachname,
+      k.vorname AS vorname,
+      k.geschlecht AS geschlecht,
+      CASE k.geschlecht
+        WHEN 'm' THEN CONCAT('Lieber Herr ', TRIM(CONCAT_WS(' ', k.titel, k.nachname)))
+        WHEN 'w' THEN CONCAT('Liebe Frau ', TRIM(CONCAT_WS(' ', k.titel, k.nachname)))
+        ELSE CONCAT('Guten Tag ', TRIM(CONCAT_WS(' ', k.titel, k.vorname, k.nachname)))
+      END AS anrede,
+      z.bemerkung AS hinweis,
+      (SELECT COUNT(*) FROM {{table.korrektoren_angebote_table}} a
+         JOIN {{table.jahrgaenge_table}} ja ON ja.id = a.mao_jahrgang_id
+        WHERE a.korrektor_id = k.id AND ja.jahrgang_nr <= cj.jahrgang_nr) AS anzahl,
+      COALESCE(pr.uebergabe, 'Hertzkind') AS uebergabe,
+      pr.uebergabe_sonst AS uebergabe_sonst,
+      (SELECT GROUP_CONCAT(CONCAT_WS(' ', s.vorname, s.nachname, CONCAT('(', s.klasse, ')'))
+                           ORDER BY s.nachname, s.vorname SEPARATOR ', ')
+         FROM {{table.korrektoren_angehoerige_table}} h
+         JOIN {{table.students_table}} s ON s.matrikelnummer = h.hertzkind_matrikelnummer
+        WHERE h.korrektor_id = k.id AND h.aktiv = 1) AS hertzkinder
+      FROM {{table.korrektoren_zuordnung_table}} z
+      JOIN {{table.korrektoren_table}} k ON k.id = z.korrektor_id
+      LEFT JOIN {{table.korrektoren_prefs_table}} pr ON pr.korrektor_id = k.id
+      JOIN (SELECT j.jahrgang_nr FROM {{table.jahrgaenge_table}} j
+            JOIN {{table.schuljahre_table}} s2 ON s2.id = j.schuljahr_id
+            WHERE s2.aktiv = 1 ORDER BY j.id DESC LIMIT 1) cj
+        ON z.mao_nummer DIV 10000 = cj.jahrgang_nr
+      WHERE (z.mao_nummer DIV 10) MOD 10 = 2
+    cast:
+      aufgabe: Int64
+      stufe: Int64
+      aufgabe_nr: Int64
+      anzahl: Int64
+
   - name: wettbewerbstag
     id: wettbewerbstag
     enabled: true
@@ -806,6 +851,16 @@ exports:
       sep: ";"
       columns: ["tnr","vorname","nachname","geschlecht","schule","stufe","punkte"]
     sort_by: [stufe, schule, nachname, vorname]
+
+  - name: korrektoren_hinweise
+    id: korrektoren_hinweise
+    enabled: true
+    from_dataset: korrektoren_hinweise
+    output:
+      path: "db/Korrektoren/Korrektoren-Hinweise.csv"
+      sep: ";"
+      columns: ["aufgabe","stufe","aufgabe_nr","nachname","vorname","geschlecht","anrede","hinweis","anzahl","uebergabe","uebergabe_sonst","hertzkinder"]
+    sort_by: [aufgabe, nachname, vorname]
 
   # Wettbewerbstag aus MaO_Runden (Vorlage Aushang): eine Zeile mit datum;ort
   - name: wettbewerbstag
@@ -1576,6 +1631,33 @@ latex:
       jobname: "Urkunden-Externe"
       define_mao: true
       pdf_name: "MaO_{mao}_Urkunden-Externe"
+
+    - name: korrekturhinweise
+      id: korrekturhinweise
+      enabled: false
+      workdir: "Korrekturhinweise"
+      tex: "@tex/Korrekturhinweise/Korrekturhinweise.tex"
+      jobname: "Korrekturhinweise"
+      define_mao: true
+      pdf_name: "MaO_{mao}_Korrekturhinweise"
+
+    - name: korrekturstatus
+      id: korrekturstatus
+      enabled: false
+      workdir: "Korrekturstatus"
+      tex: "@tex/Korrekturstatus/Korrekturstatus.tex"
+      jobname: "Korrekturstatus"
+      define_mao: true
+      pdf_name: "MaO_{mao}_Korrekturstatus"
+
+    - name: korrekturstreifen
+      id: korrekturstreifen
+      enabled: false
+      workdir: "Korrekturstreifen"
+      tex: "@tex/Korrekturstreifen/Korrekturstreifen.tex"
+      jobname: "Korrekturstreifen"
+      define_mao: true
+      pdf_name: "MaO_{mao}_Korrekturstreifen"
 
     - name: unterschriften
       id: unterschriften

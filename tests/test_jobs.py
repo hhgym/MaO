@@ -374,3 +374,32 @@ def test_default_pipeline_urkunden_externe(tmp_path):
     rows = names["Urkunden-Externe/Urkunden-Externe.csv"].decode().splitlines()
     assert rows[0] == "tnr;vorname;nachname;geschlecht;schule;stufe;punkte"
     assert rows[1].startswith("E1;Ana;Alt;w;Schule A;3;") and rows[1].endswith(";") and rows[2].endswith(";4;7")
+
+
+def test_default_pipeline_korrektoren_hinweise(tmp_path):
+    from pathlib import Path
+    import pandas as pd
+    from mao_cli.exports import ExportPlan, run_exports
+    cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
+    ds = next(d for d in cfg["datasets"] if d["name"] == "korrektoren_hinweise")
+    for part in ("{{table.korrektoren_zuordnung_table}}", "z.mao_nummer DIV 10000 = cj.jahrgang_nr",
+                 "(z.mao_nummer DIV 10) MOD 10 = 2", "h.aktiv = 1", "ja.jahrgang_nr <= cj.jahrgang_nr"):
+        assert part in ds["sql"]
+    names = {x["name"]: x for x in cfg["latex"]["jobs"]}
+    for name in ("korrekturhinweise", "korrekturstatus", "korrekturstreifen"):
+        assert names[name]["enabled"] is False
+        assert names[name]["tex"].startswith("@tex/") and names[name]["tex"].endswith(".tex")
+    cfg["exports"] = [e for e in cfg["exports"] if j.export_id(e) == "korrektoren_hinweise"]
+    cols = ["aufgabe", "stufe", "aufgabe_nr", "nachname", "vorname", "geschlecht", "anrede", "hinweis", "anzahl",
+            "uebergabe", "uebergabe_sonst", "hertzkinder"]
+    df = pd.DataFrame([
+        [660522, 5, 2, "Zed", "Bea", "w", "Liebe Frau Zed", None, 2, "Hertzkind", None, "A B (7-1)"],
+        [660521, 5, 1, "Alt", "Ana", "m", "Lieber Herr Alt", "Hinweis", 1, "Post", None, None]], columns=cols)
+    df = df.astype({"aufgabe": "Int64", "stufe": "Int64", "aufgabe_nr": "Int64", "anzahl": "Int64"})
+    plan = ExportPlan(tmp_path)
+    run_exports({"korrektoren_hinweise": df}, cfg, tmp_path, plan)
+    out = {str(n).replace("\\", "/").split("db/")[-1]: c for n, (c, _, _) in plan.outputs.items()}
+    rows = out["Korrektoren/Korrektoren-Hinweise.csv"].decode().splitlines()
+    assert rows[0] == ";".join(cols)
+    assert rows[1].startswith("660521;5;1;Alt;Ana;m;Lieber Herr Alt;Hinweis;1;Post;;")
+    assert rows[2].startswith("660522;")
