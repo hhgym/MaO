@@ -868,7 +868,7 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                 db_mao = current_MaO_number_db(db, tables)
                 if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
                     raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
-                run_korrektoren_aufgaben(db, tables, apply=args.apply, menu=use_menu)
+                run_korrektoren_aufgaben(db, tables, apply=args.apply, menu=use_menu, expected_nr=db_mao or selection.mao_number)
             return 0
         if args.command == "raumzuteilung":
             if selection.year is None or selection.year != settings["current_year"]:
