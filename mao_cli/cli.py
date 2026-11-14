@@ -34,6 +34,7 @@ from .aufsichten_tui import tui_supervision
 from .einsatz import DEFAULT_FORM_ID, PLAN_FILE as EINSATZ_PLAN_FILE, Settings as EinsatzSettings, run_einsatz
 from .extern import ExternError, assign_extern_rooms, import_extern
 from .korrektoren import KorrektorenError, run_korrektoren
+from .korrektoren_aufgaben import run_korrektoren_aufgaben
 from .gf_import import import_participants, ImportErrorGF, write_import_report
 from .schools import DEFAULT_URL as DEFAULT_SCHOOLS_URL, SchoolError, read_file, sync_schools
 from .rooms import (RoomError, assign_rooms, create_year_rules, interactive_assign, load_room_rules,
@@ -274,6 +275,14 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     korr.add_argument("--ohne-menue", action="store_true",
                       help="Kein Menü: nur berichten bzw. mit --apply die sicheren Fälle und gespeicherten Entscheidungen schreiben")
     korr.add_argument("--report", type=Path, metavar="DATEI.json", help="Bericht (nur IDs) im Workspace speichern")
+
+    korr_tasks = commands.add_parser("korrektoren-aufgaben",
+                                     help="Aufgaben (Aufgabennummern) an Korrektor:innen zuordnen: Kandidaten, Angebote, Kinder in der Stufe")
+    common(korr_tasks)
+    korr_tasks_mode = korr_tasks.add_mutually_exclusive_group()
+    korr_tasks_mode.add_argument("--apply", action="store_true", help="Schreiben erlauben (im Menü mit Rückfrage)")
+    korr_tasks_mode.add_argument("--dry-run", action="store_true", help="Nur ansehen und planen, nichts schreiben (Standard)")
+    korr_tasks.add_argument("--ohne-menue", action="store_true", help="Kein Menü: alle Aufgaben mit Kandidaten ausgeben (schreibt nie)")
 
     schools = commands.add_parser("schulen-sync", help="Schulverzeichnis Berlin in die Schulen-Tabelle übernehmen")
     common(schools)
@@ -844,6 +853,22 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                 LOGGER.info("Bericht Korrektoren: %s", write_import_report(workspace, config_dir, args.report, korr_report))
             if not args.apply and not use_menu:
                 LOGGER.info("DRY-RUN: nichts geschrieben. Prüfen und zuordnen im Menü: mao korrektoren (schreiben mit --apply)")
+            return 0
+        if args.command == "korrektoren-aufgaben":
+            if selection.year is None or selection.year != settings["current_year"]:
+                raise ConfigurationError("korrektoren-aufgaben nur für den aktuell registrierten Jahrgang zulässig")
+            use_menu = not args.ohne_menue
+            if use_menu and not sys.stdin.isatty():
+                raise ConfigurationError("Das Menü braucht ein Terminal; ohne Terminal mit --ohne-menue aufrufen")
+            tables = load_tables(resolve_config_file(config_dir, "tables.ini"))
+            db_config = load_db_config(config_dir)
+            if not can_reach(db_config.host, db_config.port, timeout=3):
+                raise ConnectionError("Datenbank für die Aufgabenzuweisung nicht erreichbar")
+            with DB(db_config) as db:
+                db_mao = current_MaO_number_db(db, tables)
+                if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
+                    raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
+                run_korrektoren_aufgaben(db, tables, apply=args.apply, menu=use_menu)
             return 0
         if args.command == "raumzuteilung":
             if selection.year is None or selection.year != settings["current_year"]:
