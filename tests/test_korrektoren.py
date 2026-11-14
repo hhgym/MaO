@@ -357,7 +357,7 @@ def test_menu_reset_decision_and_invalid_choice(config_dir):
     (config_dir / k.DECISIONS_FILE).write_text("'1': {korrektor: skip}\n", encoding="utf-8")
     entries = [entry(1, mail="neu@example.org")]
     _, stats, text = menu(config_dir, Cur([KNOWN]), entries, ["9", "4", "1", "4", "2", "q"], apply=False)
-    assert "Bitte 1 bis 7" in text and "zurückgesetzt" in text and "keine Entscheidung" in text
+    assert "Bitte 1 bis 8" in text and "zurückgesetzt" in text and "keine Entscheidung" in text
     assert stats["unklar"] == 1 and k.load_decisions(config_dir / k.DECISIONS_FILE) == {}
 
 
@@ -388,3 +388,9 @@ def test_menu_stores_return_date_in_small_tex_file(config_dir):
     assert target.read_text(encoding="utf-8").splitlines()[1] == r"\newcommand\Rueckgabedatum{\DTMdisplaydate{2026}{12}{15}{-1}}"
     assert k.read_termin(config_dir).isoformat() == "2026-12-15" and "15.12.2026" in text
     assert k.parse_termin("2027-01-05").isoformat() == "2027-01-05" and k.read_termin(config_dir / "x") is None
+
+
+def test_menu_item_8_needs_zuordnung_table_and_reports_it(config_dir):
+    entries = [entry(1, mail="neu@example.org")]
+    _, _, text = menu(config_dir, Cur([KNOWN]), entries, ["8", "q"], apply=False)
+    assert "korrektoren_zuordnung_table" in text

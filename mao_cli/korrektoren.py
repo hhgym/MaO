@@ -870,6 +870,7 @@ MENU = """
   5) Änderungen anzeigen und in die Datenbank schreiben
   6) Formular und Datenbank neu laden
   7) Rückgabetermin der Korrekturen ({termin})
+  8) Aufgaben zuweisen (interaktive Tabelle)
   q) Beenden"""
 
 
@@ -975,10 +976,17 @@ def run_menu(session: Session, *, apply: bool, ask: Callable[[str], str] = input
                 if answer:
                     path = write_termin(session.workspace, parse_termin(answer))
                     out(f"Rückgabetermin gespeichert: {path.name} (nur diese lokale Datei, keine Datenbankänderung)")
+            elif choice == "8":
+                from .korrektoren_aufgaben import AufgabenSession
+                from .korrektoren_aufgaben import run_menu as run_tasks_menu
+                assert session.state is not None
+                tasks = AufgabenSession(session.db, session.tables, session.state.jahrgang_nr)
+                for name, value in run_tasks_menu(tasks, apply=apply, ask=ask, out=out).items():
+                    written_total[f"aufgaben_{name}"] = written_total.get(f"aufgaben_{name}", 0) + value
             elif choice in ("q", "quit", "exit"):
                 return written_total
             elif choice:
-                out("Bitte 1 bis 7 oder q eingeben.")
+                out("Bitte 1 bis 8 oder q eingeben.")
         except KorrektorenError as exc:
             out(f"Nicht möglich: {exc}")
 

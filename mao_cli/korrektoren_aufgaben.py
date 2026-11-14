@@ -124,6 +124,7 @@ class Candidate:
     bemerkung: str
     andere_aufgaben: list[int]
     bietet_stufe_an: bool
+    angebot_aktuell: bool = True
 
 
 class Work:
@@ -159,7 +160,7 @@ class Work:
                 korrektor_id, display_name(info), len(state.angebote.get(korrektor_id, set())), self.uebernommen(korrektor_id),
                 [kl for kl in state.kinder.get(korrektor_id, []) if kind_matches(stufe, kl)], assigned,
                 self.want.get((korrektor_id, nummer)) or "",
-                sorted(n for (kid, n) in self.want if kid == korrektor_id and n != nummer), bietet))
+                sorted(n for (kid, n) in self.want if kid == korrektor_id and n != nummer), bietet, offers))
         result.sort(key=lambda c: (not c.zugeordnet, state.korrektoren[c.korrektor_id]["nachname"].casefold(),
                                    state.korrektoren[c.korrektor_id]["vorname"].casefold()))
         return result
@@ -225,6 +226,8 @@ def candidate_lines(work: Work, nummer: int, *, alle: bool = False) -> list[str]
         other = ", ".join(str(n) for n in cand.andere_aufgaben) or "-"
         kind = ", ".join(cand.kinder_in_stufe) if cand.kinder_in_stufe else "-"
         extra = "" if cand.bietet_stufe_an else "  (Stufe nicht angeboten)"
+        if not cand.angebot_aktuell:
+            extra += f"  (KEIN Angebot {year})"
         lines.append(f"{number:>3}  {'*' if cand.zugeordnet else ' '}  {cand.name[:34]:<34}{cand.angebote:>9}{cand.uebernommen:>12}  "
                      f"{kind:<13}  {other:<21}  {cand.bemerkung}{extra}")
     if not cands:
@@ -246,9 +249,10 @@ def change_lines(work: Work) -> list[str]:
 # ------------------------------------------------------------------ Schreiben
 
 class AufgabenSession:
-    def __init__(self, db: Any, tables: Mapping[str, str]):
+    def __init__(self, db: Any, tables: Mapping[str, str], expected_nr: int | None = None):
         self.db = db
         self.tables = tables
+        self.expected_nr = expected_nr
         self.work: Work = None  # type: ignore[assignment]
         self.reload()
 
@@ -257,9 +261,13 @@ class AufgabenSession:
             raise KorrektorenError("Keine Datenbankverbindung")
         cur = self.db.conn.cursor()
         try:
-            self.work = Work(load_zstate(cur, self.tables))
+            state = load_zstate(cur, self.tables)
         finally:
             cur.close()
+        if self.expected_nr is not None and state.jahrgang_nr != self.expected_nr:
+            raise KorrektorenError(f"Aktiver Jahrgang der Datenbank ({state.jahrgang_nr}) passt nicht zum erwarteten ({self.expected_nr}); "
+                                   "Angebote werden nicht verwendet")
+        self.work = Work(state)
 
     def write(self) -> dict[str, int]:
         """Änderungen in einer Transaktion schreiben, danach neu laden."""
@@ -323,14 +331,153 @@ class AufgabenSession:
 # ------------------------------------------------------------------ Menü
 
 MENU = """
-  1) Übersicht der Aufgaben
-  2) Aufgabe bearbeiten: Korrektor:innen ansehen und zuordnen ({pending} offene Änderungen)
-  3) Änderungen anzeigen und in die Datenbank schreiben
-  4) Änderungen verwerfen und neu laden
+  1) Interaktive Tabelle (Pfeiltasten)
+  2) Übersicht der Aufgaben (Text)
+  3) Aufgabe bearbeiten per Eingabe ({pending} offene Änderungen)
+  4) Änderungen anzeigen und in die Datenbank schreiben
+  5) Änderungen verwerfen und neu laden
   q) Beenden"""
 
 EDIT_HELP = ("  Nummern (z. B. 1 3) = zuordnen bzw. entfernen | a = auch ohne Angebot für diese Stufe zeigen | "
              "b 2 Text = Bemerkung | Enter = zurück")
+
+
+# ------------------------------------------------------------------ Interaktive Tabelle (Pfeiltasten)
+
+def read_key() -> str:
+    """Eine Taste lesen: up, down, left, right, enter, space, esc oder das Zeichen selbst."""
+    import os
+    if os.name == "nt":  # pragma: no cover - Windows
+        import msvcrt
+        char = msvcrt.getwch()  # type: ignore[attr-defined,unused-ignore]
+        if char in ("\x00", "\xe0"):
+            code = msvcrt.getwch()  # type: ignore[attr-defined,unused-ignore]
+            return {"H": "up", "P": "down", "K": "left", "M": "right"}.get(code, "")
+        return {"\r": "enter", " ": "space", "\x1b": "esc", "\x03": "esc"}.get(char, char)
+    import sys
+    import termios
+    import tty
+    fd = sys.stdin.fileno()  # pragma: no cover - Terminal
+    old = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        char = sys.stdin.read(1)
+        if char == "\x1b":
+            import select
+            if select.select([sys.stdin], [], [], 0.05)[0]:
+                rest = sys.stdin.read(2)
+                return {"[A": "up", "[B": "down", "[D": "left", "[C": "right"}.get(rest, "")
+            return "esc"
+        return {"\r": "enter", "\n": "enter", " ": "space", "\x03": "esc"}.get(char, char)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+
+def draw_screen(lines: list[str], cursor: int | None = None) -> None:  # pragma: no cover - Terminal
+    """Bildschirm löschen und Zeilen ausgeben; die Zeile `cursor` invertiert."""
+    import os
+    if os.name == "nt":
+        os.system("")  # ANSI-Sequenzen in der Windows-Konsole aktivieren
+    text = "\n".join(f"\x1b[7m{x}\x1b[0m" if i == cursor else x for i, x in enumerate(lines))
+    print("\x1b[2J\x1b[H" + text, flush=True)
+
+
+ALL_TASKS = [(stufe, aufgabe) for stufe in STUFEN for aufgabe in AUFGABEN]
+
+
+def grid_screen(work: Work, cursor: int) -> tuple[list[str], int]:
+    """Übersichtstabelle aller Aufgaben; Rückgabe (Zeilen, Index der Cursorzeile)."""
+    state = work.state
+    lines = [f"Aufgabenzuweisung Jahrgang {state.jahrgang_nr}  ({work.pending()} offene Änderungen)",
+             "↑/↓ Aufgabe | ←/→ Klassenstufe | Enter öffnen | s Schreiben/Änderungen | q zurück", "",
+             "  Aufgabe  Stufe  Angebote  Zugeordnet"]
+    for index, (stufe, aufgabe) in enumerate(ALL_TASKS):
+        nummer = make_nummer(state.jahrgang_nr, stufe, aufgabe)
+        offers = len([c for c in work.candidates(nummer) if c.bietet_stufe_an])
+        names = ", ".join(_short(state.korrektoren[k]) for k in sorted(work.assigned(nummer)))
+        label = "11/12" if stufe == 12 else str(stufe)
+        lines.append(f"  {nummer}  {label:>5}  {offers:>8}  {names or '-'}")
+    return lines, 4 + cursor
+
+
+def task_screen(work: Work, nummer: int, cursor: int, alle: bool) -> tuple[list[str], int, int]:
+    """Kandidatentabelle einer Aufgabe; Rückgabe (Zeilen, Cursorzeile, Anzahl Kandidaten)."""
+    table = candidate_lines(work, nummer, alle=alle)
+    cands = work.candidates(nummer, alle=alle)
+    lines = ["↑/↓ wählen | Leertaste/Enter zuordnen bzw. entfernen | b Bemerkung | a auch ohne Stufenangebot | "
+             "←/→ andere Aufgabe | q zurück", ""] + table
+    return lines, 4 + cursor, len(cands)
+
+
+def interactive_table(work: Work, *, key: Callable[[], str] = read_key,
+                      draw: Callable[[list[str], int | None], Any] = draw_screen,
+                      ask: Callable[[str], str] = input) -> bool:
+    """Tabelle mit Pfeiltasten; True, wenn der Nutzer zum Schreiben (s) wechseln möchte."""
+    pos = 0
+    while True:
+        lines, row = grid_screen(work, pos)
+        draw(lines, row)
+        pressed = key()
+        if pressed == "up":
+            pos = (pos - 1) % len(ALL_TASKS)
+        elif pressed == "down":
+            pos = (pos + 1) % len(ALL_TASKS)
+        elif pressed == "left":
+            pos = max(0, (pos // 4 - 1) * 4)
+        elif pressed == "right":
+            pos = min(len(ALL_TASKS) - 4, (pos // 4 + 1) * 4)
+        elif pressed == "s":
+            return True
+        elif pressed in ("q", "esc"):
+            return False
+        elif pressed == "enter":
+            pos = _interactive_task(work, pos, key=key, draw=draw, ask=ask)
+
+
+def _interactive_task(work: Work, pos: int, *, key: Callable[[], str], draw: Callable[[list[str], int | None], Any],
+                      ask: Callable[[str], str]) -> int:
+    row, alle, message = 0, False, ""
+    while True:
+        stufe, aufgabe = ALL_TASKS[pos]
+        nummer = make_nummer(work.state.jahrgang_nr, stufe, aufgabe)
+        lines, cursor_row, count = task_screen(work, nummer, row, alle)
+        row = min(row, max(count - 1, 0))
+        if message:
+            lines.append("")
+            lines.append(message)
+        draw(lines, cursor_row if count else None)
+        message = ""
+        pressed = key()
+        cands = work.candidates(nummer, alle=alle)
+        if pressed == "up" and count:
+            row = (row - 1) % count
+        elif pressed == "down" and count:
+            row = (row + 1) % count
+        elif pressed in ("left", "right"):
+            pos = (pos + (1 if pressed == "right" else -1)) % len(ALL_TASKS)
+            row = 0
+        elif pressed == "a":
+            alle = not alle
+            row = 0
+        elif pressed in ("q", "esc"):
+            return pos
+        elif pressed in ("space", "enter") and count:
+            cand = cands[row]
+            if cand.zugeordnet:
+                work.set(cand.korrektor_id, nummer, False)
+            elif cand.kinder_in_stufe:
+                label = "11/12" if stufe == 12 else str(stufe)
+                draw(lines + ["", f"{cand.name} hat ein Kind in Klassenstufe {label} ({', '.join(cand.kinder_in_stufe)}). "
+                                  "Trotzdem zuordnen? [j/N]"], None)
+                if key().lower() in ("j", "y"):
+                    work.set(cand.korrektor_id, nummer, True)
+            else:
+                work.set(cand.korrektor_id, nummer, True)
+        elif pressed == "b" and count:
+            try:
+                work.set_remark(cands[row].korrektor_id, nummer, ask("Bemerkung (leer = löschen): "))
+            except KorrektorenError as exc:
+                message = f"Nicht möglich: {exc}"
 
 
 def edit_task(work: Work, nummer: int, *, ask: Callable[[str], str], out: Callable[[str], Any]) -> None:
@@ -374,23 +521,30 @@ def edit_task(work: Work, nummer: int, *, ask: Callable[[str], str], out: Callab
 
 
 def run_menu(session: AufgabenSession, *, apply: bool, ask: Callable[[str], str] = input,
-             out: Callable[[str], Any] = print) -> dict[str, int]:
+             out: Callable[[str], Any] = print, key: Callable[[], str] = read_key,
+             draw: Callable[[list[str], int | None], Any] = draw_screen) -> dict[str, int]:
     written_total: dict[str, int] = {}
+    want_write = False
     while True:
         work = session.work
-        out(MENU.format(pending=work.pending()))
-        try:
-            choice = ask("Auswahl: ").strip().lower()
-        except EOFError:
-            choice = "q"
+        if want_write:
+            choice, want_write = "4", False
+        else:
+            out(MENU.format(pending=work.pending()))
+            try:
+                choice = ask("Auswahl: ").strip().lower()
+            except EOFError:
+                choice = "q"
         try:
             if choice == "1":
+                want_write = interactive_table(work, key=key, draw=draw, ask=ask)
+            elif choice == "2":
                 for line in overview_lines(work):
                     out(line)
-            elif choice == "2":
+            elif choice == "3":
                 nummer = parse_nummer(ask("Aufgabe (660521, 0521 oder 5-1): "), work.state.jahrgang_nr)
                 edit_task(work, nummer, ask=ask, out=out)
-            elif choice == "3":
+            elif choice == "4":
                 lines = change_lines(work)
                 if not lines:
                     out("Nichts zu schreiben.")
@@ -402,10 +556,10 @@ def run_menu(session: AufgabenSession, *, apply: bool, ask: Callable[[str], str]
                         "(die Änderungen gehen beim Beenden verloren)")
                 elif ask("In die Datenbank schreiben? [j/N] ").strip().lower() in ("j", "ja"):
                     written = session.write()
-                    for key, value in written.items():
-                        written_total[key] = written_total.get(key, 0) + value
+                    for name, value in written.items():
+                        written_total[name] = written_total.get(name, 0) + value
                     out("Geschrieben: " + ", ".join(f"{k} {v}" for k, v in written.items()))
-            elif choice == "4":
+            elif choice == "5":
                 session.reload()
                 out("Änderungen verworfen, neu geladen.")
             elif choice in ("q", "quit", "exit"):
@@ -413,17 +567,18 @@ def run_menu(session: AufgabenSession, *, apply: bool, ask: Callable[[str], str]
                     out(f"Hinweis: {work.pending()} Änderungen sind nicht geschrieben und gehen verloren.")
                 return written_total
             elif choice:
-                out("Bitte 1 bis 4 oder q eingeben.")
+                out("Bitte 1 bis 5 oder q eingeben.")
         except KorrektorenError as exc:
             out(f"Nicht möglich: {exc}")
 
 
 def run_korrektoren_aufgaben(db: Any, tables: Mapping[str, str], *, apply: bool, menu: bool = True,
-                             ask: Callable[[str], str] = input, out: Callable[[str], Any] = print) -> dict[str, int]:
+                             expected_nr: int | None = None, ask: Callable[[str], str] = input,
+                             out: Callable[[str], Any] = print, **menu_kw: Any) -> dict[str, int]:
     """Menü (Standard) oder ohne Menü: nur Übersicht mit Kandidaten je Aufgabe ausgeben (schreibt nie)."""
-    session = AufgabenSession(db, tables)
+    session = AufgabenSession(db, tables, expected_nr)
     if menu:
-        return run_menu(session, apply=apply, ask=ask, out=out)
+        return run_menu(session, apply=apply, ask=ask, out=out, **menu_kw)
     for line in overview_lines(session.work):
         out(line)
     for stufe in STUFEN:
