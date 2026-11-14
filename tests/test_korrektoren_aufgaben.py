@@ -285,3 +285,22 @@ def test_interactive_cursor_walks_through_columns_and_pages(monkeypatch):
     k = keys("enter", *["down"] * 7, "space", "q", "q")  # 8. Kandidat (zweite Spalte)
     a.interactive_table(s.work, key=k, draw=lambda *_: None, size=lambda: (100, 14))
     assert s.work.assigned(660521) == [8]
+
+
+def test_kind_filter_toggle_hides_but_keeps_assigned_and_confirmation(monkeypatch):
+    many(monkeypatch)
+    s, _ = session()
+    assert len(s.work.candidates(660521)) == 14
+    shown = s.work.candidates(660521, ohne_kinder=True)
+    assert len(shown) == 13 and 3 not in {c.korrektor_id for c in shown}
+    s.work.set(3, 660521, True)  # Zugeordnete mit Kind bleiben sichtbar
+    assert 3 in {c.korrektor_id for c in s.work.candidates(660521, ohne_kinder=True)}
+    s.work.set(3, 660521, False)
+    lines, _, count = a.task_screen(s.work, 660521, 0, False, (100, 40), ohne_kinder=True)
+    assert count == 13 and any("1 mit Kind in der Stufe ausgeblendet" in x for x in lines)
+    # Taste k blendet aus; Nachfrage bleibt, wenn wieder eingeblendet
+    prompts: list[list[str]] = []
+    k = keys("enter", "k", "k", "down", "down", "space", "j", "q", "q")  # dritter Kandidat = Korrektor 3 (Kind)
+    a.interactive_table(s.work, key=k, draw=lambda lines, row: prompts.append(lines), size=lambda: (100, 40))
+    assert s.work.assigned(660521) == [3]
+    assert any("Trotzdem zuordnen" in x for lines in prompts for x in lines)
