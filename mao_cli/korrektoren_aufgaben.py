@@ -6,10 +6,15 @@ Es werden nur Zuordnungen des aktuellen Jahrgangs angezeigt und geändert; früh
 """
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Mapping
+
+import yaml
 
 from .korrektoren import KorrektorenError, _ident, column_limits
 
@@ -21,6 +26,7 @@ RUNDE = 2
 TABLE_KEYS = ("korrektoren_table", "korrektoren_prefs_table", "korrektoren_angebote_table", "korrektoren_angehoerige_table",
               "korrektoren_zuordnung_table", "students_table")
 DEFAULT_REMARK_LIMIT = 20
+PLAN_FILE = "korrektoren-aufgaben-plan.yaml"
 
 
 def make_nummer(jahrgang_nr: int, stufe: int, aufgabe: int) -> int:
@@ -263,6 +269,105 @@ def change_lines(work: Work) -> list[str]:
     return lines
 
 
+# ------------------------------------------------------------------ Entwurf (korrektoren-aufgaben-plan.yaml)
+
+def plan_text(work: Work, name: str = PLAN_FILE) -> str:
+    """Zwischenstand als YAML: nur Korrektor-IDs und Bemerkungen (keine Namen, keine Kontaktdaten)."""
+    lines = [f"# {name}: Zwischenstand der Aufgabenzuweisung (nur IDs). Weiterbearbeiten mit: mao korrektoren-aufgaben",
+             "# Der Entwurf ersetzt beim Laden den Stand der Datenbank für den aktuellen Jahrgang; geschrieben wird erst mit --apply.",
+             f"jahrgang: {work.state.jahrgang_nr}", "zuordnungen:"]
+    by_task: dict[int, list[tuple[int, str | None]]] = {}
+    for (kid, nummer), remark in sorted(work.want.items(), key=lambda x: (x[0][1], x[0][0])):
+        by_task.setdefault(nummer, []).append((kid, remark))
+    if not by_task:
+        lines[-1] += " {}"
+    for nummer, members in by_task.items():
+        lines.append(f'  "{nummer}":')
+        for kid, remark in members:
+            lines.append(f"    - {{korrektor: {kid}" + (f", bemerkung: {json.dumps(remark, ensure_ascii=False)}" if remark else "") + "}")
+    return "\n".join(lines) + "\n"
+
+
+def parse_plan(text: str, work: Work) -> dict[tuple[int, int], str | None]:
+    try:
+        data = yaml.safe_load(text)
+    except yaml.YAMLError as exc:
+        raise KorrektorenError(f"Entwurf unlesbar: {exc}") from exc
+    if not isinstance(data, dict):
+        raise KorrektorenError("Entwurf: Zuordnung erwartet")
+    state = work.state
+    if data.get("jahrgang") != state.jahrgang_nr:
+        raise KorrektorenError(f"Entwurf gehört zu Jahrgang {data.get('jahrgang')}, aktuell ist {state.jahrgang_nr}")
+    result: dict[tuple[int, int], str | None] = {}
+    for raw_number, members in (data.get("zuordnungen") or {}).items():
+        try:
+            nummer = parse_nummer(str(raw_number), state.jahrgang_nr)
+        except KorrektorenError as exc:
+            raise KorrektorenError(f"Entwurf: Aufgabe {raw_number}: {exc}") from exc
+        if not isinstance(members, list):
+            raise KorrektorenError(f"Entwurf: Aufgabe {nummer} muss eine Liste sein")
+        for member in members:
+            if not isinstance(member, dict) or not isinstance(member.get("korrektor"), int):
+                raise KorrektorenError(f"Entwurf: Aufgabe {nummer}: Einträge brauchen `korrektor: <ID>`")
+            kid = member["korrektor"]
+            if kid not in state.korrektoren:
+                raise KorrektorenError(f"Entwurf: Korrektor-ID {kid} gibt es nicht (Aufgabe {nummer})")
+            remark = str(member["bemerkung"]).strip() if member.get("bemerkung") is not None else None
+            if remark and len(remark) > state.remark_limit:
+                raise KorrektorenError(f"Entwurf: Bemerkung zu Aufgabe {nummer} zu lang (höchstens {state.remark_limit} Zeichen)")
+            if (kid, nummer) in result:
+                raise KorrektorenError(f"Entwurf: Korrektor-ID {kid} kommt bei Aufgabe {nummer} mehrfach vor")
+            result[(kid, nummer)] = remark or None
+    return result
+
+
+class Draft:
+    def __init__(self, workspace: Path, config_dir: Path | None = None, name: str = PLAN_FILE) -> None:
+        if not name.lower().endswith((".yaml", ".yml")):
+            raise KorrektorenError("Entwurfsdatei braucht die Endung .yaml")
+        base = workspace.resolve()
+        target = (base / name).resolve()
+        if base not in target.parents:
+            raise KorrektorenError("Entwurf muss innerhalb des Workspaces liegen")
+        if config_dir is not None and (target == config_dir.resolve() or config_dir.resolve() in target.parents):
+            raise KorrektorenError("Entwurf darf nicht in der Konfiguration liegen")
+        self.name, self.path = name, target
+        self.last: dict[tuple[int, int], str | None] | None = None  # zuletzt gespeicherter/geladener Stand
+
+    def exists(self) -> bool:
+        return self.path.is_file()
+
+    def save(self, work: Work) -> Path:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        tmp.write_text(plan_text(work, self.name), encoding="utf-8", newline="")
+        os.replace(tmp, self.path)
+        self.last = dict(work.want)
+        return self.path
+
+    def unsaved(self, work: Work) -> bool:
+        """Gibt es Änderungen gegenüber der Datenbank, die noch nicht im Entwurf stehen?"""
+        return bool(work.pending()) and work.want != self.last
+
+    def clear(self) -> bool:
+        try:
+            self.path.unlink()
+            self.last = None
+            return True
+        except FileNotFoundError:
+            return False
+
+    def load_into(self, work: Work) -> str:
+        """Entwurf als Stand übernehmen (ersetzt die gewünschten Zuordnungen des Jahrgangs); '' = keine Datei."""
+        if not self.exists():
+            return ""
+        work.want = parse_plan(self.path.read_text(encoding="utf-8"), work)
+        self.last = dict(work.want)
+        diff = work.diff()
+        return (f"Entwurf {self.name} geladen: {len(work.want)} Zuordnungen, gegenüber der Datenbank "
+                f"{len(diff['neu'])} neu, {len(diff['entfernt'])} entfernt, {len(diff['bemerkung'])} Bemerkungen geändert")
+
+
 # ------------------------------------------------------------------ Schreiben
 
 class AufgabenSession:
@@ -353,6 +458,7 @@ MENU = """
   3) Aufgabe bearbeiten per Eingabe ({pending} offene Änderungen)
   4) Änderungen anzeigen und in die Datenbank schreiben
   5) Änderungen verwerfen und neu laden
+  6) Zwischenstand als Entwurf speichern ({draft})
   q) Beenden"""
 
 EDIT_HELP = ("  Nummern (z. B. 1 3) = zuordnen bzw. entfernen | a = auch ohne Angebot für diese Stufe zeigen | "
@@ -406,7 +512,7 @@ def grid_screen(work: Work, cursor: int) -> tuple[list[str], int]:
     """Übersichtstabelle aller Aufgaben; Rückgabe (Zeilen, Index der Cursorzeile)."""
     state = work.state
     lines = [f"Aufgabenzuweisung Jahrgang {state.jahrgang_nr}  ({work.pending()} offene Änderungen)",
-             "↑/↓ Aufgabe | ←/→ Klassenstufe | Enter öffnen | s Schreiben/Änderungen | q zurück", "",
+             "↑/↓ Aufgabe | ←/→ Klassenstufe | Enter öffnen | w Entwurf speichern | s Schreiben/Änderungen | q zurück", "",
              "  Aufgabe  Stufe  Angebote  Zugeordnet"]
     for index, (stufe, aufgabe) in enumerate(ALL_TASKS):
         nummer = make_nummer(state.jahrgang_nr, stufe, aufgabe)
@@ -454,7 +560,7 @@ def task_screen(work: Work, nummer: int, row: int, alle: bool,
     label = "11/12" if stufe == 12 else str(stufe)
     head = ["↑/↓ wählen | Leertaste/Enter zuordnen/entfernen | b Bemerkung | a auch ohne Stufenangebot | "
             "k Kinder in Stufe aus-/einblenden | v Personen mit anderer Aufgabe aus-/einblenden | n Sortierung | "
-            "←/→ Aufgabe | q zurück",
+            "w Entwurf speichern | ←/→ Aufgabe | q zurück",
             f"Aufgabe {nummer} (Klassenstufe {label}, Aufgabe {aufgabe}) – zugeordnet: {len(work.assigned(nummer))}"
             + f" – sortiert nach {'Vorname' if sortierung == 'vorname' else 'Nachname'}"
             + (f" – {hidden_kinder} mit Kind in der Stufe ausgeblendet (k)" if ohne_kinder else "")
@@ -497,11 +603,15 @@ def candidate_screen_single(work: Work, nummer: int, cands: list[Candidate], row
 
 def interactive_table(work: Work, *, key: Callable[[], str] = read_key,
                       draw: Callable[[list[str], int | None], Any] = draw_screen,
-                      ask: Callable[[str], str] = input, size: Callable[[], tuple[int, int]] = terminal_size) -> bool:
+                      ask: Callable[[str], str] = input, size: Callable[[], tuple[int, int]] = terminal_size,
+                      draft: Draft | None = None) -> bool:
     """Tabelle mit Pfeiltasten; True, wenn der Nutzer zum Schreiben (s) wechseln möchte."""
-    pos = 0
+    pos, status = 0, ""
     while True:
         lines, row = grid_screen(work, pos)
+        if status:
+            lines += ["", status]
+            status = ""
         draw(lines, row)
         pressed = key()
         if pressed == "up":
@@ -514,14 +624,17 @@ def interactive_table(work: Work, *, key: Callable[[], str] = read_key,
             pos = min(len(ALL_TASKS) - 4, (pos // 4 + 1) * 4)
         elif pressed == "s":
             return True
+        elif pressed == "w":
+            status = f"Entwurf gespeichert: {draft.save(work).name}" if draft else "Kein Entwurf-Ziel"
         elif pressed in ("q", "esc"):
             return False
         elif pressed == "enter":
-            pos = _interactive_task(work, pos, key=key, draw=draw, ask=ask, size=size)
+            pos = _interactive_task(work, pos, key=key, draw=draw, ask=ask, size=size, draft=draft)
 
 
 def _interactive_task(work: Work, pos: int, *, key: Callable[[], str], draw: Callable[[list[str], int | None], Any],
-                      ask: Callable[[str], str], size: Callable[[], tuple[int, int]] = terminal_size) -> int:
+                      ask: Callable[[str], str], size: Callable[[], tuple[int, int]] = terminal_size,
+                      draft: Draft | None = None) -> int:
     row, alle, message, ohne_kinder, sortierung, ohne_vergebene = 0, False, "", False, "nachname", True
     while True:
         stufe, aufgabe = ALL_TASKS[pos]
@@ -559,6 +672,8 @@ def _interactive_task(work: Work, pos: int, *, key: Callable[[], str], draw: Cal
                 row = next((i for i, c in enumerate(work.candidates(nummer, alle=alle, ohne_kinder=ohne_kinder, sortierung=sortierung,
                                                                     ohne_vergebene=ohne_vergebene))
                             if c.korrektor_id == current), 0)
+        elif pressed == "w":
+            message = f"Entwurf gespeichert: {draft.save(work).name}" if draft else "Kein Entwurf-Ziel"
         elif pressed in ("q", "esc"):
             return pos
         elif pressed in ("space", "enter") and count:
@@ -622,22 +737,30 @@ def edit_task(work: Work, nummer: int, *, ask: Callable[[str], str], out: Callab
 
 def run_menu(session: AufgabenSession, *, apply: bool, ask: Callable[[str], str] = input,
              out: Callable[[str], Any] = print, key: Callable[[], str] = read_key,
-             draw: Callable[[list[str], int | None], Any] = draw_screen) -> dict[str, int]:
+             draw: Callable[[list[str], int | None], Any] = draw_screen, draft: Draft | None = None,
+             use_draft: bool = True) -> dict[str, int]:
     written_total: dict[str, int] = {}
     want_write = False
+    if draft is not None and use_draft and draft.exists():
+        try:
+            out(draft.load_into(session.work))
+        except KorrektorenError as exc:
+            out(f"Entwurf nicht übernommen ({exc}); Stand der Datenbank. Mit --neu ignorieren, Datei prüfen oder löschen.")
+            session.reload()
     while True:
         work = session.work
         if want_write:
             choice, want_write = "4", False
         else:
-            out(MENU.format(pending=work.pending()))
+            state_text = "gespeichert" if draft is not None and draft.exists() and not draft.unsaved(work) else "noch nicht gespeichert"
+            out(MENU.format(pending=work.pending(), draft=state_text if draft is not None else "kein Ziel"))
             try:
                 choice = ask("Auswahl: ").strip().lower()
             except EOFError:
                 choice = "q"
         try:
             if choice == "1":
-                want_write = interactive_table(work, key=key, draw=draw, ask=ask)
+                want_write = interactive_table(work, key=key, draw=draw, ask=ask, draft=draft)
             elif choice == "2":
                 for line in overview_lines(work):
                     out(line)
@@ -652,33 +775,46 @@ def run_menu(session: AufgabenSession, *, apply: bool, ask: Callable[[str], str]
                 for line in lines:
                     out("  " + line)
                 if not apply:
-                    out("DRY-RUN: nichts geschrieben. Zum Schreiben mit: mao korrektoren-aufgaben --apply "
-                        "(die Änderungen gehen beim Beenden verloren)")
+                    out("DRY-RUN: nichts geschrieben. Zum Schreiben mit: mao korrektoren-aufgaben --apply")
+                    if draft is not None:
+                        out(f"Entwurf gespeichert: {draft.save(work).name} (weiterbearbeiten: erneut starten, bestätigen: --apply)")
                 elif ask("In die Datenbank schreiben? [j/N] ").strip().lower() in ("j", "ja"):
                     written = session.write()
                     for name, value in written.items():
                         written_total[name] = written_total.get(name, 0) + value
                     out("Geschrieben: " + ", ".join(f"{k} {v}" for k, v in written.items()))
+                    if draft is not None and draft.clear():
+                        out("Entwurf gelöscht (Stand ist in der Datenbank).")
             elif choice == "5":
                 session.reload()
                 out("Änderungen verworfen, neu geladen.")
+                if draft is not None and draft.exists() and ask("Auch den gespeicherten Entwurf löschen? [j/N] ").strip().lower() in ("j", "ja"):
+                    draft.clear()
+                    out("Entwurf gelöscht.")
+            elif choice == "6":
+                out(f"Entwurf gespeichert: {draft.save(work).name}" if draft is not None else "Kein Entwurf-Ziel")
             elif choice in ("q", "quit", "exit"):
-                if work.pending() and apply:
+                if draft is not None and draft.unsaved(work):
+                    if ask("Entwurf speichern? [J/n] ").strip().lower() not in ("n", "nein"):
+                        out(f"Entwurf gespeichert: {draft.save(work).name}")
+                elif work.pending() and apply:
                     out(f"Hinweis: {work.pending()} Änderungen sind nicht geschrieben und gehen verloren.")
                 return written_total
             elif choice:
-                out("Bitte 1 bis 5 oder q eingeben.")
+                out("Bitte 1 bis 6 oder q eingeben.")
         except KorrektorenError as exc:
             out(f"Nicht möglich: {exc}")
 
 
 def run_korrektoren_aufgaben(db: Any, tables: Mapping[str, str], *, apply: bool, menu: bool = True,
-                             expected_nr: int | None = None, ask: Callable[[str], str] = input,
+                             expected_nr: int | None = None, workspace: Path | None = None, config_dir: Path | None = None,
+                             neu: bool = False, ask: Callable[[str], str] = input,
                              out: Callable[[str], Any] = print, **menu_kw: Any) -> dict[str, int]:
     """Menü (Standard) oder ohne Menü: nur Übersicht mit Kandidaten je Aufgabe ausgeben (schreibt nie)."""
     session = AufgabenSession(db, tables, expected_nr)
     if menu:
-        return run_menu(session, apply=apply, ask=ask, out=out, **menu_kw)
+        draft = Draft(workspace, config_dir) if workspace is not None else None
+        return run_menu(session, apply=apply, ask=ask, out=out, draft=draft, use_draft=not neu, **menu_kw)
     for line in overview_lines(session.work):
         out(line)
     for stufe in STUFEN:

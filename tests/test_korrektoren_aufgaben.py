@@ -345,3 +345,82 @@ def test_persons_with_other_task_are_hidden_by_default_and_v_shows_them(monkeypa
     # Nach dem Zuordnen in der Aufgabe verschwindet die Person aus anderen Aufgaben-Listen
     s.work.set(3, 660521, True)
     assert 3 not in {c.korrektor_id for c in s.work.candidates(660522, ohne_vergebene=True)}
+
+
+def test_draft_roundtrip_contains_only_ids_and_loads_into_new_session(tmp_path):
+    s, _ = session()
+    s.work.set(1, 660521, True)
+    s.work.set(2, 660522, True)
+    s.work.set_remark(2, 660522, "Überblick")
+    draft = a.Draft(tmp_path)
+    path = draft.save(s.work)
+    text = path.read_text(encoding="utf-8")
+    assert "Adler" not in text and "Bauer" not in text and "Anna" not in text and "@" not in text
+    assert "jahrgang: 66" in text and "korrektor: 1" in text and 'bemerkung: "Überblick"' in text
+    s2, _ = session()
+    note = a.Draft(tmp_path).load_into(s2.work)
+    assert "2 Zuordnungen" in note and "2 neu" in note
+    assert s2.work.want == {(1, 660521): None, (2, 660522): "Überblick"}
+    assert not draft.path.with_name(draft.path.name + ".tmp").exists()
+
+
+def test_invalid_drafts_are_refused(tmp_path):
+    s, _ = session()
+    draft = a.Draft(tmp_path)
+    for bad in ("jahrgang: 65\nzuordnungen: {}\n", 'jahrgang: 66\nzuordnungen:\n  "660521":\n    - {korrektor: 99}\n',
+                'jahrgang: 66\nzuordnungen:\n  "660921x":\n    - {korrektor: 1}\n',
+                'jahrgang: 66\nzuordnungen:\n  "660521":\n    - {korrektor: 1}\n    - {korrektor: 1}\n',
+                'jahrgang: 66\nzuordnungen:\n  "660521":\n    - {korrektor: 1, bemerkung: "' + "x" * 21 + '"}\n', "[1, 2"):
+        draft.path.write_text(bad, encoding="utf-8")
+        with pytest.raises(KorrektorenError):
+            draft.load_into(s.work)
+    with pytest.raises(KorrektorenError):
+        a.Draft(tmp_path, name="../plan.yaml")
+    with pytest.raises(KorrektorenError):
+        a.Draft(tmp_path, name="plan.txt")
+    with pytest.raises(KorrektorenError):
+        a.Draft(tmp_path, tmp_path, "plan.yaml")
+
+
+def test_menu_saves_draft_on_quit_loads_it_next_time_and_apply_clears_it(tmp_path):
+    s, cur = session()
+    draft = a.Draft(tmp_path)
+    answers = iter(["3", "5-1", "1", "", "q", ""])  # zuordnen, beenden, Entwurf speichern (Enter = ja)
+    a.run_menu(s, apply=False, ask=lambda _p: next(answers), out=lambda _x: None, draft=draft)
+    assert draft.exists() and not [q for q, _ in cur.executed if q.startswith(("INSERT", "DELETE", "UPDATE"))]
+    # nächster Start: Entwurf wird geladen; Schreiben mit --apply löscht ihn
+    s2, cur2 = session()
+    out: list[str] = []
+    answers = iter(["4", "j", "q"])
+    written = a.run_menu(s2, apply=True, ask=lambda _p: next(answers), out=out.append, draft=a.Draft(tmp_path))
+    assert any("Entwurf" in x and "geladen" in x for x in out) and written == {"neu": 1, "entfernt": 0, "bemerkung": 0}
+    assert not draft.exists() and [z[1:3] for z in cur2.zu] == [[1, 660521]]
+
+
+def test_dry_run_write_keeps_draft_and_neu_ignores_it(tmp_path):
+    s, _ = session()
+    draft = a.Draft(tmp_path)
+    s.work.set(1, 660521, True)
+    answers = iter(["4", "q"])
+    out: list[str] = []
+    a.run_menu(s, apply=False, ask=lambda _p: next(answers), out=out.append, draft=draft)
+    assert draft.exists() and any("Entwurf gespeichert" in x for x in out)
+    s2, _ = session()
+    a.run_menu(s2, apply=False, ask=lambda _p: "q", out=lambda _x: None, draft=a.Draft(tmp_path), use_draft=False)
+    assert s2.work.want == {}
+    # unlesbarer Entwurf: Meldung, Stand der Datenbank, Menü läuft weiter
+    draft.path.write_text("jahrgang: 1\n", encoding="utf-8")
+    out2: list[str] = []
+    s3, _ = session()
+    a.run_menu(s3, apply=False, ask=lambda _p: "q", out=out2.append, draft=a.Draft(tmp_path))
+    assert any("Entwurf nicht übernommen" in x for x in out2) and s3.work.want == {}
+
+
+def test_w_key_saves_draft_in_interactive_table(tmp_path):
+    s, _ = session()
+    draft = a.Draft(tmp_path)
+    screens: list[list[str]] = []
+    a.interactive_table(s.work, key=keys("enter", "space", "w", "q", "w", "q"), draw=lambda lines, row: screens.append(lines),
+                        size=lambda: (100, 40), draft=draft)
+    assert draft.exists() and "korrektor: 1" in draft.path.read_text(encoding="utf-8")
+    assert any("Entwurf gespeichert" in x for lines in screens for x in lines)

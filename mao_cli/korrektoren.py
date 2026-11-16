@@ -981,7 +981,9 @@ def run_menu(session: Session, *, apply: bool, ask: Callable[[str], str] = input
                 from .korrektoren_aufgaben import run_menu as run_tasks_menu
                 assert session.state is not None
                 tasks = AufgabenSession(session.db, session.tables, session.state.jahrgang_nr)
-                for name, value in run_tasks_menu(tasks, apply=apply, ask=ask, out=out).items():
+                from .korrektoren_aufgaben import Draft as TaskDraft
+                task_draft = TaskDraft(session.workspace) if session.workspace is not None else None
+                for name, value in run_tasks_menu(tasks, apply=apply, ask=ask, out=out, draft=task_draft).items():
                     written_total[f"aufgaben_{name}"] = written_total.get(f"aufgaben_{name}", 0) + value
             elif choice in ("q", "quit", "exit"):
                 return written_total
