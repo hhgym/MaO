@@ -424,3 +424,37 @@ def test_w_key_saves_draft_in_interactive_table(tmp_path):
                         size=lambda: (100, 40), draft=draft)
     assert draft.exists() and "korrektor: 1" in draft.path.read_text(encoding="utf-8")
     assert any("Entwurf gespeichert" in x for lines in screens for x in lines)
+
+
+def test_takeover_overview_counts_earlier_years_and_includes_planned_changes():
+    s, _ = session(Cur([(1, 1, 650521, None), (2, 1, 640721, None), (3, 1, 660521, None), (4, 3, 660722, None)]))
+    s.work.set(2, 660721, True)  # geplant, noch nicht in der Datenbank
+    lines = a.takeover_lines(s.work)
+    text = "\n".join(lines)
+    adler = next(x for x in lines if x.startswith("Adler, Anna"))
+    assert "660521" in adler and adler.split()[-3:] == ["2", "3", "3"]  # früher 2 (65, 64), gesamt 3, Angebote 3
+    bauer = next(x for x in lines if x.startswith("Bauer, Bernd"))
+    assert "660721" in bauer and bauer.split()[-3:] == ["0", "1", "1"]
+    assert "Claus, Cora" in text and "davon erstmals: 2" in lines[-1] and "3 Korrektor:innen" in lines[-1]
+    assert "Vorname" not in text
+    by_first = a.takeover_lines(s.work, "vorname")
+    assert by_first[2].startswith("Anna Adler") and by_first[3].startswith("Bernd Bauer")
+    assert "Noch keine" in a.takeover_lines(session()[0].work)[-1]
+
+
+def test_takeover_overview_in_menu_grid_and_without_menu():
+    s, _ = session(Cur([(1, 1, 660521, None)]))
+    out: list[str] = []
+    a.run_menu(s, apply=False, ask=keys_ask("7", "q"), out=out.append)
+    assert any("Adler, Anna" in x for x in out)
+    shown: list[list[str]] = []
+    a.interactive_table(s.work, key=keys("u", "x", "q"), draw=lambda lines, row: shown.append(lines), size=lambda: (100, 40))
+    assert any(x.startswith("Übernommene Korrekturen") for lines in shown for x in lines)
+    out2: list[str] = []
+    a.run_korrektoren_aufgaben(SimpleNamespace(conn=Conn(Cur([(1, 1, 660521, None)]))), TABLES, apply=False, menu=False, out=out2.append)
+    assert any(x.startswith("Übernommene Korrekturen") for x in out2)
+
+
+def keys_ask(*answers):
+    it = iter(answers)
+    return lambda _p: next(it)
