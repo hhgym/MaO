@@ -57,7 +57,7 @@ def template_dir(tex_dir: Path) -> Path:
 
 def ensure_templates(tex_dir: Path | None) -> list[str]:
     """Fehlende Vorlagen mit den Standardtexten anlegen; Rückgabe: neu angelegte Dateinamen. Ohne Vorlagenordner nichts."""
-    created = []
+    created: list[str] = []
     if tex_dir is None:
         return created
     folder = template_dir(tex_dir)
@@ -106,7 +106,7 @@ def write_mails(workspace: Path, angebote: int, aufgaben: int, termin: date | No
                 confirm_overwrite: Callable[[str], bool] = lambda _name: False,
                 templates: dict[str, str] | None = None) -> tuple[list[str], list[str]]:
     """Texte im Jahrgangsordner anlegen; vorhandene nur nach Bestätigung überschreiben. Rückgabe: (geschriebene Dateien, unbekannte Platzhalter)."""
-    written = []
+    written: list[str] = []
     texts, unknown = render_mails(angebote, aufgaben, termin, templates)
     for name, text in texts.items():
         target = workspace / name
