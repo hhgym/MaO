@@ -45,7 +45,7 @@
 # -----------------------------------------------------------------------------
 # # Einstellungen, die in Abfragen als {{param.<name>}} eingesetzt werden (nur ganze Zahlen oder Listen ganzer Zahlen).
 params:
-  # Korrekturhinweise: Bei welcher Zahl von Korrekturangeboten (anzahl: 1 = erstmals, 2 = zweites Jahr, ...)
+  # Korrekturhinweise: Bei der wievielten Übernahme der Korrekturen (anzahl: 1 = erstmals, 2 = zweites Jahr, ...)
   # liegt ein Geschenk bei? Spalte `geschenk` (1/0) im Export korrektoren_hinweise. Leere Liste [] = nie.
   korrektur_geschenk_bei: [1, 2, 4, 6]
 
@@ -365,7 +365,7 @@ datasets:
     enabled: true
     # Korrektor:innen mit zugeordneter Aufgabe der 2. Stufe des aktuellen Jahrgangs (MaO_Korrektoren_Aufgabe_Zuordnung).
     # mao_nummer = Jahrgang (2 Stellen) + Stufencode (2) + 2 (= 2. Stufe) + Aufgabe (1), z. B. 660521.
-    # anzahl = Zahl der Jahrgänge bis einschließlich dieses mit Korrekturangebot (1 = erstmals);
+    # anzahl = Zahl der Jahrgänge bis einschließlich dieses, in denen die Person Korrekturen übernommen hat (Zuordnung; 1 = erstmals);
     # geschenk = 1, wenn anzahl in params.korrektur_geschenk_bei steht (Standard 1, 2, 4, 6), sonst 0;
     # hertzkinder = aktive Hertz-Kinder (Vorname Nachname (Klasse)), uebergabe aus den Präferenzen (Standard Hertzkind).
     sql: |
@@ -382,12 +382,10 @@ datasets:
         ELSE CONCAT('Guten Tag ', TRIM(CONCAT_WS(' ', k.titel, k.vorname, k.nachname)))
       END AS anrede,
       z.bemerkung AS hinweis,
-      (SELECT COUNT(*) FROM {{table.korrektoren_angebote_table}} a
-         JOIN {{table.jahrgaenge_table}} ja ON ja.id = a.mao_jahrgang_id
-        WHERE a.korrektor_id = k.id AND ja.jahrgang_nr <= cj.jahrgang_nr) AS anzahl,
-      CASE WHEN (SELECT COUNT(*) FROM {{table.korrektoren_angebote_table}} a2
-                   JOIN {{table.jahrgaenge_table}} ja2 ON ja2.id = a2.mao_jahrgang_id
-                  WHERE a2.korrektor_id = k.id AND ja2.jahrgang_nr <= cj.jahrgang_nr) IN ({{param.korrektur_geschenk_bei}})
+      (SELECT COUNT(DISTINCT z2.mao_nummer DIV 10000) FROM {{table.korrektoren_zuordnung_table}} z2
+        WHERE z2.korrektor_id = k.id AND z2.mao_nummer DIV 10000 <= cj.jahrgang_nr) AS anzahl,
+      CASE WHEN (SELECT COUNT(DISTINCT z3.mao_nummer DIV 10000) FROM {{table.korrektoren_zuordnung_table}} z3
+                  WHERE z3.korrektor_id = k.id AND z3.mao_nummer DIV 10000 <= cj.jahrgang_nr) IN ({{param.korrektur_geschenk_bei}})
            THEN 1 ELSE 0 END AS geschenk,
       COALESCE(pr.uebergabe, 'Hertzkind') AS uebergabe,
       pr.uebergabe_sonst AS uebergabe_sonst,
