@@ -258,17 +258,21 @@ def candidate_lines(work: Work, nummer: int, *, alle: bool = False, cands: list[
     return lines
 
 
-def takeover_lines(work: Work, sortierung: str = "nachname") -> list[str]:
-    """Übersicht der zugeordneten Korrektor:innen: Aufgaben dieses Jahr und bisher übernommene Jahrgänge."""
+def takeover_lines(work: Work, sortierung: str = "aufgabe") -> list[str]:
+    """Übersicht der zugeordneten Korrektor:innen (nach Aufgabennummer sortiert): Aufgaben dieses Jahr, bisher übernommene Jahrgänge."""
     state = work.state
     members: dict[int, list[int]] = {}
     for kid, nummer in sorted(work.want, key=lambda x: (x[1], x[0])):
         members.setdefault(kid, []).append(nummer)
 
-    def order(kid: int) -> tuple[str, str, int]:
+    def order(kid: int) -> tuple[Any, ...]:
         info = state.korrektoren[kid]
         names = (str(info["nachname"]).casefold(), str(info["vorname"]).casefold())
-        return (*(names[::-1] if sortierung == "vorname" else names), kid)
+        if sortierung == "vorname":
+            return (*names[::-1], kid)
+        if sortierung == "nachname":
+            return (*names, kid)
+        return (members[kid][0], *names, kid)  # nach (kleinster) Aufgabennummer
 
     lines = [f"Übernommene Korrekturen der zugeordneten Korrektor:innen (Jahrgang {state.jahrgang_nr}, inkl. offener Änderungen)",
              "Korrektor:in                         Aufgaben dieses Jahr           Früher übernommen  Gesamt  Angebote"]
@@ -279,7 +283,7 @@ def takeover_lines(work: Work, sortierung: str = "nachname") -> list[str]:
         total = earlier + 1
         first += total == 1
         name = _sorted_name(Candidate(kid, "", 0, 0, [], True, "", [], True, True, str(info["vorname"]), str(info["nachname"])),
-                            sortierung)
+                            "vorname" if sortierung == "vorname" else "nachname")
         tasks = ", ".join(str(n) for n in members[kid])
         lines.append(f"{name[:34]:<34}  {tasks:<28}{earlier:>12}{total:>11}{len(state.angebote.get(kid, set())):>10}")
     if not members:
