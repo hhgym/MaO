@@ -440,6 +440,8 @@ mao korrektoren-aufgaben --neu          # Entwurf ignorieren, aus der Datenbank 
 - Der Zwischenstand liegt als Entwurf `korrektoren-aufgaben-plan.yaml` im Jahrgangsordner (nur IDs, keine Namen): `w` in der Tabelle oder
   Menüpunkt 6 speichern, beim Beenden und im Trockenlauf wird er gespeichert, der nächste Start lädt ihn. Mit `--apply` geschrieben →
   Entwurf wird gelöscht. `--neu` ignoriert ihn.
+- Menüpunkt 7 (in der Tabelle Taste `u`) zeigt je zugeordneter Person die Aufgaben dieses Jahres, die früher übernommenen Jahrgänge, die
+  Gesamtzahl der Übernahmen (= `anzahl` in den Korrekturhinweisen) und die Zahl der Angebote.
 - Derselbe Dialog ist in `mao korrektoren` als Menüpunkt 8 erreichbar.
 - Geschrieben wird nur mit `--apply` und Bestätigung, in einer Transaktion; Zuordnungen früherer Jahrgänge bleiben unberührt.
   enthalten nur IDs, keine Namen, E-Mail-Adressen oder Anschriften.

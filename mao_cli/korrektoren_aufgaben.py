@@ -258,6 +258,37 @@ def candidate_lines(work: Work, nummer: int, *, alle: bool = False, cands: list[
     return lines
 
 
+def takeover_lines(work: Work, sortierung: str = "nachname") -> list[str]:
+    """Übersicht der zugeordneten Korrektor:innen: Aufgaben dieses Jahr und bisher übernommene Jahrgänge."""
+    state = work.state
+    members: dict[int, list[int]] = {}
+    for kid, nummer in sorted(work.want, key=lambda x: (x[1], x[0])):
+        members.setdefault(kid, []).append(nummer)
+
+    def order(kid: int) -> tuple[str, str, int]:
+        info = state.korrektoren[kid]
+        names = (str(info["nachname"]).casefold(), str(info["vorname"]).casefold())
+        return (*(names[::-1] if sortierung == "vorname" else names), kid)
+
+    lines = [f"Übernommene Korrekturen der zugeordneten Korrektor:innen (Jahrgang {state.jahrgang_nr}, inkl. offener Änderungen)",
+             "Korrektor:in                         Aufgaben dieses Jahr           Früher übernommen  Gesamt  Angebote"]
+    first = 0
+    for kid in sorted(members, key=order):
+        info = state.korrektoren[kid]
+        earlier = work.uebernommen(kid)
+        total = earlier + 1
+        first += total == 1
+        name = _sorted_name(Candidate(kid, "", 0, 0, [], True, "", [], True, True, str(info["vorname"]), str(info["nachname"])),
+                            sortierung)
+        tasks = ", ".join(str(n) for n in members[kid])
+        lines.append(f"{name[:34]:<34}  {tasks:<28}{earlier:>12}{total:>11}{len(state.angebote.get(kid, set())):>10}")
+    if not members:
+        lines.append("  Noch keine Aufgaben zugeordnet.")
+    else:
+        lines.append(f"{len(members)} Korrektor:innen, davon erstmals: {first}  (Früher übernommen = Jahrgänge vor diesem mit Zuordnung)")
+    return lines
+
+
 def change_lines(work: Work) -> list[str]:
     state = work.state
     diff = work.diff()
@@ -459,6 +490,7 @@ MENU = """
   4) Änderungen anzeigen und in die Datenbank schreiben
   5) Änderungen verwerfen und neu laden
   6) Zwischenstand als Entwurf speichern ({draft})
+  7) Übersicht: übernommene Korrekturen der zugeordneten Korrektor:innen
   q) Beenden"""
 
 EDIT_HELP = ("  Nummern (z. B. 1 3) = zuordnen bzw. entfernen | a = auch ohne Angebot für diese Stufe zeigen | "
@@ -512,7 +544,7 @@ def grid_screen(work: Work, cursor: int) -> tuple[list[str], int]:
     """Übersichtstabelle aller Aufgaben; Rückgabe (Zeilen, Index der Cursorzeile)."""
     state = work.state
     lines = [f"Aufgabenzuweisung Jahrgang {state.jahrgang_nr}  ({work.pending()} offene Änderungen)",
-             "↑/↓ Aufgabe | ←/→ Klassenstufe | Enter öffnen | w Entwurf speichern | s Schreiben/Änderungen | q zurück", "",
+             "↑/↓ Aufgabe | ←/→ Klassenstufe | Enter öffnen | u Übernahmen-Übersicht | w Entwurf speichern | s Schreiben/Änderungen | q zurück", "",
              "  Aufgabe  Stufe  Angebote  Zugeordnet"]
     for index, (stufe, aufgabe) in enumerate(ALL_TASKS):
         nummer = make_nummer(state.jahrgang_nr, stufe, aufgabe)
@@ -626,6 +658,9 @@ def interactive_table(work: Work, *, key: Callable[[], str] = read_key,
             return True
         elif pressed == "w":
             status = f"Entwurf gespeichert: {draft.save(work).name}" if draft else "Kein Entwurf-Ziel"
+        elif pressed == "u":
+            draw(takeover_lines(work) + ["", "Beliebige Taste: zurück zur Tabelle"], None)
+            key()
         elif pressed in ("q", "esc"):
             return False
         elif pressed == "enter":
@@ -793,6 +828,9 @@ def run_menu(session: AufgabenSession, *, apply: bool, ask: Callable[[str], str]
                     out("Entwurf gelöscht.")
             elif choice == "6":
                 out(f"Entwurf gespeichert: {draft.save(work).name}" if draft is not None else "Kein Entwurf-Ziel")
+            elif choice == "7":
+                for line in takeover_lines(work):
+                    out(line)
             elif choice in ("q", "quit", "exit"):
                 if draft is not None and draft.unsaved(work):
                     if ask("Entwurf speichern? [J/n] ").strip().lower() not in ("n", "nein"):
@@ -801,7 +839,7 @@ def run_menu(session: AufgabenSession, *, apply: bool, ask: Callable[[str], str]
                     out(f"Hinweis: {work.pending()} Änderungen sind nicht geschrieben und gehen verloren.")
                 return written_total
             elif choice:
-                out("Bitte 1 bis 6 oder q eingeben.")
+                out("Bitte 1 bis 7 oder q eingeben.")
         except KorrektorenError as exc:
             out(f"Nicht möglich: {exc}")
 
@@ -816,6 +854,9 @@ def run_korrektoren_aufgaben(db: Any, tables: Mapping[str, str], *, apply: bool,
         draft = Draft(workspace, config_dir) if workspace is not None else None
         return run_menu(session, apply=apply, ask=ask, out=out, draft=draft, use_draft=not neu, **menu_kw)
     for line in overview_lines(session.work):
+        out(line)
+    out("")
+    for line in takeover_lines(session.work):
         out(line)
     for stufe in STUFEN:
         for aufgabe in AUFGABEN:
