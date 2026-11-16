@@ -1023,7 +1023,7 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
         # Auch beim Vollprofil nur Eigentümer tatsächlich ausgewählter Exporte bereinigen.
         owners = {str(ex["id"]) for ex in cfg["exports"] if ex.get("enabled", True)}
         planner = ExportPlan(workspace, active_owners=owners)
-        run_exports(data, cfg, workspace, planner)
+        run_exports(data, cfg, workspace, planner, tex_dir)
         protected = {path.resolve() for path in config_files.values()}
         protected.add((config_dir / "db.config").resolve())
         protected.add((config_dir / "settings.yaml").resolve())

@@ -347,7 +347,41 @@ def load_datasets(db: DB, cfg: Dict[str, Any]) -> Dict[str, pd.DataFrame]:
     return datasets
 
 
-def run_exports(datasets: Dict[str, pd.DataFrame], cfg: Dict[str, Any], base_dir: Path, planner: "ExportPlan") -> None:
+def _export_text(ex: Dict[str, Any], name: str, export_id: str, df: pd.DataFrame, base_dir: Path,
+                 tex_dir: Optional[Path], planner: "ExportPlan") -> None:
+    """Textvorlage mit [[Spalte]]-Platzhaltern (erste Datenzeile) und [[Rückgabe]] als Textdatei ausgeben."""
+    from .korrektoren import read_termin
+    from .korrektoren_mails import RUECKGABE_FEHLT, default_template, fill_tokens
+    if df.empty:
+        raise ValueError(f"Export '{name}': Dataset ohne Zeile (Textvorlage braucht genau eine)")
+    spec = str(ex["template"]).strip()
+    path: Optional[Path]
+    if spec.startswith("@tex/"):
+        path = safe_output_path(tex_dir, spec[len("@tex/"):]) if tex_dir is not None else None
+    else:
+        path = safe_output_path(base_dir, spec)
+    if path is not None and path.is_file():
+        text = path.read_text(encoding="utf-8")
+    else:
+        fallback = default_template(spec)
+        if fallback is None:
+            raise ConfigurationError(f"Export '{name}': Vorlage nicht gefunden: {spec}")
+        text = fallback
+    values = {str(col): ("" if pd.isna(val) else str(val)) for col, val in df.iloc[0].items()}
+    termin = read_termin(base_dir)
+    values["Rückgabe"] = termin.strftime("%d.%m.%Y") if termin else RUECKGABE_FEHLT
+    result, unknown = fill_tokens(text, values)
+    if unknown:
+        LOGGER.warning("Export '%s': unbekannte Platzhalter: %s", name, ", ".join(f"[[{x}]]" for x in unknown))
+    if termin is None and "[[rückgabe]]" in text.casefold():
+        LOGGER.warning("Export '%s': Rückgabetermin fehlt (mao korrektoren, Menü 7)", name)
+    out_path = str((ex.get("output") or {}).get("path", "")).strip()
+    planner.add(base_dir / out_path, result.encode("utf-8"), "txt", export_id)
+    log_info(f"Text: {out_path}", indent=1)
+
+
+def run_exports(datasets: Dict[str, pd.DataFrame], cfg: Dict[str, Any], base_dir: Path, planner: "ExportPlan",
+                tex_dir: Optional[Path] = None) -> None:
     """
     Exports:
       - write CSVs per export spec
@@ -373,6 +407,11 @@ def run_exports(datasets: Dict[str, pd.DataFrame], cfg: Dict[str, Any], base_dir
             raise ValueError(f"Export '{name}': Dataset '{ds_name}' wurde nicht geladen")
         if df0.empty:
             LOGGER.info("[LEER] Export '%s' – Dataset '%s' ohne Daten (Gesamt/Makros werden aktualisiert)", name, ds_name)
+
+        if ex.get("template"):
+            with step(f"Generiere: {name}"):
+                _export_text(ex, name, export_id, df0, base_dir, tex_dir, planner)
+            continue
 
         with step(f"Generiere: {name}"):
             df = df0.copy()
