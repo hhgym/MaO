@@ -37,7 +37,7 @@ def base_config():
 
 def test_all_sql_datasets_reference_only_pseudonymous_tables():
     cfg = base_config()
-    assert len(cfg['datasets']) == 23
+    assert len(cfg['datasets']) == 25
     assert all('{{table.' not in d['sql'] for d in cfg['datasets'])
     assert any('DEMO_ORGA' in d['sql'] for d in cfg['datasets'])
 
@@ -100,6 +100,8 @@ def test_output_parity_same_synthetic_input(tmp_path):
     datasets['teilnehmende_raum'] = df[['tnr', 'nachname', 'vorname', 'geschlecht', 'klasse', 'stufe', 'raum', 'extern']].copy()
     datasets['korrekturliste_externe'] = df[['tnr', 'nachname', 'vorname', 'schulnummer', 'stufe', 'stufengruppe', 'stufencode', 'aufgaben']].copy()
     datasets['urkunden_externe'] = df[['tnr', 'vorname', 'nachname', 'geschlecht', 'schule', 'stufe', 'punkte']].copy()
+    datasets['korrektoren_mailmerge'] = pd.DataFrame([{'vorname': 'A', 'nachname': 'M', 'geschlecht': 'w', 'titel': '', 'anrede': 'Liebe Frau M', 'email': 'm@example.org', 'aufgabe': '660721', 'hinweis': '', 'uebergabe': 'Hertzkind', 'uebergabe_sonst': '', 'anzahl': 1, 'geschenk': 1}])
+    datasets['korrektoren_ohne_aufgabe'] = pd.DataFrame([{'vorname': 'C', 'nachname': 'N', 'geschlecht': 'w', 'titel': '', 'anrede': 'Liebe Frau N', 'email': 'n@example.org', 'uebernommen': 0}])
     datasets['korrektoren_hinweise'] = pd.DataFrame([{'aufgabe': 660721, 'stufe': 7, 'aufgabe_nr': 1, 'nachname': 'M', 'vorname': 'A', 'geschlecht': 'w', 'anrede': 'Liebe Frau M', 'hinweis': '', 'anzahl': 1, 'geschenk': 1, 'uebergabe': 'Hertzkind', 'uebergabe_sonst': '', 'hertzkinder': 'B C (7-1)'}])
     datasets['wettbewerbstag'] = df[['datum', 'ort']].copy()
     datasets['korrekturliste'] = df[['tnr', 'nachname', 'vorname', 'klasse', 'stufe', 'stufengruppe', 'stufencode']].copy()
