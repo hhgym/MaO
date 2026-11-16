@@ -283,6 +283,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     korr_tasks_mode.add_argument("--apply", action="store_true", help="Schreiben erlauben (im Menü mit Rückfrage)")
     korr_tasks_mode.add_argument("--dry-run", action="store_true", help="Nur ansehen und planen, nichts schreiben (Standard)")
     korr_tasks.add_argument("--ohne-menue", action="store_true", help="Kein Menü: alle Aufgaben mit Kandidaten ausgeben (schreibt nie)")
+    korr_tasks.add_argument("--neu", action="store_true",
+                            help="Vorhandenen Entwurf (korrektoren-aufgaben-plan.yaml) ignorieren und aus der Datenbank starten")
 
     schools = commands.add_parser("schulen-sync", help="Schulverzeichnis Berlin in die Schulen-Tabelle übernehmen")
     common(schools)
@@ -868,7 +870,8 @@ def _main(argv: Optional[Sequence[str]] = None) -> int:
                 db_mao = current_MaO_number_db(db, tables)
                 if selection.mao_number is not None and db_mao is not None and selection.mao_number != db_mao:
                     raise ConfigurationError("Jahrgang aus der Datenbank passt nicht zur Workspace-Konfiguration")
-                run_korrektoren_aufgaben(db, tables, apply=args.apply, menu=use_menu, expected_nr=db_mao or selection.mao_number)
+                run_korrektoren_aufgaben(db, tables, apply=args.apply, menu=use_menu, expected_nr=db_mao or selection.mao_number,
+                                        workspace=workspace, config_dir=config_dir, neu=args.neu)
             return 0
         if args.command == "raumzuteilung":
             if selection.year is None or selection.year != settings["current_year"]:

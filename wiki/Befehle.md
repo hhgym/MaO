@@ -423,6 +423,7 @@ Aufgabennummer, z. B. 660521 = Jahrgang 66, Klassenstufe 5, Runde 2, Aufgabe 1; 
 mao korrektoren-aufgaben             # Menü, nur ansehen und planen
 mao korrektoren-aufgaben --apply     # Menü, Schreiben nach Rückfrage erlaubt
 mao korrektoren-aufgaben --ohne-menue   # alle Aufgaben mit Kandidaten ausgeben (schreibt nie)
+mao korrektoren-aufgaben --neu          # Entwurf ignorieren, aus der Datenbank starten
 ```
 
 - Je Aufgabe stehen die aktiven Korrektor:innen mit Angebot für diese Klassenstufe: Angebote gesamt, früher übernommen
@@ -436,6 +437,9 @@ mao korrektoren-aufgaben --ohne-menue   # alle Aufgaben mit Kandidaten ausgeben 
 - Wem dieses Jahr schon eine andere Aufgabe zugeordnet ist, ist zunächst ausgeblendet; Taste `v` blendet diese Personen ein bzw. wieder aus. Vor dem Zuordnen kommt immer eine Rückfrage.
 - Es zählen nur Angebote des aktuellen Jahrgangs; der aktive Jahrgang der Datenbank wird gegen den erwarteten geprüft.
   Zugeordnete ohne Angebot des aktuellen Jahrgangs sind mit „KEIN Angebot“ markiert.
+- Der Zwischenstand liegt als Entwurf `korrektoren-aufgaben-plan.yaml` im Jahrgangsordner (nur IDs, keine Namen): `w` in der Tabelle oder
+  Menüpunkt 6 speichern, beim Beenden und im Trockenlauf wird er gespeichert, der nächste Start lädt ihn. Mit `--apply` geschrieben →
+  Entwurf wird gelöscht. `--neu` ignoriert ihn.
 - Derselbe Dialog ist in `mao korrektoren` als Menüpunkt 8 erreichbar.
 - Geschrieben wird nur mit `--apply` und Bestätigung, in einer Transaktion; Zuordnungen früherer Jahrgänge bleiben unberührt.
   enthalten nur IDs, keine Namen, E-Mail-Adressen oder Anschriften.
