@@ -326,3 +326,22 @@ def test_sorting_by_first_or_last_name_with_toggle_key(monkeypatch):
     s.work.reset()
     a.interactive_table(s.work, key=k, draw=lambda *_: None, size=lambda: (100, 40))
     assert s.work.assigned(660521) == [3]
+
+
+def test_persons_with_other_task_are_hidden_by_default_and_v_shows_them(monkeypatch):
+    many(monkeypatch, 4)
+    s, _ = session(Cur([(1, 1, 660522, None), (2, 2, 660521, None)]))
+    assert [c.korrektor_id for c in s.work.candidates(660521)] == [1, 2, 3, 4]
+    shown = [c.korrektor_id for c in s.work.candidates(660521, ohne_vergebene=True)]
+    assert shown == [2, 3, 4]  # 1 hat Aufgabe 660522; 2 ist hier zugeordnet und bleibt
+    lines, _, count = a.task_screen(s.work, 660521, 0, False, (100, 40), ohne_vergebene=True)
+    assert count == 3 and any("1 mit anderer Aufgabe ausgeblendet" in x for x in lines)
+    # Standard in der interaktiven Tabelle: ausgeblendet; v blendet ein
+    screens: list[list[str]] = []
+    a.interactive_table(s.work, key=keys("enter", "v", "q", "q"), draw=lambda lines, row: screens.append(lines),
+                        size=lambda: (100, 40))
+    assert not any("V1 Name01" in x or "Name01, V1" in x for x in screens[1])
+    assert any("Name01, V1" in x for x in screens[2])
+    # Nach dem Zuordnen in der Aufgabe verschwindet die Person aus anderen Aufgaben-Listen
+    s.work.set(3, 660521, True)
+    assert 3 not in {c.korrektor_id for c in s.work.candidates(660522, ohne_vergebene=True)}
