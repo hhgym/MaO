@@ -951,7 +951,7 @@ exports:
     enabled: true
     from_dataset: korrektoren_mailmerge
     output:
-      path: "db/Korrektoren/Korrektoren-Mailmerge.csv"
+      path: "Korrektoren-Mailmerge.csv"
       sep: ";"
       columns: ["vorname","nachname","geschlecht","titel","anrede","email","aufgabe","hinweis","uebergabe","uebergabe_sonst","anzahl","geschenk"]
     sort_by: [nachname, vorname]
@@ -961,7 +961,7 @@ exports:
     enabled: true
     from_dataset: korrektoren_ohne_aufgabe
     output:
-      path: "db/Korrektoren/Korrektoren-Ohne-Aufgabe.csv"
+      path: "Korrektoren-Ohne-Aufgabe.csv"
       sep: ";"
       columns: ["vorname","nachname","geschlecht","titel","anrede","email","uebernommen"]
     sort_by: [nachname, vorname]
