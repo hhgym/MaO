@@ -396,12 +396,30 @@ def test_menu_item_8_needs_zuordnung_table_and_reports_it(config_dir):
     assert "korrektoren_zuordnung_table" in text
 
 
-def test_menu_item_9_writes_mail_texts_into_workspace(config_dir):
+def test_menu_item_9_writes_mail_texts_from_templates_in_tex_folder(tmp_path):
+    maodir = tmp_path / "MaO"
+    cfg = maodir / "config"
+    cfg.mkdir(parents=True)
+    import yaml
+    (cfg / "gf-korrektoren.yaml").write_text(yaml.safe_dump({"form_id": 3, "fields": FIELDS}), encoding="utf-8")
+    workspace = maodir / "66"
+    (workspace / "db" / "Korrektoren").mkdir(parents=True)
+    k.write_termin(workspace, k.parse_termin("14.12.2026"))
     entries = [entry(1, mail="neu@example.org")]
-    (config_dir / "db" / "Korrektoren").mkdir(parents=True)
-    k.write_termin(config_dir, k.parse_termin("14.12.2026"))
-    _, _, text = menu(config_dir, Cur([KNOWN]), entries, ["9", "q"], apply=False)
-    assert "Geschrieben: Korrektoren-Mail-Zuteilung.txt, Korrektoren-Mail-Absage.txt" in text and "28 Aufgaben" in text
-    assert "bis spätestens 14.12.2026" in (config_dir / "Korrektoren-Mail-Zuteilung.txt").read_text(encoding="utf-8")
-    _, _, text = menu(config_dir, Cur([KNOWN]), entries, ["9", "n", "n", "q"], apply=False)
-    assert "Nichts geschrieben." in text
+
+    def run_menu(answers):
+        feed = iter(answers)
+        shown: list[str] = []
+        k.run_korrektoren(SimpleNamespace(conn=Conn(Cur([KNOWN]))), cfg, TABLES, workspace=workspace, entries=entries,
+                          apply=False, menu=True, ask=lambda _: next(feed), out=shown.append)
+        return "\n".join(shown)
+
+    text = run_menu(["9", "q"])
+    assert "Vorlagen angelegt in tex/Korrektoren-Mails" in text and "Geschrieben: Korrektoren-Mail-Zuteilung.txt" in text
+    assert "28 Aufgaben" in text and (maodir / "tex" / "Korrektoren-Mails" / "Zuteilung.txt").is_file()
+    assert "bis spätestens 14.12.2026" in (workspace / "Korrektoren-Mail-Zuteilung.txt").read_text(encoding="utf-8")
+    (maodir / "tex" / "Korrektoren-Mails" / "Absage.txt").write_text("Absage [[Angebote]] [[Unbekannt]]", encoding="utf-8")
+    text = run_menu(["9", "j", "n", "q"])
+    assert "unbekannte Platzhalter" in text and "[[Unbekannt]]" in text
+    assert (workspace / "Korrektoren-Mail-Absage.txt").read_text(encoding="utf-8").startswith("An: {{email}}")  # Absage blieb (n)
+    assert "Absage 0 [[Unbekannt]]" not in (workspace / "Korrektoren-Mail-Zuteilung.txt").read_text(encoding="utf-8")

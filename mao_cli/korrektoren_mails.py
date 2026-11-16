@@ -1,72 +1,114 @@
 """Mailtexte an Korrektor:innen (Zuteilung, Absage) für Thunderbird Mail Merge im Jahrgangsordner.
 
-Die Texte nutzen Platzhalter aus `Korrektoren-Mailmerge.csv` / `Korrektoren-Ohne-Aufgabe.csv` in doppelten geschweiften Klammern
-({{anrede}}, {{aufgabe}}, {{email}}, {{uebergabe|Wert|Text}}, {{uebergabe_sonst}}). Die jahresabhängigen Angaben (Zahl der Angebote und
-Aufgaben, Rückgabetermin) setzt MaO-CLI beim Erzeugen ein.
+Die Vorlagen liegen im Vorlagenordner `<MaO>/tex/Korrektoren-Mails/` (`Zuteilung.txt`, `Absage.txt`) und lassen sich dort anpassen; fehlen
+sie, legt MaO-CLI neutrale Standardfassungen an. Mail-Merge-Platzhalter stehen in doppelten geschweiften Klammern ({{anrede}}, {{aufgabe}},
+{{email}}, {{datei}}, {{uebergabe|Wert|Text}}, {{uebergabe_sonst}}) und bleiben unverändert. Die jahresabhängigen Angaben ersetzt MaO-CLI
+beim Erzeugen: [[Angebote]], [[Aufgaben]], [[Rückgabe]] (in doppelten eckigen Klammern).
 """
 from __future__ import annotations
 
+import re
 from datetime import date
 from pathlib import Path
 from typing import Callable
 
+TEMPLATE_DIR = "Korrektoren-Mails"
+TEMPLATE_ZUTEILUNG = "Zuteilung.txt"
+TEMPLATE_ABSAGE = "Absage.txt"
 MAIL_ZUTEILUNG = "Korrektoren-Mail-Zuteilung.txt"
 MAIL_ABSAGE = "Korrektoren-Mail-Absage.txt"
+_TOKEN_RE = re.compile(r"\[\[([^\[\]]+)\]\]")
 
-_ZUTEILUNG = """An: {{{{email}}}}
+DEFAULT_TEMPLATES = {
+    TEMPLATE_ZUTEILUNG: """An: {{email}}
 Betreff: Ihre Aufgabe zur Korrektur der Mathematik-Olympiade
 
-{{{{anrede}}}},
+{{anrede}},
 
-wir möchten uns nochmals her(t)zlich für Ihr Angebot zur Korrektur bedanken. {angebote_satz}
+wir möchten uns nochmals herzlich für Ihr Angebot zur Korrektur bedanken. In diesem Jahr hatten wir [[Angebote]] Korrekturangebote für [[Aufgaben]] Aufgaben.
 
-Herr Ohnesorge und ich haben die Aufgaben inzwischen zugeteilt und dabei Ihre Wünsche, soweit möglich, berücksichtigt. Ihnen haben wir die Aufgabe {{{{aufgabe}}}} anvertraut. Anbei finden Sie die Aufgabe zusammen mit der zugehörigen Lösung.
+Wir haben die Aufgaben inzwischen zugeteilt und dabei Ihre Wünsche, soweit möglich, berücksichtigt. Ihnen haben wir die Aufgabe {{aufgabe}} anvertraut. Anbei finden Sie die Aufgabe zusammen mit der zugehörigen Lösung.
 
-Die Verteilung der Aufgaben erfolgt ab Montag. {{{{uebergabe|Hertzkind|Wie gewünscht, übergeben wir den Hefter mit den Lösungen Ihrem Hertz-Kind.}}}}{{{{uebergabe|Sekretariat|Wie gewünscht, können Sie den Hefter mit den Lösungen im Sekretariat abholen.}}}}{{{{uebergabe|Sonstiges|Wie vereinbart, organisieren wir die Übergabe des Hefters wie folgt: {{{{uebergabe_sonst}}}}.}}}} Im Hefter finden Sie neben Aufgabe und Lösung auch einige Hinweise zur Korrektur.
+{{uebergabe|Hertzkind|Wie gewünscht, übergeben wir den Hefter mit den Lösungen Ihrem Hertz-Kind.}}{{uebergabe|Sekretariat|Wie gewünscht, können Sie den Hefter mit den Lösungen im Sekretariat abholen.}}{{uebergabe|Sonstiges|Wie vereinbart, organisieren wir die Übergabe des Hefters wie folgt: {{uebergabe_sonst}}.}} Im Hefter finden Sie neben Aufgabe und Lösung auch einige Hinweise zur Korrektur.
 
-Sollten bei der Korrektur Fragen oder Probleme auftreten, können Sie sich gerne an mich oder Herrn Ohnesorge (robert.ohnesorge@hhgym.de) wenden. Unser Ziel ist es, die Ergebnisse in der Woche vor den Weihnachtsferien bekannt zu geben, um genügend Zeit für eventuelle Einsprüche zu haben, bevor die Delegierungen festgelegt werden.
-
-Daher würden wir uns freuen, wenn wir die korrigierten Lösungen bis spätestens {rueckgabe} zurückerhalten. Bitte melden Sie sich, falls dies für Sie nicht zu schaffen ist.
+Wir würden uns freuen, wenn wir die korrigierten Lösungen bis spätestens [[Rückgabe]] zurückerhalten. Bitte melden Sie sich, falls dies für Sie nicht zu schaffen ist.
 
 Mit freundlichen Grüßen
-Marcel Pietschmann und Robert Ohnesorge
-"""
-
-_ABSAGE = """An: {{{{email}}}}
+[Name]
+""",
+    TEMPLATE_ABSAGE: """An: {{email}}
 Betreff: Rückmeldung zu Ihrem Korrekturangebot
 
-{{{{anrede}}}},
+{{anrede}},
 
-nochmals vielen Dank für Ihr Angebot, uns bei der Korrektur zu unterstützen. Wir waren sehr erfreut darüber, dass wir dieses Jahr mehr Korrekturangebote als zu korrigierende Aufgaben erhalten haben – insgesamt {angebote} Angebote für {aufgaben} Aufgaben.
+nochmals vielen Dank für Ihr Angebot, uns bei der Korrektur zu unterstützen. In diesem Jahr hatten wir [[Angebote]] Angebote für [[Aufgaben]] Aufgaben.
 
-Ich hoffe, Sie können es nachvollziehen, dass wir Ihnen in diesem Jahr keine Aufgabe zugeteilt haben. Die Verteilung der Aufgaben ist eine anspruchsvolle, multidimensionale Optimierungsaufgabe, bei der wir zahlreiche Faktoren berücksichtigen.
-
-Es würde mich sehr freuen, wenn Sie auch im nächsten Jahr wieder bereit wären, eine Aufgabe zu korrigieren. Diesbezüglich werde ich mich rechtzeitig bei Ihnen melden. Sollten Sie in Zukunft keine Korrekturaufrufe mehr erhalten wollen, können Sie sich über den folgenden Link austragen: https://hnrhtz.de/austragen-korrekturaufruf/?email={{{{email}}}}
-
-Vielen Dank für Ihr Verständnis und Ihre Unterstützung – ohne Ihre Hilfe würde unsere Korrekturoption gegen Null streben.
+Wir bitten um Verständnis, dass wir Ihnen in diesem Jahr keine Aufgabe zuteilen konnten. Wir würden uns freuen, wenn Sie auch im nächsten Jahr wieder bereit wären, eine Aufgabe zu korrigieren.
 
 Mit freundlichen Grüßen
-Marcel Pietschmann
-"""
+[Name]
+""",
+}
 
 
-def render_mails(angebote: int, aufgaben: int, termin: date | None) -> dict[str, str]:
-    """Dateiname -> Text, mit eingesetzten Zahlen und Rückgabetermin."""
-    if angebote > aufgaben:
-        satz = (f"In diesem Jahr hatten wir sogar {angebote} Korrekturangebote und damit deutlich mehr Angebote als Aufgaben. "
-                "Das freut uns wirklich sehr.")
-    else:
-        satz = f"In diesem Jahr hatten wir {angebote} Korrekturangebote für {aufgaben} Aufgaben. Das freut uns wirklich sehr."
-    rueckgabe = termin.strftime("%d.%m.%Y") if termin else "[Rückgabetermin fehlt: mao korrektoren, Menü 7]"
-    return {MAIL_ZUTEILUNG: _ZUTEILUNG.format(angebote_satz=satz, rueckgabe=rueckgabe),
-            MAIL_ABSAGE: _ABSAGE.format(angebote=angebote, aufgaben=aufgaben)}
+def template_dir(tex_dir: Path) -> Path:
+    return tex_dir / TEMPLATE_DIR
+
+
+def ensure_templates(tex_dir: Path | None) -> list[str]:
+    """Fehlende Vorlagen mit den Standardtexten anlegen; Rückgabe: neu angelegte Dateinamen. Ohne Vorlagenordner nichts."""
+    created = []
+    if tex_dir is None:
+        return created
+    folder = template_dir(tex_dir)
+    for name, text in DEFAULT_TEMPLATES.items():
+        target = folder / name
+        if not target.exists():
+            folder.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8", newline="")
+            created.append(name)
+    return created
+
+
+def load_templates(tex_dir: Path | None) -> dict[str, str]:
+    """Vorlagen aus dem Vorlagenordner; fehlende Dateien durch die Standardtexte ersetzt."""
+    result = dict(DEFAULT_TEMPLATES)
+    if tex_dir is not None:
+        for name in result:
+            path = template_dir(tex_dir) / name
+            if path.is_file():
+                result[name] = path.read_text(encoding="utf-8")
+    return result
+
+
+def render_mails(angebote: int, aufgaben: int, termin: date | None,
+                 templates: dict[str, str] | None = None) -> tuple[dict[str, str], list[str]]:
+    """Dateiname -> Text mit eingesetzten Zahlen und Rückgabetermin; zweite Rückgabe: unbekannte [[Platzhalter]]."""
+    source = templates or DEFAULT_TEMPLATES
+    values = {"Angebote": str(angebote), "Aufgaben": str(aufgaben),
+              "Rückgabe": termin.strftime("%d.%m.%Y") if termin else "[Rückgabetermin fehlt: mao korrektoren, Menü 7]"}
+    unknown: list[str] = []
+
+    def fill(match: re.Match[str]) -> str:
+        key = match.group(1).strip()
+        if key in values:
+            return values[key]
+        if key not in unknown:
+            unknown.append(key)
+        return match.group(0)
+
+    texts = {MAIL_ZUTEILUNG: _TOKEN_RE.sub(fill, source.get(TEMPLATE_ZUTEILUNG, DEFAULT_TEMPLATES[TEMPLATE_ZUTEILUNG])),
+             MAIL_ABSAGE: _TOKEN_RE.sub(fill, source.get(TEMPLATE_ABSAGE, DEFAULT_TEMPLATES[TEMPLATE_ABSAGE]))}
+    return texts, unknown
 
 
 def write_mails(workspace: Path, angebote: int, aufgaben: int, termin: date | None,
-                confirm_overwrite: Callable[[str], bool] = lambda _name: False) -> list[str]:
-    """Texte im Jahrgangsordner anlegen; vorhandene nur nach Bestätigung überschreiben. Rückgabe: geschriebene Dateinamen."""
+                confirm_overwrite: Callable[[str], bool] = lambda _name: False,
+                templates: dict[str, str] | None = None) -> tuple[list[str], list[str]]:
+    """Texte im Jahrgangsordner anlegen; vorhandene nur nach Bestätigung überschreiben. Rückgabe: (geschriebene Dateien, unbekannte Platzhalter)."""
     written = []
-    for name, text in render_mails(angebote, aufgaben, termin).items():
+    texts, unknown = render_mails(angebote, aufgaben, termin, templates)
+    for name, text in texts.items():
         target = workspace / name
         if target.exists() and not confirm_overwrite(name):
             continue
@@ -75,4 +117,4 @@ def write_mails(workspace: Path, angebote: int, aufgaben: int, termin: date | No
         tmp.write_text(text, encoding="utf-8", newline="")
         tmp.replace(target)
         written.append(name)
-    return written
+    return written, unknown
