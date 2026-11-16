@@ -51,6 +51,8 @@ params:
   # Dateiname der Aufgaben-PDF je Klassenstufe (Spalte `datei` in Korrektoren-Mailmerge.csv). Platzhalter: {jahrgang} (z. B. 66),
   # {runde} (2), {stufe} (5 ... 10, 12), {stufe2} (05 ... 10, 12), {stufe_text} (5 ... 10, 11-12). Oberstufe = Stufe 12.
   korrektur_datei_muster: "A{jahrgang}{runde}_{stufe2}_Loesungen_Aufgaben.pdf"
+  # Anzahl der Korrekturaufgaben (für [[Aufgaben]] in den Mailtexten).
+  korrektur_aufgaben_anzahl: 28
 
 datasets:
 #   - name: orga
@@ -493,6 +495,21 @@ datasets:
                          WHERE zz.korrektor_id = k.id AND zz.mao_nummer DIV 10000 = cj.jahrgang_nr)
     cast:
       uebernommen: Int64
+
+  - name: korrektoren_mail_werte
+    id: korrektoren_mail_werte
+    enabled: true
+    # Eine Zeile mit den Zahlen für die Mailtexte: [[Angebote]] = Angebote im aktuellen Jahrgang, [[Aufgaben]] = Aufgabenzahl.
+    sql: |
+      SELECT
+      (SELECT COUNT(*) FROM {{table.korrektoren_angebote_table}} a WHERE a.mao_jahrgang_id = cj.id) AS angebote,
+      {{param.korrektur_aufgaben_anzahl}} AS aufgaben
+      FROM (SELECT j.id FROM {{table.jahrgaenge_table}} j
+            JOIN {{table.schuljahre_table}} s2 ON s2.id = j.schuljahr_id
+            WHERE s2.aktiv = 1 ORDER BY j.id DESC LIMIT 1) cj
+    cast:
+      angebote: Int64
+      aufgaben: Int64
 
   - name: wettbewerbstag
     id: wettbewerbstag
@@ -977,6 +994,24 @@ exports:
       sep: ";"
       columns: ["vorname","nachname","geschlecht","titel","anrede","email","uebernommen"]
     sort_by: [nachname, vorname]
+
+  # Mailtexte für Thunderbird Mail Merge (Vorlagen unter tex/Korrektoren-Mails/, sonst Standardtexte).
+  # [[Angebote]], [[Aufgaben]], [[Rückgabe]] werden ersetzt; {{...}} bleibt für Mail Merge stehen.
+  - name: korrektoren_mail_zuteilung
+    id: korrektoren_mail_zuteilung
+    enabled: true
+    from_dataset: korrektoren_mail_werte
+    template: "@tex/Korrektoren-Mails/Zuteilung.txt"
+    output:
+      path: "Korrektoren-Mail-Zuteilung.txt"
+
+  - name: korrektoren_mail_absage
+    id: korrektoren_mail_absage
+    enabled: true
+    from_dataset: korrektoren_mail_werte
+    template: "@tex/Korrektoren-Mails/Absage.txt"
+    output:
+      path: "Korrektoren-Mail-Absage.txt"
 
   # Wettbewerbstag aus MaO_Runden (Vorlage Aushang): eine Zeile mit datum;ort
   - name: wettbewerbstag

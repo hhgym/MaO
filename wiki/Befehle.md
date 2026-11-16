@@ -434,6 +434,10 @@ Standardfassungen an, die du dort anpasst. Mail-Merge-Platzhalter (`{{anrede}}`,
 `{{uebergabe|Wert|Text}}`, `{{uebergabe_sonst}}`) bleiben stehen; ersetzt werden `[[Angebote]]`, `[[Aufgaben]]` und `[[Rückgabe]]`
 (Rückgabetermin aus Menü 7). Vorhandene Mailtexte im Jahrgangsordner werden nur nach Rückfrage überschrieben.
 
+Alles zusammen in einem Lauf: `mao run --profile serienmail --no-latex` erzeugt beide CSV und beide Mailtexte. Die Mailtexte sind dort die
+Exporte `korrektoren_mail_zuteilung` und `korrektoren_mail_absage` (Schlüssel `template` statt CSV-Spalten; `[[Angebote]]` und `[[Aufgaben]]`
+stammen aus dem Datensatz `korrektoren_mail_werte`, die Aufgabenzahl aus `params.korrektur_aufgaben_anzahl`). Menü 9 bleibt als Alternative.
+
 Beide CSV sind Semikolon-getrennt in UTF-8. Im Add-on Mail Merge die Datei als CSV mit Trennzeichen `;` wählen; Platzhalter z. B. `{{anrede}}`,
 `{{aufgabe}}`. Die Dateien enthalten E-Mail-Adressen und gehören nicht ins Repository oder in Berichte.
 

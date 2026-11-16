@@ -81,24 +81,41 @@ def load_templates(tex_dir: Path | None) -> dict[str, str]:
     return result
 
 
+RUECKGABE_FEHLT = "[Rückgabetermin fehlt: mao korrektoren, Menü 7]"
+
+
+def fill_tokens(text: str, values: dict[str, str]) -> tuple[str, list[str]]:
+    """[[Name]] durch Werte ersetzen (Groß-/Kleinschreibung egal); zweite Rückgabe: unbekannte Platzhalter."""
+    lookup = {key.casefold(): value for key, value in values.items()}
+    unknown: list[str] = []
+
+    def fill(match: re.Match[str]) -> str:
+        key = match.group(1).strip()
+        if key.casefold() in lookup:
+            return lookup[key.casefold()]
+        if key not in unknown:
+            unknown.append(key)
+        return match.group(0)
+
+    return _TOKEN_RE.sub(fill, text), unknown
+
+
+def default_template(name: str) -> str | None:
+    """Standardtext zu einem Vorlagen-Dateinamen (Zuteilung.txt/Absage.txt) oder None."""
+    return DEFAULT_TEMPLATES.get(Path(name).name)
+
+
 def render_mails(angebote: int, aufgaben: int, termin: date | None,
                  templates: dict[str, str] | None = None) -> tuple[dict[str, str], list[str]]:
     """Dateiname -> Text mit eingesetzten Zahlen und Rückgabetermin; zweite Rückgabe: unbekannte [[Platzhalter]]."""
     source = templates or DEFAULT_TEMPLATES
     values = {"Angebote": str(angebote), "Aufgaben": str(aufgaben),
-              "Rückgabe": termin.strftime("%d.%m.%Y") if termin else "[Rückgabetermin fehlt: mao korrektoren, Menü 7]"}
+              "Rückgabe": termin.strftime("%d.%m.%Y") if termin else RUECKGABE_FEHLT}
     unknown: list[str] = []
-
-    def fill(match: re.Match[str]) -> str:
-        key = match.group(1).strip()
-        if key in values:
-            return values[key]
-        if key not in unknown:
-            unknown.append(key)
-        return match.group(0)
-
-    texts = {MAIL_ZUTEILUNG: _TOKEN_RE.sub(fill, source.get(TEMPLATE_ZUTEILUNG, DEFAULT_TEMPLATES[TEMPLATE_ZUTEILUNG])),
-             MAIL_ABSAGE: _TOKEN_RE.sub(fill, source.get(TEMPLATE_ABSAGE, DEFAULT_TEMPLATES[TEMPLATE_ABSAGE]))}
+    texts: dict[str, str] = {}
+    for out_name, tmpl_name in ((MAIL_ZUTEILUNG, TEMPLATE_ZUTEILUNG), (MAIL_ABSAGE, TEMPLATE_ABSAGE)):
+        texts[out_name], missing = fill_tokens(source.get(tmpl_name, DEFAULT_TEMPLATES[tmpl_name]), values)
+        unknown.extend(x for x in missing if x not in unknown)
     return texts, unknown
 
 

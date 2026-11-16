@@ -80,6 +80,11 @@ def validate_config(cfg: Dict[str, Any], base_dir: Optional[Path] = None) -> Lis
         out = ex.get("output") or {}
         if not isinstance(out, dict):
             errors.append(f"Export '{name}': output muss Mapping sein"); continue
+        if ex.get("template") is not None:
+            if not isinstance(ex["template"], str) or not ex["template"].strip():
+                errors.append(f"Export '{name}': template muss Text sein")
+            if not isinstance(out.get("path"), str) or not out.get("path"):
+                errors.append(f"Export '{name}': Textvorlage benötigt output.path")
         cols = out.get("columns", "*")
         if cols not in (None, "*") and not isinstance(cols, (list, str)):
             errors.append(f"Export '{name}': columns muss Liste, '*' oder Spaltenname sein")
