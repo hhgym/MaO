@@ -43,7 +43,13 @@
 #   - JOINs gehören IMMER ins SQL, nicht in die Pipeline.
 #   - Datasets werden vollständig geladen (kein WHERE hier).
 # -----------------------------------------------------------------------------
-# datasets:
+# # Einstellungen, die in Abfragen als {{param.<name>}} eingesetzt werden (nur ganze Zahlen oder Listen ganzer Zahlen).
+params:
+  # Korrekturhinweise: Bei welcher Zahl von Korrekturangeboten (anzahl: 1 = erstmals, 2 = zweites Jahr, ...)
+  # liegt ein Geschenk bei? Spalte `geschenk` (1/0) im Export korrektoren_hinweise. Leere Liste [] = nie.
+  korrektur_geschenk_bei: [1, 2, 4, 6]
+
+datasets:
 #   - name: orga
 #     enabled: true
 #     sql: "SELECT * FROM {{table.orga_table}}"
@@ -360,6 +366,7 @@ datasets:
     # Korrektor:innen mit zugeordneter Aufgabe der 2. Stufe des aktuellen Jahrgangs (MaO_Korrektoren_Aufgabe_Zuordnung).
     # mao_nummer = Jahrgang (2 Stellen) + Stufencode (2) + 2 (= 2. Stufe) + Aufgabe (1), z. B. 660521.
     # anzahl = Zahl der Jahrgänge bis einschließlich dieses mit Korrekturangebot (1 = erstmals);
+    # geschenk = 1, wenn anzahl in params.korrektur_geschenk_bei steht (Standard 1, 2, 4, 6), sonst 0;
     # hertzkinder = aktive Hertz-Kinder (Vorname Nachname (Klasse)), uebergabe aus den Präferenzen (Standard Hertzkind).
     sql: |
       SELECT
@@ -378,6 +385,10 @@ datasets:
       (SELECT COUNT(*) FROM {{table.korrektoren_angebote_table}} a
          JOIN {{table.jahrgaenge_table}} ja ON ja.id = a.mao_jahrgang_id
         WHERE a.korrektor_id = k.id AND ja.jahrgang_nr <= cj.jahrgang_nr) AS anzahl,
+      CASE WHEN (SELECT COUNT(*) FROM {{table.korrektoren_angebote_table}} a2
+                   JOIN {{table.jahrgaenge_table}} ja2 ON ja2.id = a2.mao_jahrgang_id
+                  WHERE a2.korrektor_id = k.id AND ja2.jahrgang_nr <= cj.jahrgang_nr) IN ({{param.korrektur_geschenk_bei}})
+           THEN 1 ELSE 0 END AS geschenk,
       COALESCE(pr.uebergabe, 'Hertzkind') AS uebergabe,
       pr.uebergabe_sonst AS uebergabe_sonst,
       (SELECT GROUP_CONCAT(CONCAT_WS(' ', s.vorname, s.nachname, CONCAT('(', s.klasse, ')'))
@@ -398,6 +409,7 @@ datasets:
       stufe: Int64
       aufgabe_nr: Int64
       anzahl: Int64
+      geschenk: Int64
 
   - name: wettbewerbstag
     id: wettbewerbstag
@@ -859,7 +871,7 @@ exports:
     output:
       path: "db/Korrektoren/Korrektoren-Hinweise.csv"
       sep: ";"
-      columns: ["aufgabe","stufe","aufgabe_nr","nachname","vorname","geschlecht","anrede","hinweis","anzahl","uebergabe","uebergabe_sonst","hertzkinder"]
+      columns: ["aufgabe","stufe","aufgabe_nr","nachname","vorname","geschlecht","anrede","hinweis","anzahl","geschenk","uebergabe","uebergabe_sonst","hertzkinder"]
     sort_by: [aufgabe, nachname, vorname]
 
   # Wettbewerbstag aus MaO_Runden (Vorlage Aushang): eine Zeile mit datum;ort

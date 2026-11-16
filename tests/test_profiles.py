@@ -100,7 +100,7 @@ def test_output_parity_same_synthetic_input(tmp_path):
     datasets['teilnehmende_raum'] = df[['tnr', 'nachname', 'vorname', 'geschlecht', 'klasse', 'stufe', 'raum', 'extern']].copy()
     datasets['korrekturliste_externe'] = df[['tnr', 'nachname', 'vorname', 'schulnummer', 'stufe', 'stufengruppe', 'stufencode', 'aufgaben']].copy()
     datasets['urkunden_externe'] = df[['tnr', 'vorname', 'nachname', 'geschlecht', 'schule', 'stufe', 'punkte']].copy()
-    datasets['korrektoren_hinweise'] = pd.DataFrame([{'aufgabe': 660721, 'stufe': 7, 'aufgabe_nr': 1, 'nachname': 'M', 'vorname': 'A', 'geschlecht': 'w', 'anrede': 'Liebe Frau M', 'hinweis': '', 'anzahl': 1, 'uebergabe': 'Hertzkind', 'uebergabe_sonst': '', 'hertzkinder': 'B C (7-1)'}])
+    datasets['korrektoren_hinweise'] = pd.DataFrame([{'aufgabe': 660721, 'stufe': 7, 'aufgabe_nr': 1, 'nachname': 'M', 'vorname': 'A', 'geschlecht': 'w', 'anrede': 'Liebe Frau M', 'hinweis': '', 'anzahl': 1, 'geschenk': 1, 'uebergabe': 'Hertzkind', 'uebergabe_sonst': '', 'hertzkinder': 'B C (7-1)'}])
     datasets['wettbewerbstag'] = df[['datum', 'ort']].copy()
     datasets['korrekturliste'] = df[['tnr', 'nachname', 'vorname', 'klasse', 'stufe', 'stufengruppe', 'stufencode']].copy()
     datasets['kopierliste_externe'] = df[['raum', 'stufe_3', 'stufe_4', 'stufe_5', 'stufe_6', 'gesamt']].copy()
