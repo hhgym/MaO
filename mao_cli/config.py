@@ -231,15 +231,20 @@ def resolve_sql_table_tokens(sql: str, tables: dict[str, str], *, label: str) ->
     return resolved
 
 
+PARAM_TEXT_RE = re.compile(r"[A-Za-z0-9_.{}\- äöüÄÖÜß]*")
+
+
 def param_sql_value(name: str, value: Any) -> str:
-    """Parameter für SQL: nur ganze Zahlen oder Listen ganzer Zahlen (leere Liste = NULL), nie freier Text."""
+    """Parameter für SQL: ganze Zahlen, Listen ganzer Zahlen (leere Liste = NULL) oder kurzer Text aus Buchstaben, Ziffern und _ . - { }."""
     def is_int(item: Any) -> bool:
         return isinstance(item, int) and not isinstance(item, bool)
+    if isinstance(value, str) and len(value) <= 200 and PARAM_TEXT_RE.fullmatch(value):
+        return "'" + value + "'"
     if is_int(value):
         return str(value)
     if isinstance(value, list) and all(is_int(item) for item in value):
         return ", ".join(str(item) for item in value) if value else "NULL"
-    raise ConfigurationError(f"params.{name}: erlaubt sind ganze Zahlen oder Listen ganzer Zahlen")
+    raise ConfigurationError(f"params.{name}: erlaubt sind ganze Zahlen, Listen ganzer Zahlen oder einfacher Text (Buchstaben, Ziffern, _ . - {{ }})")
 
 
 def resolve_sql_param_tokens(sql: str, params: Mapping[str, Any], *, label: str) -> str:

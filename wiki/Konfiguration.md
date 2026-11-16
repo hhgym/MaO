@@ -13,7 +13,7 @@ mao config show
 | Datei | Aufgabe |
 |---|---|
 | `settings.yaml` | Exakter Workspace-Pfad je Schuljahr, aktueller Jahrgang, Standardprofil |
-| `pipeline.yaml` | SQL-Datasets, Daten-Exporte, LaTeX-Jobs; Abschnitt `params` mit Zahlen für Abfragen (`{{param.<name>}}`, z. B. `korrektur_geschenk_bei: [1, 2, 4, 6]` für die Korrekturhinweise) |
+| `pipeline.yaml` | SQL-Datasets, Daten-Exporte, LaTeX-Jobs; Abschnitt `params` mit Zahlen für Abfragen (`{{param.<name>}}`, z. B. `korrektur_geschenk_bei: [1, 2, 4, 6]` für die Korrekturhinweise, `korrektur_datei_muster` für den Dateinamen der Aufgaben-PDFs im Serienmail-Export; auch einfacher Text) |
 | `profiles.ini` | Profile aus eindeutigen Export-/Job-IDs |
 | `tables.ini` | Zuordnung privater Tabellen- und Viewnamen |
 | `db.config` | MySQL-Verbindung, nicht im Repository |

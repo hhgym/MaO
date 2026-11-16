@@ -423,9 +423,10 @@ Zwei Exporte im Profil `korrektur` (`mao run --profile korrektur --no-latex` ode
 - `Korrektoren-Ohne-Aufgabe.csv` (ebenfalls im Jahrgangsordner): Angebot im aktuellen Jahrgang, aber keine Aufgabe (`vorname`, `nachname`, `geschlecht`,
   `titel`, `anrede`, `email`, `uebernommen`).
 
-`Korrektoren-Mailmerge.csv` enthält außerdem `datei` und `datei_2`: den Namen der Aufgaben-PDF der Klassenstufe
-(`MO<Jahrgang><Runde>_Loesungen_und_Aufgaben_<Stufe>_mV.pdf`, Oberstufe `…_11-12_mV.pdf`). Im Mail-Merge-Feld „Anhänge“ `{{datei}}` und in einer
-zweiten Zeile `{{datei_2}}` eintragen und die PDFs über „Durchsuchen“ auswählen.
+`Korrektoren-Mailmerge.csv` enthält außerdem `datei`: den Namen der Aufgaben-PDF der Klassenstufe. Das Muster steht in der `pipeline.yaml` unter
+`params.korrektur_datei_muster` (Standard `A{jahrgang}{runde}_{stufe2}_Loesungen_Aufgaben.pdf`; `{stufe2}` ist zweistellig, Oberstufe = 12;
+weitere Platzhalter `{jahrgang}`, `{runde}`, `{stufe}`, `{stufe_text}`). Im Mail-Merge-Feld „Anhänge“ `{{datei}}` eintragen und die PDFs über
+„Durchsuchen“ auswählen.
 
 `mao korrektoren` Menü 9 legt die Mailtexte `Korrektoren-Mail-Zuteilung.txt` und `Korrektoren-Mail-Absage.txt` im Jahrgangsordner an (mit
 Platzhaltern wie `{{anrede}}`; Zahl der Angebote, Aufgaben und der in Menü 7 gespeicherte Rückgabetermin werden eingesetzt).
