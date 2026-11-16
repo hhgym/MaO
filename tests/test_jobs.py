@@ -439,14 +439,15 @@ def test_default_pipeline_korrektoren_mailmerge_and_ohne_aufgabe(tmp_path):
     mm, ohne = sql["korrektoren_mailmerge"], sql["korrektoren_ohne_aufgabe"]
     assert "{{" not in mm + ohne and "IN (1, 2, 4, 6)" in mm and "GROUP_CONCAT(z.mao_nummer" in mm and "GROUP BY" not in mm
     assert "(zz.mao_nummer DIV 10) MOD 10 = 2" in mm and "k.email" in mm
+    assert "'_Loesungen_und_Aufgaben_'" in mm and "'11-12'" in mm and "'_mV.pdf'" in mm and "SUBSTRING_INDEX(m.dateien" in mm
     assert "k.aktiv = 1" in ohne and "a.mao_jahrgang_id = cj.id" in ohne and "NOT EXISTS" in ohne
     assert "z2.mao_nummer DIV 10000 < cj.jahrgang_nr" in ohne
     wanted = {"korrektoren_mailmerge", "korrektoren_ohne_aufgabe"}
     cfg["exports"] = [e for e in cfg["exports"] if j.export_id(e) in wanted]
-    mm_cols = ["vorname", "nachname", "geschlecht", "titel", "anrede", "email", "aufgabe", "hinweis", "uebergabe",
-               "uebergabe_sonst", "anzahl", "geschenk"]
-    df1 = pd.DataFrame([["Bea", "Zed", "w", "Dr.", "Liebe Frau Dr. Zed", "z@example.org", "660521, 660721", "Hinweis", "Post", "", 2, 1],
-                        ["Ana", "Alt", "m", "", "Lieber Herr Alt", "a@example.org", "660522", "", "Hertzkind", "", 1, 1]], columns=mm_cols)
+    mm_cols = ["vorname", "nachname", "geschlecht", "titel", "anrede", "email", "aufgabe", "hinweis", "datei", "datei_2",
+               "uebergabe", "uebergabe_sonst", "anzahl", "geschenk"]
+    df1 = pd.DataFrame([["Bea", "Zed", "w", "Dr.", "Liebe Frau Dr. Zed", "z@example.org", "660521, 660721", "Hinweis", "MO662_Loesungen_und_Aufgaben_5_mV.pdf", "MO662_Loesungen_und_Aufgaben_7_mV.pdf", "Post", "", 2, 1],
+                        ["Ana", "Alt", "m", "", "Lieber Herr Alt", "a@example.org", "660522", "", "MO662_Loesungen_und_Aufgaben_5_mV.pdf", "", "Hertzkind", "", 1, 1]], columns=mm_cols)
     df1 = df1.astype({"anzahl": "Int64", "geschenk": "Int64"})
     df2 = pd.DataFrame([["Cy", "Neu", "d", "", "Guten Tag Cy Neu", "c@example.org", 0]],
                        columns=["vorname", "nachname", "geschlecht", "titel", "anrede", "email", "uebernommen"]).astype({"uebernommen": "Int64"})

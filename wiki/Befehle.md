@@ -423,7 +423,14 @@ Zwei Exporte im Profil `korrektur` (`mao run --profile korrektur --no-latex` ode
 - `Korrektoren-Ohne-Aufgabe.csv` (ebenfalls im Jahrgangsordner): Angebot im aktuellen Jahrgang, aber keine Aufgabe (`vorname`, `nachname`, `geschlecht`,
   `titel`, `anrede`, `email`, `uebernommen`).
 
-Beide sind Semikolon-getrennt in UTF-8. Im Add-on Mail Merge die Datei als CSV mit Trennzeichen `;` wählen; Platzhalter z. B. `{{anrede}}`,
+`Korrektoren-Mailmerge.csv` enthält außerdem `datei` und `datei_2`: den Namen der Aufgaben-PDF der Klassenstufe
+(`MO<Jahrgang><Runde>_Loesungen_und_Aufgaben_<Stufe>_mV.pdf`, Oberstufe `…_11-12_mV.pdf`). Im Mail-Merge-Feld „Anhänge“ `{{datei}}` und in einer
+zweiten Zeile `{{datei_2}}` eintragen und die PDFs über „Durchsuchen“ auswählen.
+
+`mao korrektoren` Menü 9 legt die Mailtexte `Korrektoren-Mail-Zuteilung.txt` und `Korrektoren-Mail-Absage.txt` im Jahrgangsordner an (mit
+Platzhaltern wie `{{anrede}}`; Zahl der Angebote, Aufgaben und der in Menü 7 gespeicherte Rückgabetermin werden eingesetzt).
+
+Beide CSV sind Semikolon-getrennt in UTF-8. Im Add-on Mail Merge die Datei als CSV mit Trennzeichen `;` wählen; Platzhalter z. B. `{{anrede}}`,
 `{{aufgabe}}`. Die Dateien enthalten E-Mail-Adressen und gehören nicht ins Repository oder in Berichte.
 
 ### mao korrektoren-aufgaben
