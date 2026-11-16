@@ -304,3 +304,25 @@ def test_kind_filter_toggle_hides_but_keeps_assigned_and_confirmation(monkeypatc
     a.interactive_table(s.work, key=k, draw=lambda lines, row: prompts.append(lines), size=lambda: (100, 40))
     assert s.work.assigned(660521) == [3]
     assert any("Trotzdem zuordnen" in x for lines in prompts for x in lines)
+
+
+def test_sorting_by_first_or_last_name_with_toggle_key(monkeypatch):
+    mod = sys.modules[__name__]
+    monkeypatch.setattr(mod, "KORR", [(1, None, "Zoe", "Adler", 1), (2, None, "Anna", "Zorn", 1), (3, None, "Max", "Meier", 1)])
+    monkeypatch.setattr(mod, "PREFS", {1: {"kl_5": 1}, 2: {"kl_5": 1}, 3: {"kl_5": 1}})
+    monkeypatch.setattr(mod, "ANGEBOTE", [(7, 1), (7, 2), (7, 3)])
+    s, _ = session()
+    assert [c.korrektor_id for c in s.work.candidates(660521)] == [1, 3, 2]
+    assert [c.korrektor_id for c in s.work.candidates(660521, sortierung="vorname")] == [2, 3, 1]
+    lines, _, _ = a.task_screen(s.work, 660521, 0, False, (100, 40), sortierung="vorname")
+    assert "sortiert nach Vorname" in lines[2] and "Anna Zorn" in lines[4] and "Zoe Adler" in lines[6]
+    lines, _, _ = a.task_screen(s.work, 660521, 0, False, (100, 40))
+    assert "sortiert nach Nachname" in lines[2] and "Adler, Zoe" in lines[4]
+    # Taste n: Cursor bleibt auf derselben Person (Zoe Adler: Platz 1 -> Platz 3), Zuordnung trifft sie
+    k = keys("enter", "n", "space", "q", "q")
+    a.interactive_table(s.work, key=k, draw=lambda *_: None, size=lambda: (100, 40))
+    assert s.work.assigned(660521) == [1]
+    k = keys("enter", "down", "n", "space", "q", "q")  # Max Meier bleibt markiert
+    s.work.reset()
+    a.interactive_table(s.work, key=k, draw=lambda *_: None, size=lambda: (100, 40))
+    assert s.work.assigned(660521) == [3]

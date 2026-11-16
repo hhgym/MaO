@@ -432,7 +432,7 @@ mao korrektoren-aufgaben --ohne-menue   # alle Aufgaben mit Kandidaten ausgeben 
 - Menüpunkt 1 öffnet die interaktive Tabelle: ↑/↓ wählen, ←/→ Klassenstufe bzw. Aufgabe wechseln, Enter öffnet eine Aufgabe,
   Leertaste ordnet zu bzw. entfernt, `b` Bemerkung, `a` auch ohne Stufenangebot, `s` zum Schreiben, `q` zurück.
 - Lange Listen erscheinen je nach Höhe des Terminals in zwei Spalten (ab 82 Zeichen Breite), sonst seitenweise; Kinder in der Stufe
-  stehen als `K:<Klasse>` in der Zelle; Taste `k` blendet sie aus bzw. wieder ein. Vor dem Zuordnen kommt immer eine Rückfrage.
+  stehen als `K:<Klasse>` in der Zelle; Taste `k` blendet sie aus bzw. wieder ein; `n` wechselt die Sortierung zwischen Nachname und Vorname. Vor dem Zuordnen kommt immer eine Rückfrage.
 - Es zählen nur Angebote des aktuellen Jahrgangs; der aktive Jahrgang der Datenbank wird gegen den erwarteten geprüft.
   Zugeordnete ohne Angebot des aktuellen Jahrgangs sind mit „KEIN Angebot“ markiert.
 - Derselbe Dialog ist in `mao korrektoren` als Menüpunkt 8 erreichbar.
