@@ -383,7 +383,7 @@ def test_default_pipeline_korrektoren_hinweise(tmp_path):
     cfg = load_config(Path(j.__file__).parent / "defaults" / "pipeline.yaml")
     ds = next(d for d in cfg["datasets"] if d["name"] == "korrektoren_hinweise")
     for part in ("{{table.korrektoren_zuordnung_table}}", "z.mao_nummer DIV 10000 = cj.jahrgang_nr",
-                 "(z.mao_nummer DIV 10) MOD 10 = 2", "h.aktiv = 1", "ja.jahrgang_nr <= cj.jahrgang_nr"):
+                 "(z.mao_nummer DIV 10) MOD 10 = 2", "h.aktiv = 1", "z2.mao_nummer DIV 10000 <= cj.jahrgang_nr", "COUNT(DISTINCT z3.mao_nummer DIV 10000)"):
         assert part in ds["sql"]
     names = {x["name"]: x for x in cfg["latex"]["jobs"]}
     for name in ("korrekturhinweise", "korrekturstatus", "korrekturstreifen"):
