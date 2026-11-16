@@ -414,6 +414,18 @@ Regeln:
 - Zu lange Werte werden nicht gekürzt: Der Eintrag wird übersprungen, die Meldung nennt die zu verlängernde Spalte.
 - Die Entscheidungen stehen in `korrektoren-entscheidungen.yaml` im Workspace, Berichte (`--report`) im Workspace; beide
 
+### Serienmails an Korrektor:innen (Thunderbird)
+
+Zwei Exporte im Profil `korrektur` (`mao run --profile korrektur --no-latex` oder im Menü `mao run`):
+
+- `db/Korrektoren/Korrektoren-Mailmerge.csv`: ausgewählte Korrektor:innen, eine Zeile je Person (`vorname`, `nachname`, `geschlecht`, `titel`,
+  `anrede`, `email`, `aufgabe` = alle Aufgabennummern, `hinweis` = Bemerkungen, `uebergabe`, `uebergabe_sonst`, `anzahl`, `geschenk`).
+- `db/Korrektoren/Korrektoren-Ohne-Aufgabe.csv`: Angebot im aktuellen Jahrgang, aber keine Aufgabe (`vorname`, `nachname`, `geschlecht`,
+  `titel`, `anrede`, `email`, `uebernommen`).
+
+Beide sind Semikolon-getrennt in UTF-8. Im Add-on Mail Merge die Datei als CSV mit Trennzeichen `;` wählen; Platzhalter z. B. `{{anrede}}`,
+`{{aufgabe}}`. Die Dateien enthalten E-Mail-Adressen und gehören nicht ins Repository oder in Berichte.
+
 ### mao korrektoren-aufgaben
 
 Weist Aufgaben (Aufgabennummern) den Korrektor:innen zu. Ziel ist `korrektoren_zuordnung_table` (tables.ini; Jahrgang steckt in der

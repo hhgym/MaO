@@ -33,7 +33,7 @@ def sample_dataset():
         "kl": "AB", "stellvkl": "CD", "kuerzel": "AB", "klassenstufen": "7", "rolle": "Standard", "gruppe": "",
         "stufe_3": 0, "stufe_4": 0, "stufe_5": 0, "stufe_6": 0, "stufe_7": 1, "stufe_8": 0, "stufe_9": 0, "stufe_10": 0, "stufe_11": 0, "stufe_12": 0, "gesamt": 1,
         "stufengruppe": "7", "stufencode": "07", "datum": "11.11.2026", "ort": "HHG", "extern": 0, "schulnummer": "01A01", "aufgaben": 4, "schule": "Beispielschule",
-        "aufgabe": 660721, "aufgabe_nr": 1, "anrede": "Liebe Frau Muster", "hinweis": "", "anzahl": 1, "geschenk": 1, "uebergabe": "Hertzkind", "uebergabe_sonst": "", "hertzkinder": ""
+        "aufgabe": 660721, "aufgabe_nr": 1, "anrede": "Liebe Frau Muster", "hinweis": "", "anzahl": 1, "geschenk": 1, "uebergabe": "Hertzkind", "uebergabe_sonst": "", "hertzkinder": "", "titel": "", "email": "m@example.org", "uebernommen": 2
     }])
 
 
@@ -44,7 +44,7 @@ def make_datasets(config, df=None):
 
 def test_original_pipeline_validates(sample_config, tmp_path):
     assert validate_config(sample_config, tmp_path) == []
-    assert len(sample_config["exports"]) == 40
+    assert len(sample_config["exports"]) == 42
 
 
 def test_invalid_sort_is_not_silent():
