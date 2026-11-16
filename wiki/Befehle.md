@@ -428,8 +428,11 @@ Zwei Exporte im Profil `korrektur` (`mao run --profile korrektur --no-latex` ode
 weitere Platzhalter `{jahrgang}`, `{runde}`, `{stufe}`, `{stufe_text}`). Im Mail-Merge-Feld „Anhänge“ `{{datei}}` eintragen und die PDFs über
 „Durchsuchen“ auswählen.
 
-`mao korrektoren` Menü 9 legt die Mailtexte `Korrektoren-Mail-Zuteilung.txt` und `Korrektoren-Mail-Absage.txt` im Jahrgangsordner an (mit
-Platzhaltern wie `{{anrede}}`; Zahl der Angebote, Aufgaben und der in Menü 7 gespeicherte Rückgabetermin werden eingesetzt).
+`mao korrektoren` Menü 9 erzeugt aus den Vorlagen `<MaO>/tex/Korrektoren-Mails/Zuteilung.txt` und `Absage.txt` die Mailtexte
+`Korrektoren-Mail-Zuteilung.txt` und `Korrektoren-Mail-Absage.txt` im Jahrgangsordner. Fehlen die Vorlagen, legt das Menü neutrale
+Standardfassungen an, die du dort anpasst. Mail-Merge-Platzhalter (`{{anrede}}`, `{{aufgabe}}`, `{{email}}`, `{{datei}}`,
+`{{uebergabe|Wert|Text}}`, `{{uebergabe_sonst}}`) bleiben stehen; ersetzt werden `[[Angebote]]`, `[[Aufgaben]]` und `[[Rückgabe]]`
+(Rückgabetermin aus Menü 7). Vorhandene Mailtexte im Jahrgangsordner werden nur nach Rückfrage überschrieben.
 
 Beide CSV sind Semikolon-getrennt in UTF-8. Im Add-on Mail Merge die Datei als CSV mit Trennzeichen `;` wählen; Platzhalter z. B. `{{anrede}}`,
 `{{aufgabe}}`. Die Dateien enthalten E-Mail-Adressen und gehören nicht ins Repository oder in Berichte.

@@ -21,6 +21,7 @@ from typing import Any, Callable, Iterable, Mapping
 
 import yaml
 
+from .workspaces import CONFIG_FOLDER, TEX_FOLDER
 from .config import ConfigurationError
 from .gf_import import IDENT, gf_entries, load_gf_credentials
 
@@ -710,6 +711,7 @@ class Session:
     state: State | None = None
     plan: Plan = field(default_factory=Plan)
     workspace: Path | None = None
+    tex_dir: Path | None = None
 
     def load_entries(self) -> None:
         entries = list(self.fetch())
@@ -797,7 +799,8 @@ def open_session(db: Any, config_dir: Path, tables: Mapping[str, str], workspace
         def fetch() -> list[Mapping[str, Any]]:
             return fixed
     path = decisions_file or workspace / DECISIONS_FILE
-    session = Session(db, tables, fetch, settings.fields, path, load_decisions(path), workspace=workspace)
+    session = Session(db, tables, fetch, settings.fields, path, load_decisions(path), workspace=workspace,
+                      tex_dir=config_dir.parent / TEX_FOLDER if config_dir.name == CONFIG_FOLDER else None)
     session.load_entries()
     session.reload()
     return session
@@ -991,11 +994,19 @@ def run_menu(session: Session, *, apply: bool, ask: Callable[[str], str] = input
                     raise KorrektorenError("Kein Jahrgangsordner bekannt")
                 assert session.state is not None
                 from .korrektoren_aufgaben import AUFGABEN, STUFEN
-                from .korrektoren_mails import write_mails
+                from .korrektoren_mails import TEMPLATE_DIR, ensure_templates, load_templates, write_mails
                 termin = read_termin(session.workspace)
                 offers = sum(1 for year_id, _ in session.state.angebote if year_id == session.state.jahrgang_id)
-                names = write_mails(session.workspace, offers, len(STUFEN) * len(AUFGABEN), termin,
-                                    lambda name: ask(f"{name} gibt es schon. Überschreiben? [j/N] ").strip().lower() in ("j", "ja"))
+                created = ensure_templates(session.tex_dir)
+                if created:
+                    out(f"Vorlagen angelegt in tex/{TEMPLATE_DIR}: {', '.join(created)} (dort anpassbar)")
+                names, unknown = write_mails(
+                    session.workspace, offers, len(STUFEN) * len(AUFGABEN), termin,
+                    lambda name: ask(f"{name} gibt es schon. Überschreiben? [j/N] ").strip().lower() in ("j", "ja"),
+                    load_templates(session.tex_dir))
+                if unknown:
+                    out("Hinweis: unbekannte Platzhalter in den Vorlagen: " + ", ".join(f"[[{x}]]" for x in unknown)
+                        + " (erlaubt: [[Angebote]], [[Aufgaben]], [[Rückgabe]])")
                 out(("Geschrieben: " + ", ".join(names)) if names else "Nichts geschrieben.")
                 out(f"Angaben: {offers} Angebote, {len(STUFEN) * len(AUFGABEN)} Aufgaben, Rückgabetermin {_termin_text(session)}")
                 if termin is None:
