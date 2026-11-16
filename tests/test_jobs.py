@@ -391,15 +391,38 @@ def test_default_pipeline_korrektoren_hinweise(tmp_path):
         assert names[name]["tex"].startswith("@tex/") and names[name]["tex"].endswith(".tex")
     cfg["exports"] = [e for e in cfg["exports"] if j.export_id(e) == "korrektoren_hinweise"]
     cols = ["aufgabe", "stufe", "aufgabe_nr", "nachname", "vorname", "geschlecht", "anrede", "hinweis", "anzahl",
-            "uebergabe", "uebergabe_sonst", "hertzkinder"]
+            "geschenk", "uebergabe", "uebergabe_sonst", "hertzkinder"]
     df = pd.DataFrame([
-        [660522, 5, 2, "Zed", "Bea", "w", "Liebe Frau Zed", None, 2, "Hertzkind", None, "A B (7-1)"],
-        [660521, 5, 1, "Alt", "Ana", "m", "Lieber Herr Alt", "Hinweis", 1, "Post", None, None]], columns=cols)
-    df = df.astype({"aufgabe": "Int64", "stufe": "Int64", "aufgabe_nr": "Int64", "anzahl": "Int64"})
+        [660522, 5, 2, "Zed", "Bea", "w", "Liebe Frau Zed", None, 2, 1, "Hertzkind", None, "A B (7-1)"],
+        [660521, 5, 1, "Alt", "Ana", "m", "Lieber Herr Alt", "Hinweis", 1, 1, "Post", None, None]], columns=cols)
+    df = df.astype({"aufgabe": "Int64", "stufe": "Int64", "aufgabe_nr": "Int64", "anzahl": "Int64", "geschenk": "Int64"})
     plan = ExportPlan(tmp_path)
     run_exports({"korrektoren_hinweise": df}, cfg, tmp_path, plan)
     out = {str(n).replace("\\", "/").split("db/")[-1]: c for n, (c, _, _) in plan.outputs.items()}
     rows = out["Korrektoren/Korrektoren-Hinweise.csv"].decode().splitlines()
     assert rows[0] == ";".join(cols)
-    assert rows[1].startswith("660521;5;1;Alt;Ana;m;Lieber Herr Alt;Hinweis;1;Post;;")
+    assert rows[1].startswith("660521;5;1;Alt;Ana;m;Lieber Herr Alt;Hinweis;1;1;Post;;")
     assert rows[2].startswith("660522;")
+
+
+def test_geschenk_schedule_comes_from_params(tmp_path):
+    from pathlib import Path
+    import pytest
+    from mao_cli.config import ConfigurationError, load_tables, resolve_table_placeholders
+    base = Path(j.__file__).parent / "defaults"
+    cfg = load_config(base / "pipeline.yaml")
+    tables = load_tables(base / "tables.ini")
+    assert cfg["params"]["korrektur_geschenk_bei"] == [1, 2, 4, 6]
+    sql = next(d for d in resolve_table_placeholders(cfg, tables)["datasets"] if d["name"] == "korrektoren_hinweise")["sql"]
+    assert ") IN (1, 2, 4, 6)" in sql and "{{" not in sql and "AS geschenk" in sql
+    cfg["params"]["korrektur_geschenk_bei"] = [3]
+    assert ") IN (3)" in next(d for d in resolve_table_placeholders(cfg, tables)["datasets"] if d["name"] == "korrektoren_hinweise")["sql"]
+    cfg["params"]["korrektur_geschenk_bei"] = []
+    assert ") IN (NULL)" in next(d for d in resolve_table_placeholders(cfg, tables)["datasets"] if d["name"] == "korrektoren_hinweise")["sql"]
+    for bad in ("1); DROP TABLE x", [1, "2"], [True], 1.5, None):
+        cfg["params"]["korrektur_geschenk_bei"] = bad
+        with pytest.raises(ConfigurationError):
+            resolve_table_placeholders(cfg, tables)
+    del cfg["params"]["korrektur_geschenk_bei"]
+    with pytest.raises(ConfigurationError, match="korrektur_geschenk_bei"):
+        resolve_table_placeholders(cfg, tables)

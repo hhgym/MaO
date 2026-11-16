@@ -5,7 +5,7 @@ import configparser
 import copy
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 import yaml
 from .common import _as_list
 
@@ -192,6 +192,7 @@ def validate_config(cfg: Dict[str, Any], base_dir: Optional[Path] = None) -> Lis
 # ---------------------------------------------------------------------------
 
 IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+PARAM_TOKEN_RE = re.compile(r"\{\{\s*param\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 TABLE_TOKEN_RE = re.compile(r"\{\{\s*table\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 
 
@@ -230,13 +231,41 @@ def resolve_sql_table_tokens(sql: str, tables: dict[str, str], *, label: str) ->
     return resolved
 
 
+def param_sql_value(name: str, value: Any) -> str:
+    """Parameter für SQL: nur ganze Zahlen oder Listen ganzer Zahlen (leere Liste = NULL), nie freier Text."""
+    def is_int(item: Any) -> bool:
+        return isinstance(item, int) and not isinstance(item, bool)
+    if is_int(value):
+        return str(value)
+    if isinstance(value, list) and all(is_int(item) for item in value):
+        return ", ".join(str(item) for item in value) if value else "NULL"
+    raise ConfigurationError(f"params.{name}: erlaubt sind ganze Zahlen oder Listen ganzer Zahlen")
+
+
+def resolve_sql_param_tokens(sql: str, params: Mapping[str, Any], *, label: str) -> str:
+    """Ersetzt {{param.<name>}} durch Zahlen aus dem Abschnitt `params` der pipeline.yaml."""
+    def replace(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key not in params:
+            raise ConfigurationError(f"{label}: Unbekannter Parameter '{key}' (Abschnitt params der pipeline.yaml)")
+        return param_sql_value(key, params[key])
+
+    return PARAM_TOKEN_RE.sub(replace, sql)
+
+
 def resolve_table_placeholders(cfg: Dict[str, Any], tables: dict[str, str]) -> Dict[str, Any]:
-    """Gleiche sichere {{table.*}}-Auflösung für Pipeline und GF-Import."""
+    """Gleiche sichere {{table.*}}-Auflösung für Pipeline und GF-Import; zusätzlich {{param.*}} aus `params`."""
     changed = copy.deepcopy(cfg)
+    params = changed.get("params") or {}
+    if not isinstance(params, dict):
+        raise ConfigurationError("Abschnitt 'params' muss ein Mapping sein")
+    for key, value in params.items():
+        param_sql_value(str(key), value)
     for dataset in changed.get("datasets", []):
         sql = dataset.get("sql", "")
         if isinstance(sql, str):
-            dataset["sql"] = resolve_sql_table_tokens(sql, tables, label=f"Dataset '{dataset.get('name')}'")
+            label = f"Dataset '{dataset.get('name')}'"
+            dataset["sql"] = resolve_sql_table_tokens(resolve_sql_param_tokens(sql, params, label=label), tables, label=label)
     return changed
 
 
