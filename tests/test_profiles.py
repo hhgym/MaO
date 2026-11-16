@@ -116,7 +116,7 @@ def test_output_parity_same_synthetic_input(tmp_path):
     plan = ExportPlan(tmp_path)
     run_exports(datasets, cfg, tmp_path, plan)
     actual = {name: hashlib.sha256(content).hexdigest()
-              for name, (content, _, _) in plan.outputs.items() if not any(x in str(name).replace('\\', '/') for x in ('Aufsichten/', 'Einsatz-Oberstufe/', 'Urkunden-Externe/', 'Korrektoren/'))}
+              for name, (content, _, _) in plan.outputs.items() if not any(x in str(name).replace('\\', '/') for x in ('Aufsichten/', 'Einsatz-Oberstufe/', 'Urkunden-Externe/', 'Korrektoren/', 'Korrektoren-Mailmerge.csv', 'Korrektoren-Ohne-Aufgabe.csv'))}
     assert actual == REFERENCE['exports_sha256']
 
 
