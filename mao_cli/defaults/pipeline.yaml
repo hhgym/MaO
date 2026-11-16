@@ -413,40 +413,52 @@ datasets:
     id: korrektoren_mailmerge
     enabled: true
     # Eine Zeile je ausgewählter Korrektor:in (mindestens eine Aufgabe der 2. Stufe im aktuellen Jahrgang) für Serienmails
-    # (Thunderbird, Add-on Mail Merge): aufgabe = alle Aufgabennummern, hinweis = Bemerkungen der Zuordnungen (mit "; " getrennt).
+    # (Thunderbird, Add-on Mail Merge): datei/datei_2 = Aufgaben-PDFs (MO<Jahrgang><Runde>_Loesungen_und_Aufgaben_<Stufe>_mV.pdf, Stufe 12 = 11-12);
+    # aufgabe = alle Aufgabennummern, hinweis = Bemerkungen der Zuordnungen (mit "; " getrennt).
     sql: |
-      SELECT
-      k.vorname AS vorname,
-      k.nachname AS nachname,
-      k.geschlecht AS geschlecht,
-      COALESCE(k.titel, '') AS titel,
-      CASE k.geschlecht
-        WHEN 'm' THEN CONCAT('Lieber Herr ', TRIM(CONCAT_WS(' ', k.titel, k.nachname)))
-        WHEN 'w' THEN CONCAT('Liebe Frau ', TRIM(CONCAT_WS(' ', k.titel, k.nachname)))
-        ELSE CONCAT('Guten Tag ', TRIM(CONCAT_WS(' ', k.titel, k.vorname, k.nachname)))
-      END AS anrede,
-      COALESCE(k.email, '') AS email,
-      (SELECT GROUP_CONCAT(z.mao_nummer ORDER BY z.mao_nummer SEPARATOR ', ')
-         FROM {{table.korrektoren_zuordnung_table}} z
-        WHERE z.korrektor_id = k.id AND z.mao_nummer DIV 10000 = cj.jahrgang_nr AND (z.mao_nummer DIV 10) MOD 10 = 2) AS aufgabe,
-      COALESCE((SELECT GROUP_CONCAT(z.bemerkung ORDER BY z.mao_nummer SEPARATOR '; ')
-                  FROM {{table.korrektoren_zuordnung_table}} z
-                 WHERE z.korrektor_id = k.id AND z.mao_nummer DIV 10000 = cj.jahrgang_nr AND (z.mao_nummer DIV 10) MOD 10 = 2
-                   AND z.bemerkung IS NOT NULL AND z.bemerkung <> ''), '') AS hinweis,
-      (SELECT COUNT(DISTINCT z2.mao_nummer DIV 10000) FROM {{table.korrektoren_zuordnung_table}} z2
-        WHERE z2.korrektor_id = k.id AND z2.mao_nummer DIV 10000 <= cj.jahrgang_nr) AS anzahl,
-      CASE WHEN (SELECT COUNT(DISTINCT z3.mao_nummer DIV 10000) FROM {{table.korrektoren_zuordnung_table}} z3
-                  WHERE z3.korrektor_id = k.id AND z3.mao_nummer DIV 10000 <= cj.jahrgang_nr) IN ({{param.korrektur_geschenk_bei}})
-           THEN 1 ELSE 0 END AS geschenk,
-      COALESCE(pr.uebergabe, 'Hertzkind') AS uebergabe,
-      COALESCE(pr.uebergabe_sonst, '') AS uebergabe_sonst
-      FROM {{table.korrektoren_table}} k
-      CROSS JOIN (SELECT j.jahrgang_nr FROM {{table.jahrgaenge_table}} j
-                  JOIN {{table.schuljahre_table}} s2 ON s2.id = j.schuljahr_id
-                  WHERE s2.aktiv = 1 ORDER BY j.id DESC LIMIT 1) cj
-      LEFT JOIN {{table.korrektoren_prefs_table}} pr ON pr.korrektor_id = k.id
-      WHERE EXISTS (SELECT 1 FROM {{table.korrektoren_zuordnung_table}} zz
-                     WHERE zz.korrektor_id = k.id AND zz.mao_nummer DIV 10000 = cj.jahrgang_nr AND (zz.mao_nummer DIV 10) MOD 10 = 2)
+      SELECT m.vorname, m.nachname, m.geschlecht, m.titel, m.anrede, m.email, m.aufgabe, m.hinweis,
+             SUBSTRING_INDEX(m.dateien, '|', 1) AS datei,
+             IF(m.dateien LIKE '%|%', SUBSTRING_INDEX(SUBSTRING_INDEX(m.dateien, '|', 2), '|', -1), '') AS datei_2,
+             m.uebergabe, m.uebergabe_sonst, m.anzahl, m.geschenk
+      FROM (
+        SELECT
+        k.vorname AS vorname,
+        k.nachname AS nachname,
+        k.geschlecht AS geschlecht,
+        COALESCE(k.titel, '') AS titel,
+        CASE k.geschlecht
+          WHEN 'm' THEN CONCAT('Lieber Herr ', TRIM(CONCAT_WS(' ', k.titel, k.nachname)))
+          WHEN 'w' THEN CONCAT('Liebe Frau ', TRIM(CONCAT_WS(' ', k.titel, k.nachname)))
+          ELSE CONCAT('Guten Tag ', TRIM(CONCAT_WS(' ', k.titel, k.vorname, k.nachname)))
+        END AS anrede,
+        COALESCE(k.email, '') AS email,
+        (SELECT GROUP_CONCAT(z.mao_nummer ORDER BY z.mao_nummer SEPARATOR ', ')
+           FROM {{table.korrektoren_zuordnung_table}} z
+          WHERE z.korrektor_id = k.id AND z.mao_nummer DIV 10000 = cj.jahrgang_nr AND (z.mao_nummer DIV 10) MOD 10 = 2) AS aufgabe,
+        COALESCE((SELECT GROUP_CONCAT(z.bemerkung ORDER BY z.mao_nummer SEPARATOR '; ')
+                    FROM {{table.korrektoren_zuordnung_table}} z
+                   WHERE z.korrektor_id = k.id AND z.mao_nummer DIV 10000 = cj.jahrgang_nr AND (z.mao_nummer DIV 10) MOD 10 = 2
+                     AND z.bemerkung IS NOT NULL AND z.bemerkung <> ''), '') AS hinweis,
+        (SELECT COUNT(DISTINCT z2.mao_nummer DIV 10000) FROM {{table.korrektoren_zuordnung_table}} z2
+          WHERE z2.korrektor_id = k.id AND z2.mao_nummer DIV 10000 <= cj.jahrgang_nr) AS anzahl,
+        CASE WHEN (SELECT COUNT(DISTINCT z3.mao_nummer DIV 10000) FROM {{table.korrektoren_zuordnung_table}} z3
+                    WHERE z3.korrektor_id = k.id AND z3.mao_nummer DIV 10000 <= cj.jahrgang_nr) IN ({{param.korrektur_geschenk_bei}})
+             THEN 1 ELSE 0 END AS geschenk,
+        COALESCE(pr.uebergabe, 'Hertzkind') AS uebergabe,
+        COALESCE(pr.uebergabe_sonst, '') AS uebergabe_sonst,
+        (SELECT GROUP_CONCAT(DISTINCT CONCAT('MO', z.mao_nummer DIV 10000, (z.mao_nummer DIV 10) MOD 10, '_Loesungen_und_Aufgaben_',
+                                             IF((z.mao_nummer DIV 100) MOD 100 = 12, '11-12', (z.mao_nummer DIV 100) MOD 100), '_mV.pdf')
+                             ORDER BY z.mao_nummer SEPARATOR '|')
+           FROM {{table.korrektoren_zuordnung_table}} z
+          WHERE z.korrektor_id = k.id AND z.mao_nummer DIV 10000 = cj.jahrgang_nr AND (z.mao_nummer DIV 10) MOD 10 = 2) AS dateien
+        FROM {{table.korrektoren_table}} k
+        CROSS JOIN (SELECT j.jahrgang_nr FROM {{table.jahrgaenge_table}} j
+                    JOIN {{table.schuljahre_table}} s2 ON s2.id = j.schuljahr_id
+                    WHERE s2.aktiv = 1 ORDER BY j.id DESC LIMIT 1) cj
+        LEFT JOIN {{table.korrektoren_prefs_table}} pr ON pr.korrektor_id = k.id
+        WHERE EXISTS (SELECT 1 FROM {{table.korrektoren_zuordnung_table}} zz
+                       WHERE zz.korrektor_id = k.id AND zz.mao_nummer DIV 10000 = cj.jahrgang_nr AND (zz.mao_nummer DIV 10) MOD 10 = 2)
+      ) m
     cast:
       anzahl: Int64
       geschenk: Int64
@@ -953,7 +965,7 @@ exports:
     output:
       path: "Korrektoren-Mailmerge.csv"
       sep: ";"
-      columns: ["vorname","nachname","geschlecht","titel","anrede","email","aufgabe","hinweis","uebergabe","uebergabe_sonst","anzahl","geschenk"]
+      columns: ["vorname","nachname","geschlecht","titel","anrede","email","aufgabe","hinweis","datei","datei_2","uebergabe","uebergabe_sonst","anzahl","geschenk"]
     sort_by: [nachname, vorname]
 
   - name: korrektoren_ohne_aufgabe

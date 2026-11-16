@@ -871,6 +871,7 @@ MENU = """
   6) Formular und Datenbank neu laden
   7) Rückgabetermin der Korrekturen ({termin})
   8) Aufgaben zuweisen (interaktive Tabelle)
+  9) Mailtexte (Zuteilung, Absage) im Jahrgangsordner erzeugen
   q) Beenden"""
 
 
@@ -985,10 +986,24 @@ def run_menu(session: Session, *, apply: bool, ask: Callable[[str], str] = input
                 task_draft = TaskDraft(session.workspace) if session.workspace is not None else None
                 for name, value in run_tasks_menu(tasks, apply=apply, ask=ask, out=out, draft=task_draft).items():
                     written_total[f"aufgaben_{name}"] = written_total.get(f"aufgaben_{name}", 0) + value
+            elif choice == "9":
+                if session.workspace is None:
+                    raise KorrektorenError("Kein Jahrgangsordner bekannt")
+                assert session.state is not None
+                from .korrektoren_aufgaben import AUFGABEN, STUFEN
+                from .korrektoren_mails import write_mails
+                termin = read_termin(session.workspace)
+                offers = sum(1 for year_id, _ in session.state.angebote if year_id == session.state.jahrgang_id)
+                names = write_mails(session.workspace, offers, len(STUFEN) * len(AUFGABEN), termin,
+                                    lambda name: ask(f"{name} gibt es schon. Überschreiben? [j/N] ").strip().lower() in ("j", "ja"))
+                out(("Geschrieben: " + ", ".join(names)) if names else "Nichts geschrieben.")
+                out(f"Angaben: {offers} Angebote, {len(STUFEN) * len(AUFGABEN)} Aufgaben, Rückgabetermin {_termin_text(session)}")
+                if termin is None:
+                    out("Hinweis: Rückgabetermin fehlt noch (Menü 7); danach die Zuteilungs-Mail erneut erzeugen.")
             elif choice in ("q", "quit", "exit"):
                 return written_total
             elif choice:
-                out("Bitte 1 bis 8 oder q eingeben.")
+                out("Bitte 1 bis 9 oder q eingeben.")
         except KorrektorenError as exc:
             out(f"Nicht möglich: {exc}")
 
