@@ -427,7 +427,7 @@ def test_w_key_saves_draft_in_interactive_table(tmp_path):
 
 
 def test_takeover_overview_counts_earlier_years_and_includes_planned_changes():
-    s, _ = session(Cur([(1, 1, 650521, None), (2, 1, 640721, None), (3, 1, 660521, None), (4, 3, 660722, None)]))
+    s, _ = session(Cur([(1, 1, 650521, None), (2, 1, 640721, None), (3, 1, 660521, None), (4, 3, 660522, None)]))
     s.work.set(2, 660721, True)  # geplant, noch nicht in der Datenbank
     lines = a.takeover_lines(s.work)
     text = "\n".join(lines)
@@ -437,8 +437,10 @@ def test_takeover_overview_counts_earlier_years_and_includes_planned_changes():
     assert "660721" in bauer and bauer.split()[-3:] == ["0", "1", "1"]
     assert "Claus, Cora" in text and "davon erstmals: 2" in lines[-1] and "3 Korrektor:innen" in lines[-1]
     assert "Vorname" not in text
+    assert [x[:5] for x in lines[2:-1]] == ["Adler", "Claus", "Bauer"]  # nach Aufgabennummer: 660521, 660522, 660721
+    assert [x[:5] for x in a.takeover_lines(s.work, "nachname")[2:-1]] == ["Adler", "Bauer", "Claus"]
     by_first = a.takeover_lines(s.work, "vorname")
-    assert by_first[2].startswith("Anna Adler") and by_first[3].startswith("Bernd Bauer")
+    assert by_first[2].startswith("Anna Adler") and by_first[3].startswith("Bernd Bauer")  # alphabetisch nach Vorname
     assert "Noch keine" in a.takeover_lines(session()[0].work)[-1]
 
 
