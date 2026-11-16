@@ -125,6 +125,8 @@ class Candidate:
     andere_aufgaben: list[int]
     bietet_stufe_an: bool
     angebot_aktuell: bool = True
+    vorname: str = ""
+    nachname: str = ""
 
 
 class Work:
@@ -145,7 +147,8 @@ class Work:
                  if z["korrektor_id"] == korrektor_id and z["mao_nummer"] // 10000 < self.state.jahrgang_nr}
         return len(years)
 
-    def candidates(self, nummer: int, *, alle: bool = False, ohne_kinder: bool = False) -> list[Candidate]:
+    def candidates(self, nummer: int, *, alle: bool = False, ohne_kinder: bool = False,
+                   sortierung: str = "nachname") -> list[Candidate]:
         state = self.state
         _, stufe, _, _ = split_nummer(nummer)
         column = STUFEN[stufe]
@@ -160,11 +163,13 @@ class Work:
                 korrektor_id, display_name(info), len(state.angebote.get(korrektor_id, set())), self.uebernommen(korrektor_id),
                 [kl for kl in state.kinder.get(korrektor_id, []) if kind_matches(stufe, kl)], assigned,
                 self.want.get((korrektor_id, nummer)) or "",
-                sorted(n for (kid, n) in self.want if kid == korrektor_id and n != nummer), bietet, offers))
+                sorted(n for (kid, n) in self.want if kid == korrektor_id and n != nummer), bietet, offers, info.get("vorname") or "", info.get("nachname") or ""))
         if ohne_kinder:  # Personen mit Kind in der Stufe ausblenden (Zugeordnete bleiben sichtbar)
             result = [c for c in result if c.zugeordnet or not c.kinder_in_stufe]
-        result.sort(key=lambda c: (not c.zugeordnet, state.korrektoren[c.korrektor_id]["nachname"].casefold(),
-                                   state.korrektoren[c.korrektor_id]["vorname"].casefold()))
+        if sortierung == "vorname":
+            result.sort(key=lambda c: (c.vorname.casefold(), c.nachname.casefold(), c.korrektor_id))
+        else:
+            result.sort(key=lambda c: (c.nachname.casefold(), c.vorname.casefold(), c.korrektor_id))
         return result
 
     def assigned(self, nummer: int) -> list[int]:
@@ -218,9 +223,17 @@ def overview_lines(work: Work) -> list[str]:
     return lines
 
 
-def candidate_lines(work: Work, nummer: int, *, alle: bool = False, cands: list[Candidate] | None = None) -> list[str]:
+def _sorted_name(cand: Candidate, sortierung: str) -> str:
+    if sortierung == "vorname":
+        return f"{cand.vorname} {cand.nachname}".strip()
+    return f"{cand.nachname}, {cand.vorname}".strip(", ")
+
+
+def candidate_lines(work: Work, nummer: int, *, alle: bool = False, cands: list[Candidate] | None = None,
+                    sortierung: str = "nachname") -> list[str]:
     year, stufe, _, aufgabe = split_nummer(nummer)
     label = "11/12" if stufe == 12 else str(stufe)
+    cands_given = cands is not None
     cands = work.candidates(nummer, alle=alle) if cands is None else cands
     lines = [f"Aufgabe {nummer} (Klassenstufe {label}, Aufgabe {aufgabe}) – zugeordnet: {len(work.assigned(nummer))}",
              " Nr  Z  Korrektor:in                        Angebote  Übernommen  Kind in Stufe  Weitere Aufgaben       Bemerkung"]
@@ -230,7 +243,7 @@ def candidate_lines(work: Work, nummer: int, *, alle: bool = False, cands: list[
         extra = "" if cand.bietet_stufe_an else "  (Stufe nicht angeboten)"
         if not cand.angebot_aktuell:
             extra += f"  (KEIN Angebot {year})"
-        lines.append(f"{number:>3}  {'*' if cand.zugeordnet else ' '}  {cand.name[:34]:<34}{cand.angebote:>9}{cand.uebernommen:>12}  "
+        lines.append(f"{number:>3}  {'*' if cand.zugeordnet else ' '}  {(_sorted_name(cand, sortierung) if cands_given else cand.name)[:34]:<34}{cand.angebote:>9}{cand.uebernommen:>12}  "
                      f"{kind:<13}  {other:<21}  {cand.bemerkung}{extra}")
     if not cands:
         lines.append("  Keine Korrektor:innen mit Angebot für diese Klassenstufe.")
@@ -412,34 +425,36 @@ def terminal_size() -> tuple[int, int]:
     return size.columns, size.lines
 
 
-def _cell(number: int, cand: Candidate) -> str:
+def _cell(number: int, cand: Candidate, sortierung: str = "nachname") -> str:
     kind = f"K:{cand.kinder_in_stufe[0]}" if cand.kinder_in_stufe else ""
     if len(cand.kinder_in_stufe) > 1:
         kind += "+"
     flag = "*" if cand.zugeordnet else ("!" if not cand.angebot_aktuell else " ")
-    text = f"{number:>3}{flag} {cand.name[:19]:<19} {cand.angebote:>2}/{cand.uebernommen:<2} {kind:<7}"
+    name = f"{cand.vorname} {cand.nachname}".strip() if sortierung == "vorname" else f"{cand.nachname}, {cand.vorname}".strip(", ")
+    text = f"{number:>3}{flag} {name[:19]:<19} {cand.angebote:>2}/{cand.uebernommen:<2} {kind:<7}"
     return text.ljust(CELL_WIDTH)[:CELL_WIDTH]
 
 
 def task_screen(work: Work, nummer: int, row: int, alle: bool,
-                size: tuple[int, int] = (100, 30), ohne_kinder: bool = False) -> tuple[list[str], int, int]:
+                size: tuple[int, int] = (100, 30), ohne_kinder: bool = False, sortierung: str = "nachname") -> tuple[list[str], int, int]:
     """Kandidatenliste einer Aufgabe, bei Platzmangel in zwei Spalten (spaltenweise) und mit Seiten.
 
     Rückgabe (Zeilen, Zeile des Cursors oder -1 bei Spaltenansicht (dort invertiert die Zelle selbst), Anzahl Kandidaten)."""
     columns, height = size
-    cands = work.candidates(nummer, alle=alle, ohne_kinder=ohne_kinder)
+    cands = work.candidates(nummer, alle=alle, ohne_kinder=ohne_kinder, sortierung=sortierung)
     hidden = len(work.candidates(nummer, alle=alle)) - len(cands)
     count = len(cands)
     row = min(max(row, 0), max(count - 1, 0))
     _, stufe, _, aufgabe = split_nummer(nummer)
     label = "11/12" if stufe == 12 else str(stufe)
     head = ["↑/↓ wählen | Leertaste/Enter zuordnen/entfernen | b Bemerkung | a auch ohne Stufenangebot | "
-            "k Kinder in Stufe aus-/einblenden | ←/→ Aufgabe | q zurück",
+            "k Kinder in Stufe aus-/einblenden | n Sortierung | ←/→ Aufgabe | q zurück",
             f"Aufgabe {nummer} (Klassenstufe {label}, Aufgabe {aufgabe}) – zugeordnet: {len(work.assigned(nummer))}"
+            + f" – sortiert nach {'Vorname' if sortierung == 'vorname' else 'Nachname'}"
             + (f" – {hidden} mit Kind in der Stufe ausgeblendet (k)" if ohne_kinder else "")]
     per_col = max(5, height - 8)
     if count <= per_col or columns < 2 * CELL_WIDTH + 2:
-        return candidate_screen_single(work, nummer, cands, row, alle, head, per_col)
+        return candidate_screen_single(work, nummer, cands, row, alle, head, per_col, sortierung)
     capacity = 2 * per_col
     page, pages = row // capacity, (count + capacity - 1) // capacity
     first = page * capacity
@@ -453,15 +468,15 @@ def task_screen(work: Work, nummer: int, row: int, alle: bool,
         for c in range(2):
             idx = c * per_col + r
             if idx < len(shown):
-                text = _cell(first + idx + 1, shown[idx])
+                text = _cell(first + idx + 1, shown[idx], sortierung)
                 cells.append(f"{INVERSE}{text}{RESET}" if first + idx == row else text)
         lines.append("  ".join(cells))
     return lines, -1, count
 
 
 def candidate_screen_single(work: Work, nummer: int, cands: list[Candidate], row: int, alle: bool, head: list[str],
-                            per_col: int) -> tuple[list[str], int, int]:
-    table = candidate_lines(work, nummer, alle=alle, cands=cands)  # Titelzeile, Spaltenkopf, Kandidaten
+                            per_col: int, sortierung: str = "nachname") -> tuple[list[str], int, int]:
+    table = candidate_lines(work, nummer, alle=alle, cands=cands, sortierung=sortierung)  # Titelzeile, Spaltenkopf, Kandidaten
     table[0] = head[1]
     lines = [head[0], ""] + table
     if len(cands) > per_col:  # sehr schmales Fenster: nur eine Seite zeigen
@@ -500,11 +515,11 @@ def interactive_table(work: Work, *, key: Callable[[], str] = read_key,
 
 def _interactive_task(work: Work, pos: int, *, key: Callable[[], str], draw: Callable[[list[str], int | None], Any],
                       ask: Callable[[str], str], size: Callable[[], tuple[int, int]] = terminal_size) -> int:
-    row, alle, message, ohne_kinder = 0, False, "", False
+    row, alle, message, ohne_kinder, sortierung = 0, False, "", False, "nachname"
     while True:
         stufe, aufgabe = ALL_TASKS[pos]
         nummer = make_nummer(work.state.jahrgang_nr, stufe, aufgabe)
-        lines, cursor_row, count = task_screen(work, nummer, row, alle, size(), ohne_kinder)
+        lines, cursor_row, count = task_screen(work, nummer, row, alle, size(), ohne_kinder, sortierung)
         row = min(row, max(count - 1, 0))
         if message:
             lines.append("")
@@ -512,7 +527,7 @@ def _interactive_task(work: Work, pos: int, *, key: Callable[[], str], draw: Cal
         draw(lines, cursor_row if count and cursor_row >= 0 else None)
         message = ""
         pressed = key()
-        cands = work.candidates(nummer, alle=alle, ohne_kinder=ohne_kinder)
+        cands = work.candidates(nummer, alle=alle, ohne_kinder=ohne_kinder, sortierung=sortierung)
         if pressed == "up" and count:
             row = (row - 1) % count
         elif pressed == "down" and count:
@@ -526,6 +541,12 @@ def _interactive_task(work: Work, pos: int, *, key: Callable[[], str], draw: Cal
         elif pressed == "k":
             ohne_kinder = not ohne_kinder
             row = 0
+        elif pressed == "n":
+            sortierung = "vorname" if sortierung == "nachname" else "nachname"
+            if count:  # Cursor bleibt auf derselben Person
+                current = cands[min(row, count - 1)].korrektor_id
+                row = next((i for i, c in enumerate(work.candidates(nummer, alle=alle, ohne_kinder=ohne_kinder,
+                                                                    sortierung=sortierung)) if c.korrektor_id == current), 0)
         elif pressed in ("q", "esc"):
             return pos
         elif pressed in ("space", "enter") and count:
